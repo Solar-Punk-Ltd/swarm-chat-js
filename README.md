@@ -1,98 +1,131 @@
-A streaming library for Swarm that enables media streaming and playback (watching/listening) over Swarm.
+A chat library for Swarm that enables real-time chatting over Swarm using the GSOC feature.
 
-# Watch
+# Usage
 
-To play a stream, first initialize a player Bee node. This node handles all requests related to playing the stream. Then, you can use the attach to initalize the player.
-
-```
-import { playerBee, attach, EVENTS } from 'swarm-stream-js';
-
-playerBee.setBee('http://localhost:1633');
-const controls = attach({ media: videoRef, address: owner, topic });
-
-// on the controls you use the followings
-{
-  play,
-  seek,
-  restart,
-  setVolumeControl,
-  pause,
-  continueStream,
-  getDuration,
-  on,
-  off,
-};
-
-You can listen on events like this
-controls.on(EVENTS.LOADING_PLAYING_CHANGE, (isLoading: boolean) => console.log(isLoading));
-
-export const EVENTS = {
-  LOADING_PLAYING_CHANGE: 'loadingPlaying',
-  LOADING_DURATION_CHANGE: 'loadingPlaying',
-  IS_PLAYING_CHANGE: 'isPlaying',
-};
-```
-
-# Stream
-
-To stream media, initialize a streamer Bee node. This node manages requests related to streaming.
+Initalize the Swarm chat lib
 
 ```
-import { isStreamOngoing, startStream, stopStream, streamBee } from 'swarm-stream-js';
+  const newChat = new SwarmChat({
+      gsocResourceId,
+      topic,
+      nickname,
+      bees,
+      ownAddress: wallet.address as EthAddress,
+      privateKey: wallet.privateKey,
+    });
+```
 
-streamBee.setBee('http://localhost:1633');
+Requirements
 
-async function startStream(
-  signer: Signer, // To continuously write to Swarm feeds, a Signer (public and private key pair) must be provided.
-  topic: string, // A unique topic name. This is required for playing the stream via the VideoPlayer.
-  stamp: BatchId, // A valid BatchId for writing to Swarm.
-  options: Options // Configuration for the stream.
-): Promise<void>;
+- gsocResourceId: Required for GSOC functionality. You must mine this ID using the mineResourceId function.
+- Learn more about GSOC:
+  https://blog.ethswarm.org/foundation/2024/bee-2-3-pre-release/
+  https://github.com/ethersphere/SWIPs/blob/99e6cf90a4768b24d27e5339b205c18825b53322/SWIPs/swip-draft_graffiti-soc.md
+  The project uses a forked version of @anythread/gsoc for GSOC nodes.
 
-interface Options {
-  video: boolean; // Whether to include video in the stream
-  audio: boolean; // Whether to include audio in the stream
-  timeslice: number; // The interval at which to create media segments (currently fixed at 2000ms)
-  videoBitsPerSecond: number; // Defines the video quality of the stream
-}
+- topic: A simple string used to categorize the chat.
+- nickname: A user-friendly name for identification.
+- bees: Infrastructure settings for the library.
+  Infrastructure Example:
+  ```
+    bees: {
+      // example infrastructure settings
+      multiBees: {
+        gsoc: {
+          multiBees: [
+            {
+              url: "",
+              main: true,
+            },
+            {
+              url: "",
+              stamp: "" as BatchId,
+            },
+          ],
+        },
+        writer: {
+          singleBee: {
+            url: "",
+            stamp: "" as BatchId,
+          },
+        },
+        reader: {
+          singleBee: {
+            url: "",
+          },
+        },
+      },
+    },
+  ```
+- multiBees: Use multiple nodes for better performance.
+  Main GSOC Node: Handles incoming messages.
+  Writer Nodes: Write messages to the shared GSOC address.
+  Reader Nodes: Read messages from the feeds.
 
-function stopStream(): void;
-function isStreamOngoing(): boolean;
+- ownAddress: The public address of your wallet for authentication.
+- privateKey: The private key of your wallet for feed writing. Do not use a wallet storing assets.
+
+Starting and Stopping
+
+- Start Chat: Use the start() method to subscribe to events and initialize intervals.
+- Stop Chat: Use the stop() method to clean up resources.
+
+Sending a Message
+
+- Use the sendMessage(message: string) method to send a message.
+
+Listening to Events
+The library provides several events that can be subscribed to:
 
 ```
+ const { on } = newChat.getEmitter();
+
+  on(EVENTS.MESSAGE_REQUEST_SENT, (data: VisibleMessage) => {
+      // Message with a loading flag
+  });
+
+  on(EVENTS.MESSAGE_REQUEST_ERROR, (data: { id: string }) => {
+      // Message with an error flag
+  });
+
+  on(EVENTS.MESSAGE_RECEIVED, (data: VisibleMessage) => {
+      // Successfully received message
+  });
+
+  on(EVENTS.LOADING_INIT_USERS, (data: boolean) => {
+      // `true` on `listenToNewSubscribers` call
+      // `false` on the first single read call
+  });
+```
+
+# How it works
+
+Determine Latest Index: The client fetches the user's latest feed index.
+
+Keep Alive Messages: Sends periodic keepMeAlive GSOC messages to one of the GSOC nodes.
+
+User Presence: All clients listen for keepMeAlive messages to check user presence.
+
+Feed Updates: Each feed is read when there is a new index update, displaying new messages.
+
+Punishment Mechanism: Prevents spam by penalizing users who send too many keepMeAlive messages.
 
 # Limitations
 
-Currently, the following browser features are required:
+Infrastructure: A single or small set of nodes may struggle with high traffic. Multiple nodes are recommended for scalability.
 
-- 'video/webm; codecs=vp9,opus' (the library is specific to WebM format)
-- Navigator.mediaDevices: MediaDevices API
-- MediaRecorder: Media recording API
-- MediaSource: Media source extensions
-- SourceBuffer: Used for appending media segments
+Default settings allow up to 20 users to chat with minimal latency.
 
-Tests have primarily been conducted using Chrome.
+GSOC Node Readiness: GSOC nodes are still under development and may occasionally fail under heavy load.
 
 # How it works?
-
-## Streamer Side
-
-A new Swarm feed is created.
-Each media segment from MediaRecorder is uploaded to the Swarm feed under a specific feed index.
-The indexing is manual to avoid lookups.
-Feed index 0 contains the stream's metadata, which is necessary to initialize the MediaSource.
-
-## Player Side
-
-The player first retrieves metadata from feed index 0.
-It then waits for a cluster start (keyframe), ensuring that the cluster is clean.
-The player starts appending subsequent segments in order once the cluster is established.
 
 Helpful docs:
 
 - https://docs.ethswarm.org/docs/develop/tools-and-features/feeds#what-are-feeds
-- https://www.webmproject.org/
-- https://en.wikipedia.org/wiki/Extensible_Binary_Meta_Language
+- https://blog.ethswarm.org/foundation/2024/bee-2-3-pre-release/
+- https://github.com/ethersphere/SWIPs/blob/99e6cf90a4768b24d27e5339b205c18825b53322/SWIPs/swip-draft_graffiti-soc.md
+- https://www.npmjs.com/package/@anythread/gsoc?activeTab=readme
 
 An example demo project to demonstrate a simple use case:
-https://github.com/Solar-Punk-Ltd/swarm-stream-react-example
+https://github.com/Solar-Punk-Ltd/swarm-chat-react-example
