@@ -18,11 +18,11 @@ export default defineConfig({
     lib: {
       entry: resolve(__dirname, 'src/index.ts'),
       formats: ['es', 'cjs', 'umd'],
-      name: 'SwarmStreamJs',
+      name: 'SwarmChatJs',
       fileName: (format) => {
         if (format === 'es') return `index.esm.js`;
         if (format === 'cjs') return `index.js`;
-        return `swarm-stream-${format}.js`;
+        return `swarm-chat-${format}.js`;
       },
     },
     rollupOptions: {
