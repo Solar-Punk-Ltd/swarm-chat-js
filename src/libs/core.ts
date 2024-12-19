@@ -156,14 +156,13 @@ export class SwarmChat {
 
       this.emitter.emit(EVENTS.MESSAGE_REQUEST_SENT, messageObj);
 
-      const feedID = this.utils.generateUserOwnedFeedId(this.topic, this.ownAddress);
-
       const { bee, stamp } = this.getWriterBee();
 
       const msgData = await this.utils.retryAwaitableAsync(() => this.utils.uploadObjectToBee(bee, messageObj, stamp));
 
       if (!msgData) throw 'Could not upload message data to bee';
 
+      const feedID = this.utils.generateUserOwnedFeedId(this.topic, this.ownAddress);
       const feedTopicHex = bee.makeFeedTopic(feedID);
       const feedWriter = bee.makeFeedWriter('sequence', feedTopicHex, this.privateKey);
 
@@ -313,11 +312,6 @@ export class SwarmChat {
       ) {
         // Only apply punishment if more than one user exists
         this.userPunishmentCache[user.address] = Object.keys(this.users).length;
-        return;
-      }
-
-      if (!this.utils.validateUserObject(user)) {
-        console.warn('Invalid user object:', user);
         return;
       }
 
