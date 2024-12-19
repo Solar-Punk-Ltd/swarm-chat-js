@@ -118,7 +118,7 @@ Default settings allow up to 20 users to chat with minimal latency.
 
 GSOC Node Readiness: GSOC nodes are still under development and may occasionally fail under heavy load.
 
-# How it works?
+# Resources
 
 Helpful docs:
 
