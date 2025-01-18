@@ -1,5 +1,3 @@
-export const CONSENSUS_ID = 'SwarmStream';
-
 export const EVENTS = {
   LOADING_INIT_USERS: 'loadingInitUsers',
   MESSAGE_RECEIVED: 'messageReceived',

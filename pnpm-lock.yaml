@@ -12,8 +12,8 @@ importers:
         specifier: ^8.1.0
         version: 8.1.0
       '@solarpunkltd/gsoc':
-        specifier: ^0.2.3
-        version: 0.2.3
+        specifier: ^0.3.1
+        version: 0.3.1
       ethers:
         specifier: ^6.13.3
         version: 6.13.4
@@ -500,8 +500,8 @@ packages:
   '@rushstack/ts-command-line@4.22.6':
     resolution: {integrity: sha512-QSRqHT/IfoC5nk9zn6+fgyqOPXHME0BfchII9EUPR19pocsNp/xSbeBCbD3PIR2Lg+Q5qk7OFqk1VhWPMdKHJg==}
 
-  '@solarpunkltd/gsoc@0.2.3':
-    resolution: {integrity: sha512-M3bVCXRNysZAxDGoy77vUPIyX7aIZgkNqdHT6cisFyHYvcTNWH38WAIdD3u1larwmobz6u0aotcEiDW9vxiMxw==}
+  '@solarpunkltd/gsoc@0.3.1':
+    resolution: {integrity: sha512-h7T+X9ZrcNy733BJEVHul2dxutPEr730j1q6ySX3eDPeOrGiuWCWDE8TQl23bG/bA02bPGF59mJw4wf12Rb77g==}
 
   '@types/argparse@1.0.38':
     resolution: {integrity: sha512-ebDJ9b0e702Yr7pWgB0jzm+CX4Srzz8RcXtLJDJB+BSccqMa36uyH/zUsSYao5+BD1ytv3k3rPYCq4mAE1hsXA==}
@@ -2396,7 +2396,7 @@ snapshots:
     transitivePeerDependencies:
       - '@types/node'
 
-  '@solarpunkltd/gsoc@0.2.3':
+  '@solarpunkltd/gsoc@0.3.1':
     dependencies:
       '@nugaon/bmt-js': 3.0.2
       axios: 1.7.9

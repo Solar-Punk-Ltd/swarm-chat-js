@@ -39,8 +39,6 @@ export interface UserWithIndex extends User {
   index: number;
 }
 
-export type Sha3Message = string | number[] | ArrayBuffer | Uint8Array;
-
 export enum BeeType {
   READER = 'reader',
   WRITER = 'writer',
