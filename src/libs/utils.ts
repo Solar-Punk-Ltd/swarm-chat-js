@@ -1,10 +1,10 @@
-import { BatchId, Bee, BeeRequestOptions, Signer, UploadResult, Utils } from '@ethersphere/bee-js';
+import { BatchId, Bee, UploadResult } from '@ethersphere/bee-js';
 import { InformationSignal } from '@solarpunkltd/gsoc';
 import { SingleOwnerChunk } from '@solarpunkltd/gsoc/dist/soc';
 import { HexString } from '@solarpunkltd/gsoc/dist/types';
-import { BytesLike, ethers, hexlify, Wallet } from 'ethers';
+import { ethers } from 'ethers';
 
-import { CONSENSUS_ID, HEX_RADIX } from './constants';
+import { HEX_RADIX } from './constants';
 import {
   Bees,
   BeeSettings,
@@ -14,7 +14,6 @@ import {
   InitializedBee,
   InitializedBees,
   MultiBees,
-  Sha3Message,
 } from './types';
 
 /**
@@ -245,30 +244,6 @@ export class SwarmChatUtils {
   }
 
   /**
-   * Create a feed writer for graffiti based on a topic.
-   * @param bee The Bee instance.
-   * @param topic The topic for the feed.
-   * @param options Additional Bee request options.
-   * @returns The feed writer instance.
-   */
-  public graffitiFeedWriterFromTopic(bee: Bee, topic: string, options?: BeeRequestOptions) {
-    const { consensusHash, graffitiSigner } = this.generateGraffitiFeedMetadata(topic);
-    return bee.makeFeedWriter('sequence', consensusHash, graffitiSigner, options);
-  }
-
-  /**
-   * Create a feed reader for graffiti based on a topic.
-   * @param bee The Bee instance.
-   * @param topic The topic for the feed.
-   * @param options Additional Bee request options.
-   * @returns The feed reader instance.
-   */
-  public graffitiFeedReaderFromTopic(bee: Bee, topic: string, options?: BeeRequestOptions) {
-    const { consensusHash, graffitiSigner } = this.generateGraffitiFeedMetadata(topic);
-    return bee.makeFeedReader('sequence', consensusHash, graffitiSigner.address, options);
-  }
-
-  /**
    * Retrieve the latest feed index for a topic and address.
    * @param bee The Bee instance.
    * @param topic The topic for the feed.
@@ -339,6 +314,31 @@ export class SwarmChatUtils {
     }
   }
 
+  public async fetchLatestGsocMessage(url: string, topic: string, resourceId: HexString<number>) {
+    try {
+      if (!resourceId) throw 'ResourceID was not provided!';
+
+      const informationSignal = new InformationSignal(url, {
+        consensus: {
+          id: `SwarmDecentralizedChat::${topic}`,
+          assertRecord: () => {
+            return true;
+          },
+        },
+      });
+
+      const gsocData = await informationSignal.getLatestGsocData(resourceId);
+
+      return gsocData.json();
+    } catch (error) {
+      this.handleError({
+        error: error as unknown as Error,
+        context: `fetchLatestGsocMessages`,
+        throw: true,
+      });
+    }
+  }
+
   /**
    * Send a message to GSOC for a specific topic and resource ID.
    * @param url The Bee URL.
@@ -384,59 +384,12 @@ export class SwarmChatUtils {
   }
 
   /**
-   * Generate a private key for graffiti using a resource.
-   * @param resource The resource used to generate the key.
-   * @returns The private key as a byte array.
-   */
-  private getConsensualPrivateKey(resource: Sha3Message): Uint8Array {
-    if (Utils.isHexString(resource) && resource.length === 64) {
-      return Utils.hexToBytes(resource);
-    }
-    return Utils.keccak256Hash(resource);
-  }
-
-  /**
-   * Create a wallet from a consensual private key.
-   * @param consensualPrivateKey The private key to create the wallet.
-   * @returns The created wallet.
-   */
-  private getGraffitiWallet(consensualPrivateKey: BytesLike): Wallet {
-    const privateKeyBuffer = hexlify(consensualPrivateKey);
-    return new Wallet(privateKeyBuffer);
-  }
-
-  /**
    * Serialize a graffiti record to a Uint8Array.
    * @param record The graffiti record to serialize.
    * @returns The serialized record.
    */
   private serializeGraffitiRecord(record: Record<any, any>): Uint8Array {
     return new TextEncoder().encode(JSON.stringify(record));
-  }
-
-  /**
-   * Generate metadata for graffiti feed including consensus hash and signer.
-   * @param topic The topic for the feed.
-   * @returns The feed metadata.
-   */
-  private generateGraffitiFeedMetadata(topic: string) {
-    const roomId = this.generateUsersFeedId(topic);
-    const privateKey = this.getConsensualPrivateKey(roomId);
-    const wallet = this.getGraffitiWallet(privateKey);
-
-    const graffitiSigner: Signer = {
-      address: Utils.hexToBytes(wallet.address.slice(2)),
-      sign: async (data: any) => {
-        return await wallet.signMessage(data);
-      },
-    };
-
-    const consensusHash = Utils.keccak256Hash(CONSENSUS_ID);
-
-    return {
-      consensusHash,
-      graffitiSigner,
-    };
   }
 
   /**
