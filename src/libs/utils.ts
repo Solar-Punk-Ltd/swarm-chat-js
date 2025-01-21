@@ -176,18 +176,18 @@ export class SwarmChatUtils {
    */
   public validateUserObject(user: any): boolean {
     try {
-      if (!user) throw 'User object is empty';
-      if (typeof user.username !== 'string') throw 'username should be a string';
-      if (typeof user.address !== 'string') throw 'address should be a string';
-      if (typeof user.timestamp !== 'number') throw 'timestamp should be number';
-      if (typeof user.signature !== 'string') throw 'signature should be a string';
+      if (!user) throw new Error('user object is empty');
+      if (typeof user.username !== 'string') throw new Error('username should be a string');
+      if (typeof user.address !== 'string') throw new Error('address should be a string');
+      if (typeof user.timestamp !== 'number') throw new Error('timestamp should be number');
+      if (typeof user.signature !== 'string') throw new Error('signature should be a string');
 
       this.logger.debug('2. Validating user object...', user);
 
       const allowedProperties = ['username', 'address', 'timestamp', 'signature', 'index'];
       const extraProperties = Object.keys(user).filter((key) => !allowedProperties.includes(key));
       if (extraProperties.length > 0) {
-        throw `Unexpected properties found: ${extraProperties.join(', ')}`;
+        throw new Error(`Unexpected properties found: ${extraProperties.join(', ')}`);
       }
 
       this.logger.debug('3. Validating user object signature...', user);
@@ -199,7 +199,7 @@ export class SwarmChatUtils {
 
       this.logger.debug('4. Verifying user object signature...', message);
       const returnedAddress = ethers.verifyMessage(JSON.stringify(message), user.signature);
-      if (returnedAddress !== user.address) throw 'Signature verification failed!';
+      if (returnedAddress !== user.address) throw new Error('Signature verification failed!');
 
       this.logger.debug('5. User object is valid!');
 
@@ -301,7 +301,7 @@ export class SwarmChatUtils {
     resourceId: HexString<number>,
     callback: (gsocMessage: string) => void,
   ) {
-    if (!resourceId) throw 'ResourceID was not provided!';
+    if (!resourceId) throw new Error('ResourceID was not provided!');
 
     const informationSignal = new InformationSignal(url, {
       consensus: {
@@ -326,7 +326,7 @@ export class SwarmChatUtils {
   }
 
   public async fetchLatestGsocMessage(url: string, topic: string, resourceId: HexString<number>): Promise<any> {
-    if (!resourceId) throw 'ResourceID was not provided!';
+    if (!resourceId) throw new Error('ResourceID was not provided!');
 
     const informationSignal = new InformationSignal(url, {
       consensus: {
@@ -358,7 +358,7 @@ export class SwarmChatUtils {
     resourceId: HexString<number>,
     message: string,
   ): Promise<SingleOwnerChunk | undefined> {
-    if (!resourceId) throw 'ResourceID was not provided!';
+    if (!resourceId) throw new Error('ResourceID was not provided!');
 
     const informationSignal = new InformationSignal(url, {
       consensus: {
