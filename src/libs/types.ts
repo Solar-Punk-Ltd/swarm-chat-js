@@ -96,8 +96,3 @@ export interface ChatSettings {
   idleUserCleanupIntervalTime?: number;
   readMessageTimeout?: number;
 }
-export interface ErrorObject {
-  error: Error;
-  context: string;
-  throw: boolean;
-}

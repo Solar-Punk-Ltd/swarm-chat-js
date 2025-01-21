@@ -1,4 +1,6 @@
 import { sleep } from './common';
+import { ErrorHandler } from './error';
+import { Logger } from './logger';
 
 type Task = () => void | Promise<void>;
 
@@ -7,16 +9,17 @@ export class Queue {
   private isProcessing = false;
   private isWaiting = false;
   private clearWaitTime: number;
-  private handleError: (errObject: { error: Error; context: string; throw: boolean }) => void;
+  private logger: Logger;
+  private errorHandler: ErrorHandler;
 
   constructor(
     settings: {
       clearWaitTime?: number;
     } = {},
-    handleError: (errObject: { error: Error; context: string; throw: boolean }) => void,
   ) {
     this.clearWaitTime = settings.clearWaitTime || 500;
-    this.handleError = handleError;
+    this.logger = new Logger();
+    this.errorHandler = new ErrorHandler(this.logger);
   }
 
   private async processQueue(): Promise<void> {
@@ -34,11 +37,7 @@ export class Queue {
           await result;
         }
       } catch (error) {
-        this.handleError({
-          error: error as Error,
-          context: 'Error processing task',
-          throw: false,
-        });
+        this.errorHandler.handleError(error, 'Queue.processQueue');
       }
     }
 

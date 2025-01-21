@@ -4,20 +4,25 @@ import isEqual from 'lodash/isEqual';
 import { v4 as uuidv4 } from 'uuid';
 
 import { sleep } from '../utils/common';
+import { ErrorHandler } from '../utils/error';
 import { EventEmitter } from '../utils/eventEmitter';
+import { Logger } from '../utils/logger';
 import { Queue } from '../utils/queue';
 
 import { EVENTS, SECOND } from './constants';
-import { AppState, BeeType, ChatSettings, ErrorObject, EthAddress, GsocSubscribtion, UserWithIndex } from './types';
+import { AppState, BeeType, ChatSettings, EthAddress, GsocSubscribtion, UserWithIndex } from './types';
 import { SwarmChatUtils } from './utils';
 
 export class SwarmChat {
   private emitter = new EventEmitter();
-  private utils = new SwarmChatUtils(this.handleError.bind(this));
+  private utils = new SwarmChatUtils();
+
+  private logger: Logger;
+  private errorHandler: ErrorHandler;
 
   private bees;
-  private messagesQueue = new Queue({ clearWaitTime: 200 }, this.handleError.bind(this));
-  private gsocListenerQueue = new Queue({ clearWaitTime: 200 }, this.handleError.bind(this));
+  private messagesQueue = new Queue({ clearWaitTime: 200 });
+  private gsocListenerQueue = new Queue({ clearWaitTime: 200 });
 
   private fetchMessageTimer: NodeJS.Timeout | null = null;
   private idleUserCleanupInterval: NodeJS.Timeout | null = null;
@@ -97,16 +102,12 @@ export class SwarmChat {
       // the main GSOC contains the latest state of the GSOC updates
       const mainGsocBee = this.getMainGsocBee();
       const initGsocData = await this.utils.fetchLatestGsocMessage(mainGsocBee.url, this.topic, this.gsocResourceId);
-      console.log('initGsocData', initGsocData);
+      this.logger.debug('initGsocData', initGsocData);
       this.setLocalAppStates(initGsocData);
 
       await this.broadcastNewAppState();
     } catch (error) {
-      this.handleError({
-        error: error as unknown as Error,
-        context: `initSelfState`,
-        throw: false,
-      });
+      this.errorHandler.handleError(error, 'Chat.initSelfState');
     }
   }
 
@@ -131,11 +132,7 @@ export class SwarmChat {
         (gsocMessage: string) => this.gsocListenerQueue.enqueue(() => this.userRegistrationOnGsoc(gsocMessage)),
       );
     } catch (error) {
-      this.handleError({
-        error: error as unknown as Error,
-        context: `Could not listen to new subscribers`,
-        throw: true,
-      });
+      this.errorHandler.handleError(error, 'Chat.listenToNewSubscribers');
     }
   }
 
@@ -168,7 +165,7 @@ export class SwarmChat {
       const msgData = await this.utils.retryAwaitableAsync(() =>
         this.utils.uploadObjectToBee(bee, { ...messageObj, index: this.ownIndex }, stamp),
       );
-      if (!msgData) throw 'Could not upload message data to bee';
+      if (!msgData) throw new Error('Uploaded message data is empty');
 
       await feedWriter.upload(stamp, msgData.reference, {
         index: nextIndex,
@@ -183,11 +180,7 @@ export class SwarmChat {
       }
     } catch (error) {
       this.emitter.emit(EVENTS.MESSAGE_REQUEST_ERROR, messageObj);
-      this.handleError({
-        error: error as unknown as Error,
-        context: `sendMessage`,
-        throw: false,
-      });
+      this.errorHandler.handleError(error, 'Chat.sendMessage');
     }
   }
 
@@ -239,13 +232,9 @@ export class SwarmChat {
         }),
       );
 
-      if (!result?.payload.length) throw 'Error writing User object to GSOC!';
+      if (!result?.payload.length) throw new Error('GSOC result payload is empty');
     } catch (error) {
-      this.handleError({
-        error: error as unknown as Error,
-        context: `registerUser`,
-        throw: false,
-      });
+      this.errorHandler.handleError(error, 'Chat.broadcastNewAppState');
     }
   }
 
@@ -277,7 +266,7 @@ export class SwarmChat {
 
   private setLocalAppStates(appState: AppState) {
     if (!this.utils.validateLocalAppState(appState)) {
-      console.warn('Invalid app state update');
+      this.logger.warn('Invalid app state update');
       return;
     }
 
@@ -291,7 +280,7 @@ export class SwarmChat {
   // TODO - safe check for overwrite attack
   private updateLocalAppStates(appState: AppState) {
     if (!this.utils.validateLocalAppState(appState) || appState.messageSender === null) {
-      console.warn('Invalid app state update');
+      this.logger.warn('Invalid app state update');
       return;
     }
 
@@ -313,7 +302,7 @@ export class SwarmChat {
       try {
         appState = JSON.parse(gsocMessage);
       } catch (parseError) {
-        console.error('Invalid GSOC message format:', gsocMessage);
+        this.logger.error('Failed to parse GSOC message:', parseError, gsocMessage);
         return;
       }
 
@@ -325,11 +314,7 @@ export class SwarmChat {
 
       this.updateLocalAppStates(appState);
     } catch (error) {
-      this.handleError({
-        error: error as Error,
-        context: `userRegisteredThroughGsoc`,
-        throw: false,
-      });
+      this.errorHandler.handleError(error, 'Chat.userRegistrationOnGsoc');
     }
   }
 
@@ -381,13 +366,7 @@ export class SwarmChat {
       this.emitter.emit(EVENTS.MESSAGE_RECEIVED, messageData);
       this.setUserIndexCache(user.address, nextIndex);
     } catch (error) {
-      if (error instanceof Error) {
-        this.handleError({
-          error: error as unknown as Error,
-          context: `readMessage`,
-          throw: false,
-        });
-      }
+      this.errorHandler.handleError(error, 'readMessage');
     } finally {
       // consider users available when at least one message tried to be read
       if (this.ownAddress === user.address) {
@@ -405,7 +384,7 @@ export class SwarmChat {
 
   private startMessagesFetchProcess() {
     if (this.fetchMessageTimer) {
-      console.warn('Messages fetch process is already running.');
+      this.logger.warn('Messages fetch process is already running.');
       return;
     }
     this.fetchMessageTimer = setInterval(this.readMessagesForAll.bind(this), this.FETCH_MESSAGE_INTERVAL_TIME);
@@ -420,7 +399,7 @@ export class SwarmChat {
 
   private startIdleUserCleanup(): void {
     if (this.idleUserCleanupInterval) {
-      console.warn('Idle user cleanup is already running.');
+      this.logger.warn('Idle user cleanup is already running.');
       return;
     }
     this.idleUserCleanupInterval = setInterval(this.removeIdleUsers.bind(this), this.IDLE_USER_CLEANUP_INTERVAL_TIME);
@@ -469,13 +448,5 @@ export class SwarmChat {
       throw new Error('Could not get valid writer stamp');
     }
     return { bee, stamp };
-  }
-
-  private handleError(errObject: ErrorObject) {
-    console.error(`Error in ${errObject.context}: ${errObject.error.message}`);
-    this.emitter.emit(EVENTS.ERROR, errObject);
-    if (errObject.throw) {
-      throw errObject.error;
-    }
   }
 }
