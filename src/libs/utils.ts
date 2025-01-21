@@ -140,7 +140,6 @@ export class SwarmChatUtils {
   public validateLocalAppState(state: AppState): boolean {
     const { messageSender, activeUsers, allTimeUsers, events } = state;
 
-    this.logger.debug('1. Validating local app state...', state);
     if (!this.validateUserObject(messageSender)) {
       this.logger.warn('Invalid messageSender');
       return false;
@@ -182,26 +181,20 @@ export class SwarmChatUtils {
       if (typeof user.timestamp !== 'number') throw new Error('timestamp should be number');
       if (typeof user.signature !== 'string') throw new Error('signature should be a string');
 
-      this.logger.debug('2. Validating user object...', user);
-
       const allowedProperties = ['username', 'address', 'timestamp', 'signature', 'index'];
       const extraProperties = Object.keys(user).filter((key) => !allowedProperties.includes(key));
       if (extraProperties.length > 0) {
         throw new Error(`Unexpected properties found: ${extraProperties.join(', ')}`);
       }
 
-      this.logger.debug('3. Validating user object signature...', user);
       const message = {
         username: user.username,
         address: user.address,
         timestamp: user.timestamp,
       };
 
-      this.logger.debug('4. Verifying user object signature...', message);
       const returnedAddress = ethers.verifyMessage(JSON.stringify(message), user.signature);
       if (returnedAddress !== user.address) throw new Error('Signature verification failed!');
-
-      this.logger.debug('5. User object is valid!');
 
       return true;
     } catch (error) {
