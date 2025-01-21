@@ -63,9 +63,9 @@ export class SwarmChat {
 
   public start() {
     this.initSelfState();
-    //this.listenToNewSubscribers();
-    //this.startMessagesFetchProcess();
-    //this.startIdleUserCleanup();
+    this.listenToNewSubscribers();
+    this.startMessagesFetchProcess();
+    this.startIdleUserCleanup();
   }
 
   public stop() {
@@ -102,7 +102,6 @@ export class SwarmChat {
       // the main GSOC contains the latest state of the GSOC updates
       const mainGsocBee = this.getMainGsocBee();
       const initGsocData = await this.utils.fetchLatestGsocMessage(mainGsocBee.url, this.topic, this.gsocResourceId);
-      this.logger.debug('initGsocData', initGsocData);
       this.setLocalAppStates(initGsocData);
 
       await this.broadcastNewAppState();
@@ -219,17 +218,22 @@ export class SwarmChat {
 
       const { bee, stamp } = this.getGsocBee();
 
-      const result = await this.utils.sendMessageToGsoc(
-        bee.url,
-        stamp,
-        this.topic,
-        this.gsocResourceId,
-        JSON.stringify({
-          messageSender: newUser,
-          activeUsers: this.activeUsers,
-          allTimeUsers: this.allTimeUsers,
-          events: this.events,
-        }),
+      const RETRY_COUNT = 5;
+      const result = await this.utils.retryAwaitableAsync(
+        () =>
+          this.utils.sendMessageToGsoc(
+            bee.url,
+            stamp,
+            this.topic,
+            this.gsocResourceId!,
+            JSON.stringify({
+              messageSender: newUser,
+              activeUsers: this.activeUsers,
+              allTimeUsers: this.allTimeUsers,
+              events: this.events,
+            }),
+          ),
+        RETRY_COUNT,
       );
 
       if (!result?.payload.length) throw new Error('GSOC result payload is empty');
@@ -265,21 +269,20 @@ export class SwarmChat {
   }
 
   private setLocalAppStates(appState: AppState) {
-    if (!this.utils.validateLocalAppState(appState)) {
+    if (appState.messageSender === null || !this.utils.validateLocalAppState(appState)) {
       this.logger.warn('Invalid app state set');
       return;
     }
 
-    const { messageSender, activeUsers, allTimeUsers, events } = appState;
+    const { activeUsers, allTimeUsers, events } = appState;
     this.events = events;
-    this.activeUsers = activeUsers;
+    this.activeUsers = activeUsers; // TODO - set the latest 10 active users
     this.allTimeUsers = allTimeUsers;
-    this.latestMessageSender = messageSender;
   }
 
   // TODO - safe check for overwrite attack
   private updateLocalAppStates(appState: AppState) {
-    if (!this.utils.validateLocalAppState(appState) || appState.messageSender === null) {
+    if (appState.messageSender === null || !this.utils.validateLocalAppState(appState)) {
       this.logger.warn('Invalid app state update');
       return;
     }
