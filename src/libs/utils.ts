@@ -4,29 +4,24 @@ import { SingleOwnerChunk } from '@solarpunkltd/gsoc/dist/soc';
 import { HexString } from '@solarpunkltd/gsoc/dist/types';
 import { ethers } from 'ethers';
 
+import { ErrorHandler } from '../utils/error';
+import { Logger } from '../utils/logger';
+
 import { HEX_RADIX } from './constants';
-import {
-  AppState,
-  Bees,
-  BeeSettings,
-  BeeType,
-  ErrorObject,
-  EthAddress,
-  InitializedBee,
-  InitializedBees,
-  MultiBees,
-} from './types';
+import { AppState, Bees, BeeSettings, BeeType, EthAddress, InitializedBee, InitializedBees, MultiBees } from './types';
 
 /**
  * Utility class for Swarm chat operations including feed management,
  * user validation, and interaction with Bee and GSOC.
  */
 export class SwarmChatUtils {
-  private handleError: (errObject: ErrorObject) => void;
+  private logger: Logger;
+  private errorHandler: ErrorHandler;
   private UPLOAD_GSOC_TIMEOUT = 2000;
 
-  constructor(handleError: (errObject: ErrorObject) => void) {
-    this.handleError = handleError;
+  constructor() {
+    this.logger = new Logger();
+    this.errorHandler = new ErrorHandler(this.logger);
   }
 
   /**
@@ -148,29 +143,29 @@ export class SwarmChatUtils {
   public validateLocalAppState(state: AppState): boolean {
     const { messageSender, activeUsers, allTimeUsers, events } = state;
 
-    console.log('1. Validating local app state...', state);
+    this.logger.debug('1. Validating local app state...', state);
     if (!this.validateUserObject(messageSender)) {
-      console.error('Invalid messageSender');
+      this.logger.warn('Invalid messageSender');
       return false;
     }
 
     for (const address in activeUsers) {
       if (!this.validateUserObject(activeUsers[address])) {
-        console.error(`Invalid activeUser at address: ${address}`);
+        this.logger.warn(`Invalid activeUser at address: ${address}`);
         return false;
       }
     }
 
     for (const address in allTimeUsers) {
       if (!this.validateUserObject(allTimeUsers[address])) {
-        console.error(`Invalid allTimeUser at address: ${address}`);
+        this.logger.warn(`Invalid allTimeUser at address: ${address}`);
         return false;
       }
     }
 
     // TODO: WIP
     if (typeof events !== 'object' || events === null) {
-      console.error('Invalid events');
+      this.logger.warn('Invalid events');
       return false;
     }
 
@@ -190,7 +185,7 @@ export class SwarmChatUtils {
       if (typeof user.timestamp !== 'number') throw 'timestamp should be number';
       if (typeof user.signature !== 'string') throw 'signature should be a string';
 
-      console.log('2. Validating user object...', user);
+      this.logger.debug('2. Validating user object...', user);
 
       const allowedProperties = ['username', 'address', 'timestamp', 'signature', 'index'];
       const extraProperties = Object.keys(user).filter((key) => !allowedProperties.includes(key));
@@ -198,27 +193,22 @@ export class SwarmChatUtils {
         throw `Unexpected properties found: ${extraProperties.join(', ')}`;
       }
 
-      console.log('3. Validating user object signature...', user);
+      this.logger.debug('3. Validating user object signature...', user);
       const message = {
         username: user.username,
         address: user.address,
         timestamp: user.timestamp,
       };
 
-      console.log('4. Verifying user object signature...', message);
+      this.logger.debug('4. Verifying user object signature...', message);
       const returnedAddress = ethers.verifyMessage(JSON.stringify(message), user.signature);
       if (returnedAddress !== user.address) throw 'Signature verification failed!';
 
-      console.log('5. User object is valid!');
+      this.logger.debug('5. User object is valid!');
 
       return true;
     } catch (error) {
-      console.error('User object validation failed:', error);
-      this.handleError({
-        error: error as unknown as Error,
-        context: 'validateUserObject',
-        throw: false,
-      });
+      this.errorHandler.handleError(error, 'Utils.validateUserObject');
       return false;
     }
   }
@@ -245,18 +235,14 @@ export class SwarmChatUtils {
         .then(resolve)
         .catch((error) => {
           if (retries > 0) {
-            console.info(`Retrying... Attempts left: ${retries}. Error: ${error.message}`);
+            this.logger.info(`Retrying... Attempts left: ${retries}. Error: ${error.message}`);
             setTimeout(() => {
               this.retryAwaitableAsync(fn, retries - 1, delay)
                 .then(resolve)
                 .catch(reject);
             }, delay);
           } else {
-            this.handleError({
-              error: error as unknown as Error,
-              context: `Failed after ${retries} initial attempts. Last error: ${error.message}`,
-              throw: false,
-            });
+            this.errorHandler.handleError(error, 'Utils.retryAwaitableAsync');
             reject(error);
           }
         });
@@ -275,11 +261,7 @@ export class SwarmChatUtils {
       const result = await bee.uploadData(stamp as any, this.serializeGraffitiRecord(jsObject), { redundancyLevel: 4 });
       return result;
     } catch (error) {
-      this.handleError({
-        error: error as unknown as Error,
-        context: `uploadObjectToBee`,
-        throw: false,
-      });
+      this.errorHandler.handleError(error, 'Utils.uploadObjectToBee');
       return null;
     }
   }
@@ -322,62 +304,45 @@ export class SwarmChatUtils {
     resourceId: HexString<number>,
     callback: (gsocMessage: string) => void,
   ) {
-    try {
-      if (!resourceId) throw 'ResourceID was not provided!';
+    if (!resourceId) throw 'ResourceID was not provided!';
 
-      const informationSignal = new InformationSignal(url, {
-        consensus: {
-          id: `SwarmDecentralizedChat::${topic}`,
-          assertRecord: (rawText) => {
-            const receivedObject = JSON.parse(rawText as unknown as string);
-            const isValid = this.validateUserObject(receivedObject);
-            return isValid;
-          },
+    const informationSignal = new InformationSignal(url, {
+      consensus: {
+        id: `SwarmDecentralizedChat::${topic}`,
+        assertRecord: (rawText) => {
+          const receivedObject = JSON.parse(rawText as unknown as string);
+          const isValid = this.validateUserObject(receivedObject);
+          return isValid;
         },
-      });
+      },
+    });
 
-      const gsocSub = informationSignal.subscribe(
-        {
-          onMessage: callback,
-          onError: console.log,
-        },
-        resourceId,
-      );
+    const gsocSub = informationSignal.subscribe(
+      {
+        onMessage: callback,
+        onError: this.logger.error,
+      },
+      resourceId,
+    );
 
-      return gsocSub;
-    } catch (error) {
-      this.handleError({
-        error: error as unknown as Error,
-        context: `subscribeToGSOC`,
-        throw: true,
-      });
-      return null;
-    }
+    return gsocSub;
   }
 
   public async fetchLatestGsocMessage(url: string, topic: string, resourceId: HexString<number>): Promise<any> {
-    try {
-      if (!resourceId) throw 'ResourceID was not provided!';
+    if (!resourceId) throw 'ResourceID was not provided!';
 
-      const informationSignal = new InformationSignal(url, {
-        consensus: {
-          id: `SwarmDecentralizedChat::${topic}`,
-          assertRecord: () => {
-            return true;
-          },
+    const informationSignal = new InformationSignal(url, {
+      consensus: {
+        id: `SwarmDecentralizedChat::${topic}`,
+        assertRecord: () => {
+          return true;
         },
-      });
+      },
+    });
 
-      const gsocData = await informationSignal.getLatestGsocData(resourceId);
+    const gsocData = await informationSignal.getLatestGsocData(resourceId);
 
-      return gsocData.json();
-    } catch (error) {
-      this.handleError({
-        error: error as unknown as Error,
-        context: `fetchLatestGsocMessages`,
-        throw: true,
-      });
-    }
+    return gsocData.json();
   }
 
   /**
@@ -396,32 +361,24 @@ export class SwarmChatUtils {
     resourceId: HexString<number>,
     message: string,
   ): Promise<SingleOwnerChunk | undefined> {
-    try {
-      if (!resourceId) throw 'ResourceID was not provided!';
+    if (!resourceId) throw 'ResourceID was not provided!';
 
-      const informationSignal = new InformationSignal(url, {
-        consensus: {
-          id: `SwarmDecentralizedChat::${topic}`,
-          assertRecord: (_input) => {
-            // TODO: Implement this
-            return true;
-          },
+    const informationSignal = new InformationSignal(url, {
+      consensus: {
+        id: `SwarmDecentralizedChat::${topic}`,
+        assertRecord: (_input) => {
+          // TODO: Implement this
+          return true;
         },
-        postage: stamp,
-      });
+      },
+      postage: stamp,
+    });
 
-      const uploadedSoc = await informationSignal.write(message, resourceId, {
-        timeout: this.UPLOAD_GSOC_TIMEOUT,
-      });
+    const uploadedSoc = await informationSignal.write(message, resourceId, {
+      timeout: this.UPLOAD_GSOC_TIMEOUT,
+    });
 
-      return uploadedSoc;
-    } catch (error) {
-      this.handleError({
-        error: error as unknown as Error,
-        context: `sendMessageToGSOC`,
-        throw: false,
-      });
-    }
+    return uploadedSoc;
   }
 
   /**
