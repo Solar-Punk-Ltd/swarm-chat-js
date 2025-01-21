@@ -1,5 +1,6 @@
 import { HexString } from '@solarpunkltd/gsoc/dist/types';
 import { ethers, Signature } from 'ethers';
+import isEqual from 'lodash/isEqual';
 import { v4 as uuidv4 } from 'uuid';
 
 import { sleep } from '../utils/common';
@@ -7,7 +8,7 @@ import { EventEmitter } from '../utils/eventEmitter';
 import { Queue } from '../utils/queue';
 
 import { EVENTS, SECOND } from './constants';
-import { BeeType, ChatSettings, ErrorObject, EthAddress, GsocSubscribtion, UserWithIndex } from './types';
+import { AppState, BeeType, ChatSettings, ErrorObject, EthAddress, GsocSubscribtion, UserWithIndex } from './types';
 import { SwarmChatUtils } from './utils';
 
 export class SwarmChat {
@@ -19,27 +20,27 @@ export class SwarmChat {
   private gsocListenerQueue = new Queue({ clearWaitTime: 200 }, this.handleError.bind(this));
 
   private fetchMessageTimer: NodeJS.Timeout | null = null;
-  private keepUserAliveTimer: NodeJS.Timeout | null = null;
   private idleUserCleanupInterval: NodeJS.Timeout | null = null;
 
-  private KEEP_ALIVE_INTERVAL_TIME = 2500;
   private FETCH_MESSAGE_INTERVAL_TIME = 1000;
   private IDLE_USER_CLEANUP_INTERVAL_TIME = 5000;
   private READ_MESSAGE_TIMEOUT = 1500;
 
-  private users: Record<string, UserWithIndex> = {};
+  // local app states
+  private events: any = {}; // WIP - empty for now
+  private activeUsers: Record<string, UserWithIndex> = {};
+  private allTimeUsers: Record<string, UserWithIndex> = {};
+  private latestMessageSender: UserWithIndex | null = null;
   private userIndexCache: Record<string, number> = {};
-  private userPunishmentCache: Record<string, number> = {};
-  private tempUser: UserWithIndex | null = null;
 
   private gsocResourceId: HexString<number> | null = null;
   private gsocSubscribtion: GsocSubscribtion | null = null;
 
   private privateKey: string;
-  private ownAddress: EthAddress;
   private topic: string;
   private nickname: string;
-  private ownIndex: number | null = null;
+  private ownAddress: EthAddress;
+  private ownIndex: number = -1;
 
   constructor(settings: ChatSettings) {
     this.ownAddress = settings.ownAddress;
@@ -50,30 +51,23 @@ export class SwarmChat {
 
     this.bees = this.utils.initBees(settings.bees);
 
-    this.KEEP_ALIVE_INTERVAL_TIME = settings.keepAliveIntervalTime || this.KEEP_ALIVE_INTERVAL_TIME;
     this.FETCH_MESSAGE_INTERVAL_TIME = settings.fetchMessageIntervalTime || this.FETCH_MESSAGE_INTERVAL_TIME;
     this.IDLE_USER_CLEANUP_INTERVAL_TIME = settings.idleUserCleanupIntervalTime || this.IDLE_USER_CLEANUP_INTERVAL_TIME;
     this.READ_MESSAGE_TIMEOUT = settings.readMessageTimeout || this.READ_MESSAGE_TIMEOUT;
   }
 
   public start() {
-    this.initSelfIndex();
-    this.listenToNewSubscribers();
-    this.startKeepMeAliveProcess();
-    this.startMessagesFetchProcess();
-    this.startIdleUserCleanup();
+    this.initSelfState();
+    //this.listenToNewSubscribers();
+    //this.startMessagesFetchProcess();
+    //this.startIdleUserCleanup();
   }
 
   public stop() {
     this.stopListenToNewSubscribers();
-    this.stopKeepMeAliveProcess();
     this.stopMessagesFetchProcess();
     this.stopIdleUserCleanup();
     this.emitter.cleanAll();
-  }
-
-  public isUserRegistered(userAddress: EthAddress): boolean {
-    return !!this.users[userAddress];
   }
 
   public getEmitter() {
@@ -84,22 +78,33 @@ export class SwarmChat {
    * Initializes the user's own feed index by retrieving the latest index from Bee storage.
    * @returns Resolves when the self-index is successfully initialized.
    */
-  public async initSelfIndex() {
+  public async initSelfState() {
     try {
+      if (!this.gsocResourceId) {
+        throw new Error('GSOC Resource ID is not defined');
+      }
+
       const feedID = this.utils.generateUserOwnedFeedId(this.topic, this.ownAddress);
 
-      const bee = this.getReaderBee();
-      const feedTopicHex = bee.makeFeedTopic(feedID);
+      const readerBee = this.getReaderBee();
+      const feedTopicHex = readerBee.makeFeedTopic(feedID);
 
       const { latestIndex } = await this.utils.retryAwaitableAsync(() =>
-        this.utils.getLatestFeedIndex(bee, feedTopicHex, this.ownAddress),
+        this.utils.getLatestFeedIndex(readerBee, feedTopicHex, this.ownAddress),
       );
-
       this.ownIndex = latestIndex;
+
+      // the main GSOC contains the latest state of the GSOC updates
+      const mainGsocBee = this.getMainGsocBee();
+      const initGsocData = await this.utils.fetchLatestGsocMessage(mainGsocBee.url, this.topic, this.gsocResourceId);
+      console.log('initGsocData', initGsocData);
+      this.setLocalAppStates(initGsocData);
+
+      await this.broadcastNewAppState();
     } catch (error) {
       this.handleError({
         error: error as unknown as Error,
-        context: `initSelfIndex`,
+        context: `initSelfState`,
         throw: false,
       });
     }
@@ -150,30 +155,30 @@ export class SwarmChat {
     };
 
     try {
-      if (this.ownIndex === null) {
-        throw new Error('Cannot send message with null index');
-      }
-
       this.emitter.emit(EVENTS.MESSAGE_REQUEST_SENT, messageObj);
 
       const { bee, stamp } = this.getWriterBee();
-
-      const msgData = await this.utils.retryAwaitableAsync(() => this.utils.uploadObjectToBee(bee, messageObj, stamp));
-
-      if (!msgData) throw 'Could not upload message data to bee';
 
       const feedID = this.utils.generateUserOwnedFeedId(this.topic, this.ownAddress);
       const feedTopicHex = bee.makeFeedTopic(feedID);
       const feedWriter = bee.makeFeedWriter('sequence', feedTopicHex, this.privateKey);
 
       const nextIndex = this.ownIndex === -1 ? 0 : this.ownIndex + 1;
+
+      const msgData = await this.utils.retryAwaitableAsync(() =>
+        this.utils.uploadObjectToBee(bee, { ...messageObj, index: this.ownIndex }, stamp),
+      );
+      if (!msgData) throw 'Could not upload message data to bee';
+
       await feedWriter.upload(stamp, msgData.reference, {
         index: nextIndex,
       });
 
       this.ownIndex = nextIndex;
       // do not allow a new message till the latest is read
-      while (!this.isUserIndexRead(this.ownAddress, this.ownIndex)) {
+      // TODO other solution
+      await this.broadcastNewAppState();
+      while (!this.isUserIndexRead(this.ownAddress, this.ownIndex).isIndexRead) {
         await sleep(200);
       }
     } catch (error) {
@@ -187,19 +192,12 @@ export class SwarmChat {
   }
 
   /**
-   * Keeps the user alive by registering or updating their presence on the GSOC node.
-   * @returns Resolves when the user is successfully kept alive.
+   * TODO: Add description
    */
-  public async keepUserAlive() {
+  async broadcastNewAppState() {
     try {
       if (!this.gsocResourceId) {
         throw new Error('GSOC Resource ID is not defined');
-      }
-
-      // do not allow a new message till the latest index is read
-      const index = this.getOwnIndex();
-      if (index === null) {
-        return;
       }
 
       const wallet = new ethers.Wallet(this.privateKey);
@@ -207,11 +205,6 @@ export class SwarmChat {
 
       if (address.toLowerCase() !== this.ownAddress.toLowerCase()) {
         throw new Error('The provided address does not match the address derived from the private key');
-      }
-
-      // if punishment is active, do not register user
-      if (this.checkUserPunishment(address)) {
-        return;
       }
 
       const timestamp = Date.now();
@@ -223,7 +216,7 @@ export class SwarmChat {
         address,
         timestamp,
         signature,
-        index,
+        index: this.getOwnIndex(),
         username: this.nickname,
       };
 
@@ -238,7 +231,12 @@ export class SwarmChat {
         stamp,
         this.topic,
         this.gsocResourceId,
-        JSON.stringify(newUser),
+        JSON.stringify({
+          messageSender: newUser,
+          activeUsers: this.activeUsers,
+          allTimeUsers: this.allTimeUsers,
+          events: this.events,
+        }),
       );
 
       if (!result?.payload.length) throw 'Error writing User object to GSOC!';
@@ -256,12 +254,12 @@ export class SwarmChat {
   }
 
   private isUserIndexRead(userAddress: string, checkIndex: number) {
-    const targetIndex = this.userIndexCache[userAddress];
-    return targetIndex === checkIndex;
+    const cachedIndex = this.userIndexCache[userAddress];
+    return { cachedIndex, isIndexRead: cachedIndex === checkIndex };
   }
 
-  private setUserIndexCache(user: UserWithIndex) {
-    this.userIndexCache[user.address] = user.index;
+  private setUserIndexCache(address: string, index: number) {
+    this.userIndexCache[address] = index;
   }
 
   private getOwnIndex() {
@@ -270,24 +268,38 @@ export class SwarmChat {
 
   private removeIdleUsers() {
     const now = Date.now();
-    for (const user of Object.values(this.users)) {
+    for (const user of Object.values(this.activeUsers)) {
       if (now - user.timestamp > 30 * SECOND) {
-        delete this.users[user.address];
+        delete this.activeUsers[user.address];
       }
     }
   }
 
-  private setUser(user: UserWithIndex) {
-    this.users[user.address] = user;
+  private setLocalAppStates(appState: AppState) {
+    if (!this.utils.validateLocalAppState(appState)) {
+      console.warn('Invalid app state update');
+      return;
+    }
+
+    const { messageSender, activeUsers, allTimeUsers, events } = appState;
+    this.events = events;
+    this.activeUsers = activeUsers;
+    this.allTimeUsers = allTimeUsers;
+    this.latestMessageSender = messageSender;
   }
 
-  private checkUserPunishment(userAddress: string) {
-    const count = this.userPunishmentCache[userAddress];
-    if (count > 0) {
-      this.userPunishmentCache[userAddress]--;
-      return true;
+  // TODO - safe check for overwrite attack
+  private updateLocalAppStates(appState: AppState) {
+    if (!this.utils.validateLocalAppState(appState) || appState.messageSender === null) {
+      console.warn('Invalid app state update');
+      return;
     }
-    return false;
+
+    const { messageSender } = appState;
+    // this.events = events; // TODO: update events
+    this.activeUsers[messageSender.address] = messageSender;
+    this.allTimeUsers[messageSender.address] = messageSender;
+    this.latestMessageSender = messageSender;
   }
 
   /**
@@ -296,27 +308,22 @@ export class SwarmChat {
    */
   private userRegistrationOnGsoc(gsocMessage: string) {
     try {
-      let user: UserWithIndex;
+      // TODO: any
+      let appState: AppState;
       try {
-        user = JSON.parse(gsocMessage) as UserWithIndex;
+        appState = JSON.parse(gsocMessage);
       } catch (parseError) {
         console.error('Invalid GSOC message format:', gsocMessage);
         return;
       }
 
-      // if punishment is active, do not set user
-      if (
-        this.tempUser?.address === user.address &&
-        this.userPunishmentCache[user.address] === 0 &&
-        Object.keys(this.users).length > 1
-      ) {
-        // Only apply punishment if more than one user exists
-        this.userPunishmentCache[user.address] = Object.keys(this.users).length;
+      // TODO validate appState
+      // Do not process the same message twice
+      if (isEqual(this.latestMessageSender, appState.messageSender)) {
         return;
       }
 
-      this.setUser(user);
-      this.tempUser = user;
+      this.updateLocalAppStates(appState);
     } catch (error) {
       this.handleError({
         error: error as Error,
@@ -333,7 +340,7 @@ export class SwarmChat {
       return;
     }
 
-    for (const user of Object.values(this.users)) {
+    for (const user of Object.values(this.activeUsers)) {
       this.messagesQueue.enqueue(() => this.readMessage(user, this.topic));
     }
   }
@@ -347,12 +354,12 @@ export class SwarmChat {
    */
   private async readMessage(user: UserWithIndex, rawTopic: string) {
     try {
-      if (user.index === -1) {
+      let nextIndex;
+      const readCacheState = this.isUserIndexRead(user.address, user.index);
+      if (readCacheState.isIndexRead) {
         return;
-      }
-      const isIndexRead = this.isUserIndexRead(user.address, user.index);
-      if (isIndexRead) {
-        return;
+      } else {
+        nextIndex = readCacheState.cachedIndex ? readCacheState.cachedIndex + 1 : user.index;
       }
 
       const bee = this.getReaderBee();
@@ -363,7 +370,7 @@ export class SwarmChat {
         timeout: this.READ_MESSAGE_TIMEOUT,
       });
 
-      const recordPointer = await feedReader.download({ index: user.index });
+      const recordPointer = await feedReader.download({ index: nextIndex });
       const data = await bee.downloadData(recordPointer.reference, {
         headers: {
           'Swarm-Redundancy-Level': '0',
@@ -372,7 +379,7 @@ export class SwarmChat {
       const messageData = JSON.parse(new TextDecoder().decode(data));
 
       this.emitter.emit(EVENTS.MESSAGE_RECEIVED, messageData);
-      this.setUserIndexCache(user);
+      this.setUserIndexCache(user.address, nextIndex);
     } catch (error) {
       if (error instanceof Error) {
         this.handleError({
@@ -393,21 +400,6 @@ export class SwarmChat {
     if (this.gsocSubscribtion) {
       this.gsocSubscribtion.close();
       this.gsocSubscribtion = null;
-    }
-  }
-
-  private startKeepMeAliveProcess() {
-    if (this.keepUserAliveTimer) {
-      console.warn('Keep me alive process is already running.');
-      return;
-    }
-    this.keepUserAliveTimer = setInterval(this.keepUserAlive.bind(this), this.KEEP_ALIVE_INTERVAL_TIME);
-  }
-
-  private stopKeepMeAliveProcess() {
-    if (this.keepUserAliveTimer) {
-      clearInterval(this.keepUserAliveTimer);
-      this.keepUserAliveTimer = null;
     }
   }
 
@@ -483,7 +475,7 @@ export class SwarmChat {
     console.error(`Error in ${errObject.context}: ${errObject.error.message}`);
     this.emitter.emit(EVENTS.ERROR, errObject);
     if (errObject.throw) {
-      throw new Error(`Error in ${errObject.context}`);
+      throw errObject.error;
     }
   }
 }

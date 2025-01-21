@@ -39,6 +39,13 @@ export interface UserWithIndex extends User {
   index: number;
 }
 
+export interface AppState {
+  messageSender: UserWithIndex | null;
+  activeUsers: Record<string, UserWithIndex>;
+  allTimeUsers: Record<string, UserWithIndex>;
+  events: any; // TODO: Define this
+}
+
 export enum BeeType {
   READER = 'reader',
   WRITER = 'writer',
@@ -85,7 +92,6 @@ export interface ChatSettings {
   topic: string;
   gsocResourceId: string;
   bees: Bees;
-  keepAliveIntervalTime?: number;
   fetchMessageIntervalTime?: number;
   idleUserCleanupIntervalTime?: number;
   readMessageTimeout?: number;

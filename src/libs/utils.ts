@@ -6,6 +6,7 @@ import { ethers } from 'ethers';
 
 import { HEX_RADIX } from './constants';
 import {
+  AppState,
   Bees,
   BeeSettings,
   BeeType,
@@ -144,6 +145,38 @@ export class SwarmChatUtils {
     throw new Error(`No ${type} bees available`);
   }
 
+  public validateLocalAppState(state: AppState): boolean {
+    const { messageSender, activeUsers, allTimeUsers, events } = state;
+
+    console.log('1. Validating local app state...', state);
+    if (!this.validateUserObject(messageSender)) {
+      console.error('Invalid messageSender');
+      return false;
+    }
+
+    for (const address in activeUsers) {
+      if (!this.validateUserObject(activeUsers[address])) {
+        console.error(`Invalid activeUser at address: ${address}`);
+        return false;
+      }
+    }
+
+    for (const address in allTimeUsers) {
+      if (!this.validateUserObject(allTimeUsers[address])) {
+        console.error(`Invalid allTimeUser at address: ${address}`);
+        return false;
+      }
+    }
+
+    // TODO: WIP
+    if (typeof events !== 'object' || events === null) {
+      console.error('Invalid events');
+      return false;
+    }
+
+    return true;
+  }
+
   /**
    * Validate the structure and signature of a user object.
    * @param user The user object to validate.
@@ -151,10 +184,13 @@ export class SwarmChatUtils {
    */
   public validateUserObject(user: any): boolean {
     try {
+      if (!user) throw 'User object is empty';
       if (typeof user.username !== 'string') throw 'username should be a string';
       if (typeof user.address !== 'string') throw 'address should be a string';
       if (typeof user.timestamp !== 'number') throw 'timestamp should be number';
       if (typeof user.signature !== 'string') throw 'signature should be a string';
+
+      console.log('2. Validating user object...', user);
 
       const allowedProperties = ['username', 'address', 'timestamp', 'signature', 'index'];
       const extraProperties = Object.keys(user).filter((key) => !allowedProperties.includes(key));
@@ -162,20 +198,25 @@ export class SwarmChatUtils {
         throw `Unexpected properties found: ${extraProperties.join(', ')}`;
       }
 
+      console.log('3. Validating user object signature...', user);
       const message = {
         username: user.username,
         address: user.address,
         timestamp: user.timestamp,
       };
 
+      console.log('4. Verifying user object signature...', message);
       const returnedAddress = ethers.verifyMessage(JSON.stringify(message), user.signature);
       if (returnedAddress !== user.address) throw 'Signature verification failed!';
 
+      console.log('5. User object is valid!');
+
       return true;
     } catch (error) {
+      console.error('User object validation failed:', error);
       this.handleError({
         error: error as unknown as Error,
-        context: 'This User object is not correct',
+        context: 'validateUserObject',
         throw: false,
       });
       return false;
@@ -314,7 +355,7 @@ export class SwarmChatUtils {
     }
   }
 
-  public async fetchLatestGsocMessage(url: string, topic: string, resourceId: HexString<number>) {
+  public async fetchLatestGsocMessage(url: string, topic: string, resourceId: HexString<number>): Promise<any> {
     try {
       if (!resourceId) throw 'ResourceID was not provided!';
 
