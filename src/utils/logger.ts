@@ -2,12 +2,12 @@ export class Logger {
   private context: string;
 
   constructor(context?: string) {
-    this.context = context || 'Default';
+    this.context = context || '';
   }
 
   private formatMessage(level: string, ...args: any[]): string {
     const timestamp = new Date().toISOString();
-    return `[${timestamp}] [${level.toUpperCase()}] [${this.context}] ${args
+    return `[${timestamp}] [${level.toUpperCase()}] - ${this.context} ${args
       .map((arg) => (typeof arg === 'object' ? JSON.stringify(arg) : arg))
       .join(' ')}`;
   }
