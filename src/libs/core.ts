@@ -17,8 +17,8 @@ export class SwarmChat {
   private emitter = new EventEmitter();
   private utils = new SwarmChatUtils();
 
-  private logger: Logger;
-  private errorHandler: ErrorHandler;
+  private logger = new Logger();
+  private errorHandler = new ErrorHandler(this.logger);
 
   private bees;
   private messagesQueue = new Queue({ clearWaitTime: 200 });

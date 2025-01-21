@@ -15,14 +15,11 @@ import { AppState, Bees, BeeSettings, BeeType, EthAddress, InitializedBee, Initi
  * user validation, and interaction with Bee and GSOC.
  */
 export class SwarmChatUtils {
-  private logger: Logger;
-  private errorHandler: ErrorHandler;
+  private logger = new Logger();
+  private errorHandler = new ErrorHandler(this.logger);
   private UPLOAD_GSOC_TIMEOUT = 2000;
 
-  constructor() {
-    this.logger = new Logger();
-    this.errorHandler = new ErrorHandler(this.logger);
-  }
+  constructor() {}
 
   /**
    * Generate a feed ID for storing user data based on the topic.

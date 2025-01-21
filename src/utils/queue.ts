@@ -9,8 +9,8 @@ export class Queue {
   private isProcessing = false;
   private isWaiting = false;
   private clearWaitTime: number;
-  private logger: Logger;
-  private errorHandler: ErrorHandler;
+  private logger = new Logger();
+  private errorHandler = new ErrorHandler(this.logger);
 
   constructor(
     settings: {
@@ -18,8 +18,6 @@ export class Queue {
     } = {},
   ) {
     this.clearWaitTime = settings.clearWaitTime || 500;
-    this.logger = new Logger();
-    this.errorHandler = new ErrorHandler(this.logger);
   }
 
   private async processQueue(): Promise<void> {
