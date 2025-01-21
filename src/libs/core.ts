@@ -266,7 +266,7 @@ export class SwarmChat {
 
   private setLocalAppStates(appState: AppState) {
     if (!this.utils.validateLocalAppState(appState)) {
-      this.logger.warn('Invalid app state update');
+      this.logger.warn('Invalid app state set');
       return;
     }
 
