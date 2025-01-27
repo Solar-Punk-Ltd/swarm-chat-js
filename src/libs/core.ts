@@ -85,6 +85,9 @@ export class SwarmChat {
    */
   public async initSelfState() {
     try {
+      // TODO: rename event
+      this.emitter.emit(EVENTS.LOADING_INIT_USERS, true);
+
       if (!this.gsocResourceId) {
         throw new Error('GSOC Resource ID is not defined');
       }
@@ -102,9 +105,13 @@ export class SwarmChat {
       // the main GSOC contains the latest state of the GSOC updates
       const mainGsocBee = this.getMainGsocBee();
       const initGsocData = await this.utils.fetchLatestGsocMessage(mainGsocBee.url, this.topic, this.gsocResourceId);
-      this.setLocalAppStates(initGsocData);
+      const parsedInitGsocData = JSON.parse(initGsocData);
+      this.logger.debug('Init GSOC DATA:', parsedInitGsocData);
 
-      await this.broadcastNewAppState();
+      const messageSender = await this.makeMessageSender();
+      this.setLocalAppStates({ ...parsedInitGsocData, messageSender });
+
+      this.emitter.emit(EVENTS.LOADING_INIT_USERS, false);
     } catch (error) {
       this.errorHandler.handleError(error, 'Chat.initSelfState');
     }
@@ -119,8 +126,6 @@ export class SwarmChat {
       if (!this.gsocResourceId) {
         throw new Error('GSOC Resource ID is not defined');
       }
-
-      this.emitter.emit(EVENTS.LOADING_INIT_USERS, true);
 
       const bee = this.getMainGsocBee();
 
@@ -183,6 +188,28 @@ export class SwarmChat {
     }
   }
 
+  async makeMessageSender() {
+    const wallet = new ethers.Wallet(this.privateKey);
+    const address = wallet.address as EthAddress;
+
+    if (address.toLowerCase() !== this.ownAddress.toLowerCase()) {
+      throw new Error('The provided address does not match the address derived from the private key');
+    }
+
+    const timestamp = Date.now();
+    const signature = (await wallet.signMessage(
+      JSON.stringify({ username: this.nickname, address, timestamp }),
+    )) as unknown as Signature;
+
+    return {
+      address,
+      timestamp,
+      signature,
+      index: this.getOwnIndex(),
+      username: this.nickname,
+    };
+  }
+
   /**
    * TODO: Add description
    */
@@ -192,29 +219,7 @@ export class SwarmChat {
         throw new Error('GSOC Resource ID is not defined');
       }
 
-      const wallet = new ethers.Wallet(this.privateKey);
-      const address = wallet.address as EthAddress;
-
-      if (address.toLowerCase() !== this.ownAddress.toLowerCase()) {
-        throw new Error('The provided address does not match the address derived from the private key');
-      }
-
-      const timestamp = Date.now();
-      const signature = (await wallet.signMessage(
-        JSON.stringify({ username: this.nickname, address, timestamp }),
-      )) as unknown as Signature;
-
-      const newUser = {
-        address,
-        timestamp,
-        signature,
-        index: this.getOwnIndex(),
-        username: this.nickname,
-      };
-
-      if (!this.utils.validateUserObject(newUser)) {
-        throw new Error('User object validation failed');
-      }
+      const messageSender = await this.makeMessageSender();
 
       const { bee, stamp } = this.getGsocBee();
 
@@ -227,9 +232,9 @@ export class SwarmChat {
             this.topic,
             this.gsocResourceId!,
             JSON.stringify({
-              messageSender: newUser,
-              activeUsers: this.activeUsers,
-              allTimeUsers: this.allTimeUsers,
+              messageSender,
+              activeUsers: { ...this.activeUsers, [messageSender.address]: messageSender },
+              allTimeUsers: { ...this.allTimeUsers, [messageSender.address]: messageSender },
               events: this.events,
             }),
           ),
@@ -262,7 +267,7 @@ export class SwarmChat {
   private removeIdleUsers() {
     const now = Date.now();
     for (const user of Object.values(this.activeUsers)) {
-      if (now - user.timestamp > 30 * SECOND) {
+      if (now - user.timestamp > 300 * SECOND) {
         delete this.activeUsers[user.address];
       }
     }
@@ -274,10 +279,12 @@ export class SwarmChat {
       return;
     }
 
-    const { activeUsers, allTimeUsers, events } = appState;
+    const { messageSender, activeUsers, allTimeUsers, events } = appState;
     this.events = events;
-    this.activeUsers = activeUsers; // TODO - set the latest 10 active users
-    this.allTimeUsers = allTimeUsers;
+    console.log('setLocalAppStates', appState);
+    console.log('setLocalAppStates', { ...activeUsers, [messageSender.address]: messageSender });
+    this.activeUsers = { ...activeUsers, [messageSender.address]: messageSender }; // TODO - set the latest 10 active users
+    this.allTimeUsers = { ...allTimeUsers, [messageSender.address]: messageSender };
   }
 
   // TODO - safe check for overwrite attack
@@ -297,10 +304,9 @@ export class SwarmChat {
   /**
    * Handles user registration through the GSOC system by processing incoming GSOC messages.
    * @param gsocMessage The GSOC message in JSON string format containing user data.
-   */
+   */ // TODO RENAME
   private userRegistrationOnGsoc(gsocMessage: string) {
     try {
-      // TODO: any
       let appState: AppState;
       try {
         appState = JSON.parse(gsocMessage);
@@ -309,13 +315,14 @@ export class SwarmChat {
         return;
       }
 
-      // TODO validate appState
+      // TODO validate appState and new punishment algorithm
       // Do not process the same message twice
       if (isEqual(this.latestMessageSender, appState.messageSender)) {
         return;
       }
 
       this.updateLocalAppStates(appState);
+      this.logger.debug('App state update:', appState);
     } catch (error) {
       this.errorHandler.handleError(error, 'Chat.userRegistrationOnGsoc');
     }
@@ -372,9 +379,9 @@ export class SwarmChat {
       this.errorHandler.handleError(error, 'readMessage');
     } finally {
       // consider users available when at least one message tried to be read
-      if (this.ownAddress === user.address) {
+      /*     if (this.ownAddress === user.address) {
         this.emitter.emit(EVENTS.LOADING_INIT_USERS, false);
-      }
+      } */
     }
   }
 

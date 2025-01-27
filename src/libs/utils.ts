@@ -160,10 +160,10 @@ export class SwarmChatUtils {
     }
 
     // TODO: WIP
-    if (typeof events !== 'object' || events === null) {
+    /*     if (typeof events !== 'object' || events === null) {
       this.logger.warn('Invalid events');
       return false;
-    }
+    } */
 
     return true;
   }
@@ -300,8 +300,8 @@ export class SwarmChatUtils {
       consensus: {
         id: `SwarmDecentralizedChat::${topic}`,
         assertRecord: (rawText) => {
-          const receivedObject = JSON.parse(rawText as unknown as string);
-          const isValid = this.validateUserObject(receivedObject);
+          const receivedObject = JSON.parse(rawText as string);
+          const isValid = this.validateLocalAppState(receivedObject);
           return isValid;
         },
       },
