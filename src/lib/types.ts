@@ -32,18 +32,48 @@ export interface User {
   username: string;
   address: EthAddress;
   timestamp: number;
+  index: number;
   signature: Signature;
 }
 
-export interface UserWithIndex extends User {
-  index: number;
+export interface ValidationSchema {
+  [key: string]: 'string' | 'number' | ValidationSchema | ValidationSchema[];
 }
 
-export interface AppState {
-  messageSender: UserWithIndex | null;
-  activeUsers: Record<string, UserWithIndex>;
-  allTimeUsers: Record<string, UserWithIndex>;
-  events: any; // TODO: Define this
+export interface ChatHistoryEntry {
+  id: number;
+  ref: string;
+  updater: string;
+  timestamp: number;
+}
+
+export interface GsocMessage {
+  messageSender: User;
+  historyEntry: ChatHistoryEntry;
+}
+
+// WIP
+export interface ChatEvent {
+  type: string;
+  timestamp: any;
+}
+
+export interface MessageEntry {
+  index: number;
+  timestamp: number;
+}
+
+export interface UserHistory {
+  events: ChatEvent[];
+  messageEntries: MessageEntry[];
+}
+
+export type UserMap = Record<string, User>;
+
+export type UserHistoryMap = Record<string, UserHistory>;
+
+export interface ChatHistory {
+  allTimeUsers: UserHistoryMap;
 }
 
 export enum BeeType {

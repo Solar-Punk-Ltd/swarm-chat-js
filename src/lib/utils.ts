@@ -2,13 +2,12 @@ import { BatchId, Bee, UploadResult } from '@ethersphere/bee-js';
 import { InformationSignal } from '@solarpunkltd/gsoc';
 import { SingleOwnerChunk } from '@solarpunkltd/gsoc/dist/soc';
 import { HexString } from '@solarpunkltd/gsoc/dist/types';
-import { ethers } from 'ethers';
 
 import { ErrorHandler } from '../utils/error';
 import { Logger } from '../utils/logger';
 
 import { HEX_RADIX } from './constants';
-import { AppState, Bees, BeeSettings, BeeType, EthAddress, InitializedBee, InitializedBees, MultiBees } from './types';
+import { Bees, BeeSettings, BeeType, EthAddress, InitializedBee, InitializedBees, MultiBees } from './types';
 
 /**
  * Utility class for Swarm chat operations including feed management,
@@ -17,6 +16,7 @@ import { AppState, Bees, BeeSettings, BeeType, EthAddress, InitializedBee, Initi
 export class SwarmChatUtils {
   private logger = new Logger();
   private errorHandler = new ErrorHandler(this.logger);
+
   private UPLOAD_GSOC_TIMEOUT = 2000;
 
   constructor() {}
@@ -137,70 +137,42 @@ export class SwarmChatUtils {
     throw new Error(`No ${type} bees available`);
   }
 
-  public validateLocalAppState(state: AppState): boolean {
-    const { messageSender, activeUsers, allTimeUsers, events } = state;
-
-    if (!this.validateUserObject(messageSender)) {
-      this.logger.warn('Invalid messageSender');
-      return false;
+  public getMainGsocBee(bees: InitializedBees) {
+    const { bee } = this.selectBee(bees, BeeType.GSOC, true);
+    if (!bee) {
+      throw new Error('Could not get main GSOC bee');
     }
-
-    for (const address in activeUsers) {
-      if (!this.validateUserObject(activeUsers[address])) {
-        this.logger.warn(`Invalid activeUser at address: ${address}`);
-        return false;
-      }
-    }
-
-    for (const address in allTimeUsers) {
-      if (!this.validateUserObject(allTimeUsers[address])) {
-        this.logger.warn(`Invalid allTimeUser at address: ${address}`);
-        return false;
-      }
-    }
-
-    // TODO: WIP
-    /*     if (typeof events !== 'object' || events === null) {
-      this.logger.warn('Invalid events');
-      return false;
-    } */
-
-    return true;
+    return bee;
   }
 
-  /**
-   * Validate the structure and signature of a user object.
-   * @param user The user object to validate.
-   * @returns True if valid, false otherwise.
-   */
-  public validateUserObject(user: any): boolean {
-    try {
-      if (!user) throw new Error('user object is empty');
-      if (typeof user.username !== 'string') throw new Error('username should be a string');
-      if (typeof user.address !== 'string') throw new Error('address should be a string');
-      if (typeof user.timestamp !== 'number') throw new Error('timestamp should be number');
-      if (typeof user.signature !== 'string') throw new Error('signature should be a string');
-
-      const allowedProperties = ['username', 'address', 'timestamp', 'signature', 'index'];
-      const extraProperties = Object.keys(user).filter((key) => !allowedProperties.includes(key));
-      if (extraProperties.length > 0) {
-        throw new Error(`Unexpected properties found: ${extraProperties.join(', ')}`);
-      }
-
-      const message = {
-        username: user.username,
-        address: user.address,
-        timestamp: user.timestamp,
-      };
-
-      const returnedAddress = ethers.verifyMessage(JSON.stringify(message), user.signature);
-      if (returnedAddress !== user.address) throw new Error('Signature verification failed!');
-
-      return true;
-    } catch (error) {
-      this.errorHandler.handleError(error, 'Utils.validateUserObject');
-      return false;
+  public getGsocBee(bees: InitializedBees) {
+    const { bee, stamp } = this.selectBee(bees, BeeType.GSOC);
+    if (!bee) {
+      throw new Error('Could not get GSOC bee');
     }
+    if (!stamp) {
+      throw new Error('Could not get valid gsoc stamp');
+    }
+    return { bee, stamp };
+  }
+
+  public getReaderBee(bees: InitializedBees) {
+    const { bee } = this.selectBee(bees, BeeType.READER);
+    if (!bee) {
+      throw new Error('Could not get reader bee');
+    }
+    return bee;
+  }
+
+  public getWriterBee(bees: InitializedBees) {
+    const { bee, stamp } = this.selectBee(bees, BeeType.WRITER);
+    if (!bee) {
+      throw new Error('Could not get writer bee');
+    }
+    if (!stamp) {
+      throw new Error('Could not get valid writer stamp');
+    }
+    return { bee, stamp };
   }
 
   /**
@@ -248,10 +220,20 @@ export class SwarmChatUtils {
    */
   public async uploadObjectToBee(bee: Bee, jsObject: object, stamp: BatchId): Promise<UploadResult | null> {
     try {
-      const result = await bee.uploadData(stamp as any, this.serializeGraffitiRecord(jsObject), { redundancyLevel: 4 });
+      const result = await bee.uploadData(stamp as any, this.serializeRecord(jsObject), { redundancyLevel: 4 });
       return result;
     } catch (error) {
       this.errorHandler.handleError(error, 'Utils.uploadObjectToBee');
+      return null;
+    }
+  }
+
+  public async downloadObjectFromBee(bee: Bee, reference: string): Promise<any> {
+    try {
+      const result = await bee.downloadData(reference);
+      return result.json();
+    } catch (error) {
+      this.errorHandler.handleError(error, 'Utils.beeDownloadObject');
       return null;
     }
   }
@@ -299,10 +281,9 @@ export class SwarmChatUtils {
     const informationSignal = new InformationSignal(url, {
       consensus: {
         id: `SwarmDecentralizedChat::${topic}`,
-        assertRecord: (rawText) => {
-          const receivedObject = JSON.parse(rawText as string);
-          const isValid = this.validateLocalAppState(receivedObject);
-          return isValid;
+        assertRecord: (_input) => {
+          // We handle validation at our side
+          return true;
         },
       },
     });
@@ -324,7 +305,8 @@ export class SwarmChatUtils {
     const informationSignal = new InformationSignal(url, {
       consensus: {
         id: `SwarmDecentralizedChat::${topic}`,
-        assertRecord: () => {
+        assertRecord: (_input) => {
+          // We handle validation at our side
           return true;
         },
       },
@@ -346,8 +328,8 @@ export class SwarmChatUtils {
    */
   public async sendMessageToGsoc(
     url: string,
-    stamp: BatchId,
     topic: string,
+    stamp: BatchId,
     resourceId: HexString<number>,
     message: string,
   ): Promise<SingleOwnerChunk | undefined> {
@@ -357,17 +339,17 @@ export class SwarmChatUtils {
       consensus: {
         id: `SwarmDecentralizedChat::${topic}`,
         assertRecord: (_input) => {
-          // TODO: Implement this
+          // We handle validation at our side
           return true;
         },
       },
-      postage: stamp,
     });
 
-    const uploadedSoc = await informationSignal.write(message, resourceId, {
+    const uploadedSoc = await informationSignal.write(message, resourceId, stamp, {
       timeout: this.UPLOAD_GSOC_TIMEOUT,
     });
 
+    this.logger.debug('sendMessageToGsoc - CALLED');
     return uploadedSoc;
   }
 
@@ -376,7 +358,7 @@ export class SwarmChatUtils {
    * @param record The graffiti record to serialize.
    * @returns The serialized record.
    */
-  private serializeGraffitiRecord(record: Record<any, any>): Uint8Array {
+  private serializeRecord(record: Record<any, any>): Uint8Array {
     return new TextEncoder().encode(JSON.stringify(record));
   }
 

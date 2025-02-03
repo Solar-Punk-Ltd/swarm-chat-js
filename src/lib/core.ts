@@ -1,24 +1,28 @@
 import { HexString } from '@solarpunkltd/gsoc/dist/types';
+import { Mutex } from 'async-mutex';
 import { ethers, Signature } from 'ethers';
 import isEqual from 'lodash/isEqual';
 import { v4 as uuidv4 } from 'uuid';
 
-import { sleep } from '../utils/common';
 import { ErrorHandler } from '../utils/error';
 import { EventEmitter } from '../utils/eventEmitter';
 import { Logger } from '../utils/logger';
 import { Queue } from '../utils/queue';
+import { validateGsocMessage } from '../utils/validation';
 
 import { EVENTS, SECOND } from './constants';
-import { AppState, BeeType, ChatSettings, EthAddress, GsocSubscribtion, UserWithIndex } from './types';
+import { SwarmHistory } from './history';
+import { ChatSettings, EthAddress, GsocMessage, GsocSubscribtion, User, UserMap } from './types';
 import { SwarmChatUtils } from './utils';
 
 export class SwarmChat {
   private emitter = new EventEmitter();
   private utils = new SwarmChatUtils();
+  private history: SwarmHistory;
 
   private logger = new Logger();
   private errorHandler = new ErrorHandler(this.logger);
+  private mutex = new Mutex();
 
   private bees;
   private messagesQueue = new Queue({ clearWaitTime: 200 });
@@ -31,11 +35,8 @@ export class SwarmChat {
   private IDLE_USER_CLEANUP_INTERVAL_TIME = 5000;
   private READ_MESSAGE_TIMEOUT = 1500;
 
-  // local app states
-  private events: any = {}; // WIP - empty for now
-  private activeUsers: Record<string, UserWithIndex> = {};
-  private allTimeUsers: Record<string, UserWithIndex> = {};
-  private latestMessageSender: UserWithIndex | null = null;
+  private activeUsers: UserMap = {};
+  private latestMessageSender: User | null = null;
   private userIndexCache: Record<string, number> = {};
 
   private gsocResourceId: HexString<number> | null = null;
@@ -55,6 +56,7 @@ export class SwarmChat {
     this.gsocResourceId = settings.gsocResourceId;
 
     this.bees = this.utils.initBees(settings.bees);
+    this.history = new SwarmHistory(this.bees, this.gsocResourceId, this.topic, this.ownAddress);
 
     this.FETCH_MESSAGE_INTERVAL_TIME = settings.fetchMessageIntervalTime || this.FETCH_MESSAGE_INTERVAL_TIME;
     this.IDLE_USER_CLEANUP_INTERVAL_TIME = settings.idleUserCleanupIntervalTime || this.IDLE_USER_CLEANUP_INTERVAL_TIME;
@@ -62,16 +64,18 @@ export class SwarmChat {
   }
 
   public start() {
-    this.initSelfState();
+    this.init();
     this.listenToNewSubscribers();
     this.startMessagesFetchProcess();
     this.startIdleUserCleanup();
+    this.history.startHistoryUpdateProcess();
   }
 
   public stop() {
-    this.stopListenToNewSubscribers();
     this.stopMessagesFetchProcess();
     this.stopIdleUserCleanup();
+    this.stopListenToNewSubscribers();
+    this.history.stopHistoryUpdateProcess();
     this.emitter.cleanAll();
   }
 
@@ -79,37 +83,37 @@ export class SwarmChat {
     return this.emitter;
   }
 
+  private async initOwnIndex() {
+    const feedID = this.utils.generateUserOwnedFeedId(this.topic, this.ownAddress);
+
+    const readerBee = this.utils.getReaderBee(this.bees);
+    const feedTopicHex = readerBee.makeFeedTopic(feedID);
+
+    const { latestIndex } = await this.utils.retryAwaitableAsync(() =>
+      this.utils.getLatestFeedIndex(readerBee, feedTopicHex, this.ownAddress),
+    );
+
+    this.ownIndex = latestIndex;
+  }
+
   /**
    * Initializes the user's own feed index by retrieving the latest index from Bee storage.
    * @returns Resolves when the self-index is successfully initialized.
    */
-  public async initSelfState() {
+  private async init() {
     try {
       // TODO: rename event
       this.emitter.emit(EVENTS.LOADING_INIT_USERS, true);
 
-      if (!this.gsocResourceId) {
-        throw new Error('GSOC Resource ID is not defined');
+      const [ownIndexResult, historyInitResult] = await Promise.allSettled([this.initOwnIndex(), this.history.init()]);
+
+      if (ownIndexResult.status === 'rejected') {
+        throw ownIndexResult.reason;
       }
 
-      const feedID = this.utils.generateUserOwnedFeedId(this.topic, this.ownAddress);
-
-      const readerBee = this.getReaderBee();
-      const feedTopicHex = readerBee.makeFeedTopic(feedID);
-
-      const { latestIndex } = await this.utils.retryAwaitableAsync(() =>
-        this.utils.getLatestFeedIndex(readerBee, feedTopicHex, this.ownAddress),
-      );
-      this.ownIndex = latestIndex;
-
-      // the main GSOC contains the latest state of the GSOC updates
-      const mainGsocBee = this.getMainGsocBee();
-      const initGsocData = await this.utils.fetchLatestGsocMessage(mainGsocBee.url, this.topic, this.gsocResourceId);
-      const parsedInitGsocData = JSON.parse(initGsocData);
-      this.logger.debug('Init GSOC DATA:', parsedInitGsocData);
-
-      const messageSender = await this.makeMessageSender();
-      this.setLocalAppStates({ ...parsedInitGsocData, messageSender });
+      if (historyInitResult.status === 'rejected') {
+        this.logger.warn(`historyInitResult failed: ${historyInitResult.reason}`);
+      }
 
       this.emitter.emit(EVENTS.LOADING_INIT_USERS, false);
     } catch (error) {
@@ -121,19 +125,20 @@ export class SwarmChat {
    * Starts listening for new subscribers on the main GSOC node.
    * @throws Will throw an error if the GSOC Resource ID is not defined.
    */
-  public listenToNewSubscribers() {
+  private listenToNewSubscribers() {
     try {
       if (!this.gsocResourceId) {
         throw new Error('GSOC Resource ID is not defined');
       }
 
-      const bee = this.getMainGsocBee();
+      const bee = this.utils.getMainGsocBee(this.bees);
 
+      this.logger.debug('CALLED listenToNewSubsribers');
       this.gsocSubscribtion = this.utils.subscribeToGsoc(
         bee.url,
         this.topic,
         this.gsocResourceId,
-        (gsocMessage: string) => this.gsocListenerQueue.enqueue(() => this.userRegistrationOnGsoc(gsocMessage)),
+        (gsocMessage: string) => this.gsocListenerQueue.enqueue(() => this.processGsocMessage(gsocMessage)),
       );
     } catch (error) {
       this.errorHandler.handleError(error, 'Chat.listenToNewSubscribers');
@@ -147,6 +152,8 @@ export class SwarmChat {
    * @throws Will emit a `MESSAGE_REQUEST_ERROR` event if an error occurs during the process.
    */
   public async sendMessage(message: string): Promise<void> {
+    const release = await this.mutex.acquire();
+
     const messageObj = {
       id: uuidv4(),
       username: this.nickname,
@@ -158,7 +165,7 @@ export class SwarmChat {
     try {
       this.emitter.emit(EVENTS.MESSAGE_REQUEST_SENT, messageObj);
 
-      const { bee, stamp } = this.getWriterBee();
+      const { bee, stamp } = this.utils.getWriterBee(this.bees);
 
       const feedID = this.utils.generateUserOwnedFeedId(this.topic, this.ownAddress);
       const feedTopicHex = bee.makeFeedTopic(feedID);
@@ -176,19 +183,17 @@ export class SwarmChat {
       });
 
       this.ownIndex = nextIndex;
-      // do not allow a new message till the latest is read
-      // TODO other solution
-      await this.broadcastNewAppState();
-      while (!this.isUserIndexRead(this.ownAddress, this.ownIndex).isIndexRead) {
-        await sleep(200);
-      }
+
+      await this.broadcastUserMessage();
     } catch (error) {
       this.emitter.emit(EVENTS.MESSAGE_REQUEST_ERROR, messageObj);
       this.errorHandler.handleError(error, 'Chat.sendMessage');
+    } finally {
+      release();
     }
   }
 
-  async makeMessageSender() {
+  private async makeMessageSender() {
     const wallet = new ethers.Wallet(this.privateKey);
     const address = wallet.address as EthAddress;
 
@@ -213,7 +218,7 @@ export class SwarmChat {
   /**
    * TODO: Add description
    */
-  async broadcastNewAppState() {
+  private async broadcastUserMessage() {
     try {
       if (!this.gsocResourceId) {
         throw new Error('GSOC Resource ID is not defined');
@@ -221,21 +226,19 @@ export class SwarmChat {
 
       const messageSender = await this.makeMessageSender();
 
-      const { bee, stamp } = this.getGsocBee();
+      const { bee, stamp } = this.utils.getGsocBee(this.bees);
 
       const RETRY_COUNT = 5;
       const result = await this.utils.retryAwaitableAsync(
         () =>
           this.utils.sendMessageToGsoc(
             bee.url,
-            stamp,
             this.topic,
+            stamp,
             this.gsocResourceId!,
             JSON.stringify({
               messageSender,
-              activeUsers: { ...this.activeUsers, [messageSender.address]: messageSender },
-              allTimeUsers: { ...this.allTimeUsers, [messageSender.address]: messageSender },
-              events: this.events,
+              historyEntry: this.history.getHistoryEntryWithNewUpdater(this.activeUsers),
             }),
           ),
         RETRY_COUNT,
@@ -273,56 +276,37 @@ export class SwarmChat {
     }
   }
 
-  private setLocalAppStates(appState: AppState) {
-    if (appState.messageSender === null || !this.utils.validateLocalAppState(appState)) {
-      this.logger.warn('Invalid app state set');
-      return;
-    }
-
-    const { messageSender, activeUsers, allTimeUsers, events } = appState;
-    this.events = events;
-    console.log('setLocalAppStates', appState);
-    console.log('setLocalAppStates', { ...activeUsers, [messageSender.address]: messageSender });
-    this.activeUsers = { ...activeUsers, [messageSender.address]: messageSender }; // TODO - set the latest 10 active users
-    this.allTimeUsers = { ...allTimeUsers, [messageSender.address]: messageSender };
-  }
-
-  // TODO - safe check for overwrite attack
-  private updateLocalAppStates(appState: AppState) {
-    if (appState.messageSender === null || !this.utils.validateLocalAppState(appState)) {
-      this.logger.warn('Invalid app state update');
-      return;
-    }
-
-    const { messageSender } = appState;
-    // this.events = events; // TODO: update events
+  private updateActiveUsers(messageSender: User) {
     this.activeUsers[messageSender.address] = messageSender;
-    this.allTimeUsers[messageSender.address] = messageSender;
     this.latestMessageSender = messageSender;
   }
 
   /**
    * Handles user registration through the GSOC system by processing incoming GSOC messages.
    * @param gsocMessage The GSOC message in JSON string format containing user data.
-   */ // TODO RENAME
-  private userRegistrationOnGsoc(gsocMessage: string) {
+   */
+  private processGsocMessage(message: string) {
     try {
-      let appState: AppState;
-      try {
-        appState = JSON.parse(gsocMessage);
-      } catch (parseError) {
-        this.logger.error('Failed to parse GSOC message:', parseError, gsocMessage);
+      const parsedMessage: GsocMessage = JSON.parse(message);
+
+      if (!validateGsocMessage(parsedMessage)) {
+        this.logger.warn('Invalid GSOC message during processing');
         return;
       }
 
-      // TODO validate appState and new punishment algorithm
-      // Do not process the same message twice
-      if (isEqual(this.latestMessageSender, appState.messageSender)) {
+      // TODO new punishment algorithm, is it required?
+      if (isEqual(this.latestMessageSender, parsedMessage.messageSender)) {
         return;
       }
 
-      this.updateLocalAppStates(appState);
-      this.logger.debug('App state update:', appState);
+      if (parsedMessage.messageSender) {
+        this.updateActiveUsers(parsedMessage.messageSender);
+        this.history.processHistoryEntry(this.activeUsers, parsedMessage.historyEntry);
+      } else {
+        this.history.setHistoryEntry(parsedMessage.historyEntry);
+      }
+
+      this.logger.debug('New GSOC message:', parsedMessage);
     } catch (error) {
       this.errorHandler.handleError(error, 'Chat.userRegistrationOnGsoc');
     }
@@ -347,7 +331,7 @@ export class SwarmChat {
    * @param rawTopic - The topic associated with the user's chat.
    * @returns Resolves when the message is successfully processed.
    */
-  private async readMessage(user: UserWithIndex, rawTopic: string) {
+  private async readMessage(user: User, rawTopic: string) {
     try {
       let nextIndex;
       const readCacheState = this.isUserIndexRead(user.address, user.index);
@@ -357,7 +341,7 @@ export class SwarmChat {
         nextIndex = readCacheState.cachedIndex ? readCacheState.cachedIndex + 1 : user.index;
       }
 
-      const bee = this.getReaderBee();
+      const bee = this.utils.getReaderBee(this.bees);
 
       const chatID = this.utils.generateUserOwnedFeedId(rawTopic, user.address);
       const topic = bee.makeFeedTopic(chatID);
@@ -386,7 +370,9 @@ export class SwarmChat {
   }
 
   private stopListenToNewSubscribers() {
+    this.logger.debug('CALLED stopListenToNewSubscribers');
     if (this.gsocSubscribtion) {
+      this.logger.debug('CALLED stopListenToNewSubscribers close');
       this.gsocSubscribtion.close();
       this.gsocSubscribtion = null;
     }
@@ -420,43 +406,5 @@ export class SwarmChat {
       clearInterval(this.idleUserCleanupInterval);
       this.idleUserCleanupInterval = null;
     }
-  }
-
-  private getMainGsocBee() {
-    const { bee } = this.utils.selectBee(this.bees, BeeType.GSOC, true);
-    if (!bee) {
-      throw new Error('Could not get main GSOC bee');
-    }
-    return bee;
-  }
-
-  private getGsocBee() {
-    const { bee, stamp } = this.utils.selectBee(this.bees, BeeType.GSOC);
-    if (!bee) {
-      throw new Error('Could not get GSOC bee');
-    }
-    if (!stamp) {
-      throw new Error('Could not get valid gsoc stamp');
-    }
-    return { bee, stamp };
-  }
-
-  private getReaderBee() {
-    const { bee } = this.utils.selectBee(this.bees, BeeType.READER);
-    if (!bee) {
-      throw new Error('Could not get reader bee');
-    }
-    return bee;
-  }
-
-  private getWriterBee() {
-    const { bee, stamp } = this.utils.selectBee(this.bees, BeeType.WRITER);
-    if (!bee) {
-      throw new Error('Could not get writer bee');
-    }
-    if (!stamp) {
-      throw new Error('Could not get valid writer stamp');
-    }
-    return { bee, stamp };
   }
 }

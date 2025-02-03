@@ -12,8 +12,11 @@ importers:
         specifier: ^8.1.0
         version: 8.1.0
       '@solarpunkltd/gsoc':
-        specifier: ^0.3.1
-        version: 0.3.1
+        specifier: ^0.3.2
+        version: 0.3.2
+      async-mutex:
+        specifier: ^0.5.0
+        version: 0.5.0
       ethers:
         specifier: ^6.13.3
         version: 6.13.4
@@ -23,6 +26,9 @@ importers:
       uuid:
         specifier: ^11.0.3
         version: 11.0.3
+      zod:
+        specifier: ^3.24.1
+        version: 3.24.1
     devDependencies:
       '@types/lodash':
         specifier: ^4.17.14
@@ -506,8 +512,8 @@ packages:
   '@rushstack/ts-command-line@4.22.6':
     resolution: {integrity: sha512-QSRqHT/IfoC5nk9zn6+fgyqOPXHME0BfchII9EUPR19pocsNp/xSbeBCbD3PIR2Lg+Q5qk7OFqk1VhWPMdKHJg==}
 
-  '@solarpunkltd/gsoc@0.3.1':
-    resolution: {integrity: sha512-h7T+X9ZrcNy733BJEVHul2dxutPEr730j1q6ySX3eDPeOrGiuWCWDE8TQl23bG/bA02bPGF59mJw4wf12Rb77g==}
+  '@solarpunkltd/gsoc@0.3.2':
+    resolution: {integrity: sha512-2nTWzeHk8GjDChiYIdcOJtKZ9KRnj3zjsfl9GBqrX9hVtnzgfauHRLjRnCwVUNIFkBj9PcY2B8o9m7/I1yxVAw==}
 
   '@types/argparse@1.0.38':
     resolution: {integrity: sha512-ebDJ9b0e702Yr7pWgB0jzm+CX4Srzz8RcXtLJDJB+BSccqMa36uyH/zUsSYao5+BD1ytv3k3rPYCq4mAE1hsXA==}
@@ -705,6 +711,9 @@ packages:
 
   assert@2.1.0:
     resolution: {integrity: sha512-eLHpSK/Y4nhMJ07gDaAzoX/XAKS8PSaojml3M0DM4JpV1LAi5JOJ/p6H/XWrl8L+DzVEvVCW1z3vWAaB9oTsQw==}
+
+  async-mutex@0.5.0:
+    resolution: {integrity: sha512-1A94B18jkJ3DYq284ohPxoXbfTA5HsQ7/Mf4DEhcyLx3Bz27Rh59iScbB6EPiP+B+joue6YCxcMXSbFC1tZKwA==}
 
   asynckit@0.4.0:
     resolution: {integrity: sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q==}
@@ -2048,6 +2057,9 @@ packages:
     resolution: {integrity: sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==}
     engines: {node: '>=10'}
 
+  zod@3.24.1:
+    resolution: {integrity: sha512-muH7gBL9sI1nciMZV67X5fTKKBLtwpZ5VBp1vsOQzj1MhrBZ4wlVCm3gedKZWLp0Oyel8sIGfeiz54Su+OVT+A==}
+
 snapshots:
 
   '@adraffy/ens-normalize@1.10.1': {}
@@ -2405,7 +2417,7 @@ snapshots:
     transitivePeerDependencies:
       - '@types/node'
 
-  '@solarpunkltd/gsoc@0.3.1':
+  '@solarpunkltd/gsoc@0.3.2':
     dependencies:
       '@nugaon/bmt-js': 3.0.2
       axios: 1.7.9
@@ -2678,6 +2690,10 @@ snapshots:
       object-is: 1.1.6
       object.assign: 4.1.5
       util: 0.12.5
+
+  async-mutex@0.5.0:
+    dependencies:
+      tslib: 2.7.0
 
   asynckit@0.4.0: {}
 
@@ -4228,3 +4244,5 @@ snapshots:
   yallist@4.0.0: {}
 
   yocto-queue@0.1.0: {}
+
+  zod@3.24.1: {}

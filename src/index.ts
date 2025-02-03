@@ -1,5 +1,5 @@
-export { SwarmChat } from './libs/core';
+export { SwarmChat } from './lib/core';
 
-export { EVENTS } from './libs/constants';
+export { EVENTS } from './lib/constants';
 
-export type { MessageData, UserWithIndex, EthAddress, Bees, VisibleMessage } from './libs/types';
+export type { MessageData, User, EthAddress, Bees, VisibleMessage } from './lib/types';
