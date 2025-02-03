@@ -15,7 +15,6 @@ export function mineResourceId(url: string, stamp: BatchId, overlay: string, top
       consensus: {
         id: `SwarmDecentralizedChat::${topic}`,
         assertRecord: (_input) => {
-          // TODO: Implement this
           return true;
         },
       },
