@@ -47,13 +47,6 @@ export class Queue {
     this.processQueue();
   }
 
-  public async clearQueue(): Promise<void> {
-    this.tasks = [];
-    while (this.isProcessing) {
-      await sleep(this.clearWaitTime);
-    }
-  }
-
   public async waitForProcessing(): Promise<boolean> {
     if (this.isWaiting) return true;
 

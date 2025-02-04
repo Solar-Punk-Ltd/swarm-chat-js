@@ -68,6 +68,11 @@ export interface UserHistory {
   messageEntries: MessageEntry[];
 }
 
+export type UserMessageEntry = {
+  address: EthAddress;
+  entry: MessageEntry;
+};
+
 export type UserMap = Record<string, User>;
 
 export type UserHistoryMap = Record<string, UserHistory>;

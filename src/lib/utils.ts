@@ -40,6 +40,51 @@ export class SwarmChatUtils {
     return `${topic}_EthercastChat_${userAddress}`;
   }
 
+  public async writeUserFeedDataByIndex(params: {
+    bees: InitializedBees;
+    rawTopic: string;
+    userAddress: EthAddress;
+    index: number;
+    privateKey: string;
+    data: any;
+  }): Promise<any> {
+    const { bee, stamp } = this.getWriterBee(params.bees);
+
+    const feedID = this.generateUserOwnedFeedId(params.rawTopic, params.userAddress);
+    const feedTopicHex = bee.makeFeedTopic(feedID);
+    const feedWriter = bee.makeFeedWriter('sequence', feedTopicHex, params.privateKey);
+
+    const msgData = await this.retryAwaitableAsync(() => this.uploadObjectToBee(bee, params.data, stamp));
+    if (!msgData) throw new Error('Uploaded message data is empty');
+
+    await feedWriter.upload(stamp, msgData.reference, {
+      index: params.index,
+    });
+  }
+
+  public async fetchUserFeedDataByIndex(params: {
+    bees: InitializedBees;
+    rawTopic: string;
+    userAddress: EthAddress;
+    index: number;
+    options?: { timeout?: number };
+  }) {
+    const { bees, rawTopic, userAddress, index, options = {} } = params;
+    const timeout = options.timeout ?? 1500;
+
+    const bee = this.getReaderBee(bees);
+    const chatID = this.generateUserOwnedFeedId(rawTopic, userAddress);
+    const topic = bee.makeFeedTopic(chatID);
+    const feedReader = bee.makeFeedReader('sequence', topic, userAddress, { timeout });
+
+    const recordPointer = await feedReader.download({ index });
+    const data = await bee.downloadData(recordPointer.reference, {
+      headers: { 'Swarm-Redundancy-Level': '0' },
+    });
+
+    return JSON.parse(new TextDecoder().decode(data));
+  }
+
   /**
    * Initializes Bee instances based on the provided Bees configuration.
    * @param bees - The Bees configuration object containing single or multiple bees.

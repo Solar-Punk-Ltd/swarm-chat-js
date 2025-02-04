@@ -56,7 +56,7 @@ export class SwarmChat {
     this.gsocResourceId = settings.gsocResourceId;
 
     this.bees = this.utils.initBees(settings.bees);
-    this.history = new SwarmHistory(this.bees, this.gsocResourceId, this.topic, this.ownAddress);
+    this.history = new SwarmHistory(this.bees, this.emitter, this.gsocResourceId, this.topic, this.ownAddress);
 
     this.FETCH_MESSAGE_INTERVAL_TIME = settings.fetchMessageIntervalTime || this.FETCH_MESSAGE_INTERVAL_TIME;
     this.IDLE_USER_CLEANUP_INTERVAL_TIME = settings.idleUserCleanupIntervalTime || this.IDLE_USER_CLEANUP_INTERVAL_TIME;
@@ -84,9 +84,9 @@ export class SwarmChat {
   }
 
   private async initOwnIndex() {
-    const feedID = this.utils.generateUserOwnedFeedId(this.topic, this.ownAddress);
-
     const readerBee = this.utils.getReaderBee(this.bees);
+
+    const feedID = this.utils.generateUserOwnedFeedId(this.topic, this.ownAddress);
     const feedTopicHex = readerBee.makeFeedTopic(feedID);
 
     const { latestIndex } = await this.utils.retryAwaitableAsync(() =>
@@ -102,22 +102,26 @@ export class SwarmChat {
    */
   private async init() {
     try {
-      // TODO: rename event
-      this.emitter.emit(EVENTS.LOADING_INIT_USERS, true);
+      this.emitter.emit(EVENTS.LOADING_INIT, true);
 
       const [ownIndexResult, historyInitResult] = await Promise.allSettled([this.initOwnIndex(), this.history.init()]);
 
+      // TODO this is a critical error, handle it correctly
       if (ownIndexResult.status === 'rejected') {
         throw ownIndexResult.reason;
       }
 
       if (historyInitResult.status === 'rejected') {
         this.logger.warn(`historyInitResult failed: ${historyInitResult.reason}`);
+      } else {
+        await this.history.fetchPreviousMessages({
+          preDownload: false,
+        });
       }
-
-      this.emitter.emit(EVENTS.LOADING_INIT_USERS, false);
     } catch (error) {
       this.errorHandler.handleError(error, 'Chat.initSelfState');
+    } finally {
+      this.emitter.emit(EVENTS.LOADING_INIT, false);
     }
   }
 
@@ -165,21 +169,15 @@ export class SwarmChat {
     try {
       this.emitter.emit(EVENTS.MESSAGE_REQUEST_SENT, messageObj);
 
-      const { bee, stamp } = this.utils.getWriterBee(this.bees);
-
-      const feedID = this.utils.generateUserOwnedFeedId(this.topic, this.ownAddress);
-      const feedTopicHex = bee.makeFeedTopic(feedID);
-      const feedWriter = bee.makeFeedWriter('sequence', feedTopicHex, this.privateKey);
-
       const nextIndex = this.ownIndex === -1 ? 0 : this.ownIndex + 1;
 
-      const msgData = await this.utils.retryAwaitableAsync(() =>
-        this.utils.uploadObjectToBee(bee, { ...messageObj, index: this.ownIndex }, stamp),
-      );
-      if (!msgData) throw new Error('Uploaded message data is empty');
-
-      await feedWriter.upload(stamp, msgData.reference, {
+      await this.utils.writeUserFeedDataByIndex({
+        bees: this.bees,
+        userAddress: this.ownAddress,
+        rawTopic: this.topic,
         index: nextIndex,
+        privateKey: this.privateKey,
+        data: { ...messageObj, index: this.ownIndex },
       });
 
       this.ownIndex = nextIndex;
@@ -190,6 +188,15 @@ export class SwarmChat {
       this.errorHandler.handleError(error, 'Chat.sendMessage');
     } finally {
       release();
+    }
+  }
+
+  public async fetchPreviousMessages() {
+    try {
+      this.emitter.emit(EVENTS.LOADING_PREVIOUS_MESSAGES, true);
+      return this.history.fetchPreviousMessages({ preDownload: true });
+    } finally {
+      this.emitter.emit(EVENTS.LOADING_PREVIOUS_MESSAGES, false);
     }
   }
 
@@ -228,20 +235,17 @@ export class SwarmChat {
 
       const { bee, stamp } = this.utils.getGsocBee(this.bees);
 
-      const RETRY_COUNT = 5;
-      const result = await this.utils.retryAwaitableAsync(
-        () =>
-          this.utils.sendMessageToGsoc(
-            bee.url,
-            this.topic,
-            stamp,
-            this.gsocResourceId!,
-            JSON.stringify({
-              messageSender,
-              historyEntry: this.history.getHistoryEntryWithNewUpdater(this.activeUsers),
-            }),
-          ),
-        RETRY_COUNT,
+      const result = await this.utils.retryAwaitableAsync(() =>
+        this.utils.sendMessageToGsoc(
+          bee.url,
+          this.topic,
+          stamp,
+          this.gsocResourceId!,
+          JSON.stringify({
+            messageSender,
+            historyEntry: this.history.getHistoryEntryWithNewUpdater(this.activeUsers),
+          }),
+        ),
       );
 
       if (!result?.payload.length) throw new Error('GSOC result payload is empty');
@@ -312,7 +316,7 @@ export class SwarmChat {
     }
   }
 
-  private async readMessagesForAll() {
+  private async readAllActiveUserMessage() {
     // Return when the previous batch is still processing
     const isWaiting = await this.messagesQueue.waitForProcessing();
     if (isWaiting) {
@@ -341,31 +345,17 @@ export class SwarmChat {
         nextIndex = readCacheState.cachedIndex ? readCacheState.cachedIndex + 1 : user.index;
       }
 
-      const bee = this.utils.getReaderBee(this.bees);
-
-      const chatID = this.utils.generateUserOwnedFeedId(rawTopic, user.address);
-      const topic = bee.makeFeedTopic(chatID);
-      const feedReader = bee.makeFeedReader('sequence', topic, user.address, {
-        timeout: this.READ_MESSAGE_TIMEOUT,
+      const messageData = await this.utils.fetchUserFeedDataByIndex({
+        rawTopic,
+        bees: this.bees,
+        userAddress: user.address,
+        index: nextIndex,
       });
 
-      const recordPointer = await feedReader.download({ index: nextIndex });
-      const data = await bee.downloadData(recordPointer.reference, {
-        headers: {
-          'Swarm-Redundancy-Level': '0',
-        },
-      });
-      const messageData = JSON.parse(new TextDecoder().decode(data));
-
-      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, messageData);
       this.setUserIndexCache(user.address, nextIndex);
+      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, messageData);
     } catch (error) {
       this.errorHandler.handleError(error, 'readMessage');
-    } finally {
-      // consider users available when at least one message tried to be read
-      /*     if (this.ownAddress === user.address) {
-        this.emitter.emit(EVENTS.LOADING_INIT_USERS, false);
-      } */
     }
   }
 
@@ -383,7 +373,7 @@ export class SwarmChat {
       this.logger.warn('Messages fetch process is already running.');
       return;
     }
-    this.fetchMessageTimer = setInterval(this.readMessagesForAll.bind(this), this.FETCH_MESSAGE_INTERVAL_TIME);
+    this.fetchMessageTimer = setInterval(this.readAllActiveUserMessage.bind(this), this.FETCH_MESSAGE_INTERVAL_TIME);
   }
 
   private stopMessagesFetchProcess() {
