@@ -7,6 +7,7 @@ import { EventEmitter } from '../utils/eventEmitter';
 import { Logger } from '../utils/logger';
 import { Queue } from '../utils/queue';
 import { validateChatHistory, validateGsocMessage, validateHistoryEntry } from '../utils/validation';
+import { waitForBroadcast } from '../utils/waitForBroadcast';
 
 import { EVENTS } from './constants';
 import {
@@ -158,7 +159,7 @@ export class SwarmHistory {
       const historyRef = await this.uploadHistory(newHistory);
 
       const newEntry = this.createNewHistoryEntry(historyRef);
-      await this.broadcastHistoryEntry(newEntry);
+      await this.waitForHistoryEntryBroadcast(newEntry);
 
       this.cleanupEntryBuffer(latestEntry.id);
       this.processedRefs.add(latestEntry.ref);
@@ -167,6 +168,16 @@ export class SwarmHistory {
     } finally {
       release();
     }
+  }
+
+  private async waitForHistoryEntryBroadcast(newEntry: ChatHistoryEntry): Promise<void> {
+    return waitForBroadcast<number>({
+      condition: () => this.historyEntry.ref === newEntry.ref,
+      broadcast: () => this.broadcastHistoryEntry(newEntry),
+      maxRetries: 5,
+      intervalMs: 1500,
+      logger: this.logger,
+    });
   }
 
   private cleanupEntryBuffer(entryId?: number) {
@@ -233,6 +244,8 @@ export class SwarmHistory {
           }),
         ),
       );
+
+      this.logger.debug('NEW history entry broadcast CALLED');
 
       if (!result?.payload.length) throw new Error('GSOC result payload is empty');
     } catch (error) {

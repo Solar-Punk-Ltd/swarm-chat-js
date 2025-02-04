@@ -9,6 +9,7 @@ import { EventEmitter } from '../utils/eventEmitter';
 import { Logger } from '../utils/logger';
 import { Queue } from '../utils/queue';
 import { validateGsocMessage } from '../utils/validation';
+import { waitForBroadcast } from '../utils/waitForBroadcast';
 
 import { EVENTS, SECOND } from './constants';
 import { SwarmHistory } from './history';
@@ -36,7 +37,7 @@ export class SwarmChat {
   private READ_MESSAGE_TIMEOUT = 1500;
 
   private activeUsers: UserMap = {};
-  private latestMessageSender: User | null = null;
+  private latestMessage: any | null = null;
   private userIndexCache: Record<string, number> = {};
 
   private gsocResourceId: HexString<number> | null = null;
@@ -89,8 +90,10 @@ export class SwarmChat {
     const feedID = this.utils.generateUserOwnedFeedId(this.topic, this.ownAddress);
     const feedTopicHex = readerBee.makeFeedTopic(feedID);
 
-    const { latestIndex } = await this.utils.retryAwaitableAsync(() =>
-      this.utils.getLatestFeedIndex(readerBee, feedTopicHex, this.ownAddress),
+    const { latestIndex } = await this.utils.retryAwaitableAsync(
+      () => this.utils.getLatestFeedIndex(readerBee, feedTopicHex, this.ownAddress),
+      10,
+      1000,
     );
 
     this.ownIndex = latestIndex;
@@ -106,7 +109,6 @@ export class SwarmChat {
 
       const [ownIndexResult, historyInitResult] = await Promise.allSettled([this.initOwnIndex(), this.history.init()]);
 
-      // TODO this is a critical error, handle it correctly
       if (ownIndexResult.status === 'rejected') {
         throw ownIndexResult.reason;
       }
@@ -118,10 +120,11 @@ export class SwarmChat {
           preDownload: false,
         });
       }
+
+      this.emitter.emit(EVENTS.LOADING_INIT, false);
     } catch (error) {
       this.errorHandler.handleError(error, 'Chat.initSelfState');
-    } finally {
-      this.emitter.emit(EVENTS.LOADING_INIT, false);
+      this.emitter.emit(EVENTS.CRITICAL_ERROR, error);
     }
   }
 
@@ -146,6 +149,7 @@ export class SwarmChat {
       );
     } catch (error) {
       this.errorHandler.handleError(error, 'Chat.listenToNewSubscribers');
+      this.emitter.emit(EVENTS.CRITICAL_ERROR, error);
     }
   }
 
@@ -156,8 +160,6 @@ export class SwarmChat {
    * @throws Will emit a `MESSAGE_REQUEST_ERROR` event if an error occurs during the process.
    */
   public async sendMessage(message: string): Promise<void> {
-    const release = await this.mutex.acquire();
-
     const messageObj = {
       id: uuidv4(),
       username: this.nickname,
@@ -182,12 +184,10 @@ export class SwarmChat {
 
       this.ownIndex = nextIndex;
 
-      await this.broadcastUserMessage();
+      await this.waitForMessageBroadcast(nextIndex);
     } catch (error) {
       this.emitter.emit(EVENTS.MESSAGE_REQUEST_ERROR, messageObj);
       this.errorHandler.handleError(error, 'Chat.sendMessage');
-    } finally {
-      release();
     }
   }
 
@@ -222,11 +222,22 @@ export class SwarmChat {
     };
   }
 
+  private async waitForMessageBroadcast(index: number): Promise<void> {
+    return waitForBroadcast<number>({
+      condition: () => Object.values(this.activeUsers).some((user) => user.index === index),
+      broadcast: () => this.broadcastUserMessage(),
+      maxRetries: 5,
+      intervalMs: 1500,
+      logger: this.logger,
+    });
+  }
+
   /**
    * TODO: Add description
    */
   private async broadcastUserMessage() {
     try {
+      this.logger.debug('broadcastUserMessage entry CALLED');
       if (!this.gsocResourceId) {
         throw new Error('GSOC Resource ID is not defined');
       }
@@ -247,6 +258,8 @@ export class SwarmChat {
           }),
         ),
       );
+
+      this.logger.debug('broadcastUserMessage entry CALLED');
 
       if (!result?.payload.length) throw new Error('GSOC result payload is empty');
     } catch (error) {
@@ -282,7 +295,6 @@ export class SwarmChat {
 
   private updateActiveUsers(messageSender: User) {
     this.activeUsers[messageSender.address] = messageSender;
-    this.latestMessageSender = messageSender;
   }
 
   /**
@@ -297,9 +309,10 @@ export class SwarmChat {
         this.logger.warn('Invalid GSOC message during processing');
         return;
       }
+      this.logger.debug('New GSOC message:', parsedMessage);
 
       // TODO new punishment algorithm, is it required?
-      if (isEqual(this.latestMessageSender, parsedMessage.messageSender)) {
+      if (isEqual(this.latestMessage, parsedMessage)) {
         return;
       }
 
@@ -310,7 +323,7 @@ export class SwarmChat {
         this.history.setHistoryEntry(parsedMessage.historyEntry);
       }
 
-      this.logger.debug('New GSOC message:', parsedMessage);
+      this.latestMessage = parsedMessage;
     } catch (error) {
       this.errorHandler.handleError(error, 'Chat.userRegistrationOnGsoc');
     }
