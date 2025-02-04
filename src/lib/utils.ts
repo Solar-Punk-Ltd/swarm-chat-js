@@ -378,6 +378,7 @@ export class SwarmChatUtils {
     resourceId: HexString<number>,
     message: string,
   ): Promise<SingleOwnerChunk | undefined> {
+    this.logger.debug('sendMessageToGsoc entry CALLED');
     if (!resourceId) throw new Error('ResourceID was not provided!');
 
     const informationSignal = new InformationSignal(url, {
@@ -394,7 +395,7 @@ export class SwarmChatUtils {
       timeout: this.UPLOAD_GSOC_TIMEOUT,
     });
 
-    this.logger.debug('sendMessageToGsoc - CALLED');
+    this.logger.debug('sendMessageToGsoc end CALLED');
     return uploadedSoc;
   }
 

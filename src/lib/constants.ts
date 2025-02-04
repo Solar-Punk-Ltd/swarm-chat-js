@@ -4,7 +4,7 @@ export const EVENTS = {
   MESSAGE_RECEIVED: 'messageReceived',
   MESSAGE_REQUEST_SENT: 'messageRequestSent',
   MESSAGE_REQUEST_ERROR: 'messageRequestError',
-  ERROR: 'errorEvent',
+  CRITICAL_ERROR: 'criticalError',
 };
 
 export const SECOND = 1000;
