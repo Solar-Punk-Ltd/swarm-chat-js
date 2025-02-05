@@ -39,7 +39,7 @@ export class SwarmChat {
   private userIndexCache: Record<string, number> = {};
 
   private gsocResourceId: HexString<number> | null = null;
-  private gsocSubscribtion: GsocSubscription | null = null;
+  private gsocSubscription: GsocSubscription | null = null;
 
   private privateKey: string;
   private topic: string;
@@ -70,7 +70,7 @@ export class SwarmChat {
 
   public start() {
     this.init();
-    this.listenToNewSubscribers();
+    this.subscribeToGSOC();
     this.startMessagesFetchProcess();
     this.startIdleUserCleanup();
     this.history.startHistoryUpdateProcess();
@@ -79,7 +79,7 @@ export class SwarmChat {
   public stop() {
     this.stopMessagesFetchProcess();
     this.stopIdleUserCleanup();
-    this.stopListenToNewSubscribers();
+    this.unsubFromGSOC();
     this.history.stopHistoryUpdateProcess();
     this.emitter.cleanAll();
   }
@@ -189,7 +189,7 @@ export class SwarmChat {
    * Starts listening for new subscribers on the main GSOC node.
    * @throws Will throw an error if the GSOC Resource ID is not defined.
    */
-  private listenToNewSubscribers() {
+  private subscribeToGSOC() {
     try {
       if (!this.gsocResourceId) {
         throw new Error('GSOC Resource ID is not defined');
@@ -198,7 +198,7 @@ export class SwarmChat {
       const bee = this.utils.getMainGsocBee(this.bees);
 
       this.logger.debug('CALLED listenToNewSubsribers', bee.url, this.topic, this.gsocResourceId);
-      this.gsocSubscribtion = this.utils.subscribeToGsoc(
+      this.gsocSubscription = this.utils.subscribeToGsoc(
         bee.url,
         this.topic,
         this.gsocResourceId,
@@ -363,10 +363,10 @@ export class SwarmChat {
     }
   }
 
-  private stopListenToNewSubscribers() {
-    if (this.gsocSubscribtion) {
-      this.gsocSubscribtion.ws.close();
-      this.gsocSubscribtion = null;
+  private unsubFromGSOC() {
+    if (this.gsocSubscription) {
+      this.gsocSubscription.ws.close();
+      this.gsocSubscription = null;
     }
   }
 
