@@ -197,7 +197,7 @@ export class SwarmChat {
 
       const bee = this.utils.getMainGsocBee(this.bees);
 
-      this.logger.debug('CALLED listenToNewSubsribers');
+      this.logger.debug('CALLED listenToNewSubsribers', bee.url, this.topic, this.gsocResourceId);
       this.gsocSubscribtion = this.utils.subscribeToGsoc(
         bee.url,
         this.topic,
@@ -365,7 +365,7 @@ export class SwarmChat {
 
   private stopListenToNewSubscribers() {
     if (this.gsocSubscribtion) {
-      this.gsocSubscribtion.close();
+      this.gsocSubscribtion.ws.close();
       this.gsocSubscribtion = null;
     }
   }

@@ -1,6 +1,6 @@
 import { Bytes } from './bee';
 
 export interface GsocSubscription {
-  close: () => void;
+  ws: any; // TODO
   gsocAddress: Bytes<32>;
 }
