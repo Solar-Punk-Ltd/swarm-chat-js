@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { Logger } from './logger';
 
-const logger = new Logger();
+const logger = Logger.getInstance();
 
 const UserSchema = z.object({
   username: z.string(),
@@ -41,6 +41,10 @@ export function validateGsocMessage(message: any): boolean {
   }
   if (message.messageSender && !validateUser(message.messageSender)) {
     console.warn('Invalid messageSender');
+    return false;
+  }
+  if (!validateHistoryEntry(message.historyEntry)) {
+    console.warn('Invalid historyEntry');
     return false;
   }
   return true;

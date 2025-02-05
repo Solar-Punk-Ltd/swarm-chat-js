@@ -1,13 +1,18 @@
 export class Logger {
-  private context: string;
+  private static instance: Logger;
 
-  constructor(context?: string) {
-    this.context = context || '';
+  private constructor() {}
+
+  public static getInstance(): Logger {
+    if (!Logger.instance) {
+      Logger.instance = new Logger();
+    }
+    return Logger.instance;
   }
 
   private formatMessage(level: string, ...args: any[]): string {
     const timestamp = new Date().toISOString();
-    return `[${timestamp}] [${level.toUpperCase()}] - ${this.context} ${args
+    return `[${timestamp}] [${level.toUpperCase()}] - ${args
       .map((arg) => (typeof arg === 'object' ? JSON.stringify(arg) : arg))
       .join(' ')}`;
   }
@@ -30,12 +35,5 @@ export class Logger {
 
   debug(...args: any[]): void {
     console.debug(this.formatMessage('debug', ...args));
-  }
-
-  /**
-   * Allows creating a child logger with a specific context.
-   */
-  withContext(context: string): Logger {
-    return new Logger(context);
   }
 }

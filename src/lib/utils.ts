@@ -14,31 +14,12 @@ import { Bees, BeeSettings, BeeType, EthAddress, InitializedBee, InitializedBees
  * user validation, and interaction with Bee and GSOC.
  */
 export class SwarmChatUtils {
-  private logger = new Logger();
-  private errorHandler = new ErrorHandler(this.logger);
+  private logger = Logger.getInstance();
+  private errorHandler = new ErrorHandler();
 
   private UPLOAD_GSOC_TIMEOUT = 2000;
 
   constructor() {}
-
-  /**
-   * Generate a feed ID for storing user data based on the topic.
-   * @param topic The topic identifier.
-   * @returns The generated feed ID.
-   */
-  public generateUsersFeedId(topic: string): string {
-    return `${topic}_EthercastChat_Users`;
-  }
-
-  /**
-   * Generate a user-specific feed ID based on topic and user address.
-   * @param topic The topic identifier.
-   * @param userAddress The user’s Ethereum address.
-   * @returns The generated user-specific feed ID.
-   */
-  public generateUserOwnedFeedId(topic: string, userAddress: EthAddress): string {
-    return `${topic}_EthercastChat_${userAddress}`;
-  }
 
   public async writeUserFeedDataByIndex(params: {
     bees: InitializedBees;
@@ -256,16 +237,9 @@ export class SwarmChatUtils {
     });
   }
 
-  /**
-   * Upload an object to the Bee storage.
-   * @param bee The Bee instance.
-   * @param jsObject The object to upload.
-   * @param stamp The postage stamp.
-   * @returns The upload result or null if an error occurs.
-   */
   public async uploadObjectToBee(bee: Bee, jsObject: object, stamp: BatchId): Promise<UploadResult | null> {
     try {
-      const result = await bee.uploadData(stamp as any, this.serializeRecord(jsObject), { redundancyLevel: 4 });
+      const result = await bee.uploadData(stamp, this.serializeRecord(jsObject), { redundancyLevel: 4 });
       return result;
     } catch (error) {
       this.errorHandler.handleError(error, 'Utils.uploadObjectToBee');
@@ -283,17 +257,16 @@ export class SwarmChatUtils {
     }
   }
 
-  /**
-   * Retrieve the latest feed index for a topic and address.
-   * @param bee The Bee instance.
-   * @param topic The topic for the feed.
-   * @param address The address owning the feed.
-   * @returns The latest and next feed indexes.
-   */
-  public async getLatestFeedIndex(bee: Bee, topic: string, address: EthAddress) {
+  public async getLatestFeedIndex(bees: InitializedBees, rawTopic: string, address: EthAddress) {
     try {
-      const feedReader = bee.makeFeedReader('sequence', topic, address);
+      const readerBee = this.getReaderBee(bees);
+
+      const feedID = this.generateUserOwnedFeedId(rawTopic, address);
+      const topic = readerBee.makeFeedTopic(feedID);
+
+      const feedReader = readerBee.makeFeedReader('sequence', topic, address);
       const feedEntry = await feedReader.download();
+
       const latestIndex = parseInt(feedEntry.feedIndex.toString(), HEX_RADIX);
       const nextIndex = parseInt(feedEntry.feedIndexNext, HEX_RADIX);
 
@@ -309,7 +282,6 @@ export class SwarmChatUtils {
   /**
    * Subscribe to GSOC messages for a topic and resource ID.
    * @param url The Bee URL.
-   * @param stamp The postage stamp.
    * @param topic The chat topic.
    * @param resourceId The resource ID for subscription.
    * @param callback Callback to handle incoming messages.
@@ -344,6 +316,13 @@ export class SwarmChatUtils {
     return gsocSub;
   }
 
+  /**
+   * Fetch the latest GSOC message for a specific topic and resource ID.
+   * @param url The Bee URL.
+   * @param topic The chat topic.
+   * @param resourceId The resource ID for the message.
+   * @returns The latest GSOC message
+   */
   public async fetchLatestGsocMessage(url: string, topic: string, resourceId: HexString<number>): Promise<any> {
     if (!resourceId) throw new Error('ResourceID was not provided!');
 
@@ -397,6 +376,16 @@ export class SwarmChatUtils {
 
     this.logger.debug('sendMessageToGsoc end CALLED');
     return uploadedSoc;
+  }
+
+  /**
+   * Generate a user-specific feed ID based on topic and user address.
+   * @param topic The topic identifier.
+   * @param userAddress The user’s Ethereum address.
+   * @returns The generated user-specific feed ID.
+   */
+  private generateUserOwnedFeedId(topic: string, userAddress: EthAddress): string {
+    return `${topic}_EthercastChat_${userAddress}`;
   }
 
   /**

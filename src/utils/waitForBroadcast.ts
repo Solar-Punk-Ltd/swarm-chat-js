@@ -1,12 +1,12 @@
+import { Logger } from './logger';
+
+const logger = Logger.getInstance();
+
 export interface BroadcastWaiterOptions<T> {
   condition: () => boolean;
   broadcast: () => Promise<void>;
   maxRetries?: number;
   intervalMs?: number;
-  logger?: {
-    debug: (...args: any[]) => void;
-    warn: (...args: any[]) => void;
-  };
 }
 
 /**
@@ -15,7 +15,7 @@ export interface BroadcastWaiterOptions<T> {
  * @returns A promise that resolves when the condition is met, or rejects after maxRetries.
  */
 export async function waitForBroadcast<T>(options: BroadcastWaiterOptions<T>): Promise<void> {
-  const { condition, broadcast, maxRetries = 5, intervalMs = 2000, logger = console } = options;
+  const { condition, broadcast, maxRetries = 5, intervalMs = 1500 } = options;
 
   return new Promise<void>((resolve, reject) => {
     let counter = 0;
