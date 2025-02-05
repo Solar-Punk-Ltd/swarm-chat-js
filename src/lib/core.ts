@@ -1,5 +1,4 @@
 import { HexString } from '@solarpunkltd/gsoc/dist/types';
-import { Mutex } from 'async-mutex';
 import { ethers, Signature } from 'ethers';
 import isEqual from 'lodash/isEqual';
 import { v4 as uuidv4 } from 'uuid';
@@ -13,7 +12,7 @@ import { waitForBroadcast } from '../utils/waitForBroadcast';
 
 import { EVENTS, SECOND } from './constants';
 import { SwarmHistory } from './history';
-import { ChatSettings, EthAddress, GsocMessage, GsocSubscribtion, User, UserMap } from './types';
+import { ChatSettings, EthAddress, GsocMessage, GsocSubscription, User, UserMap } from './types';
 import { SwarmChatUtils } from './utils';
 
 export class SwarmChat {
@@ -21,9 +20,8 @@ export class SwarmChat {
   private utils = new SwarmChatUtils();
   private history: SwarmHistory;
 
-  private logger = new Logger();
-  private errorHandler = new ErrorHandler(this.logger);
-  private mutex = new Mutex();
+  private logger = Logger.getInstance();
+  private errorHandler = new ErrorHandler();
 
   private bees;
   private messagesQueue = new Queue({ clearWaitTime: 200 });
@@ -41,7 +39,7 @@ export class SwarmChat {
   private userIndexCache: Record<string, number> = {};
 
   private gsocResourceId: HexString<number> | null = null;
-  private gsocSubscribtion: GsocSubscribtion | null = null;
+  private gsocSubscribtion: GsocSubscription | null = null;
 
   private privateKey: string;
   private topic: string;
@@ -57,7 +55,13 @@ export class SwarmChat {
     this.gsocResourceId = settings.gsocResourceId;
 
     this.bees = this.utils.initBees(settings.bees);
-    this.history = new SwarmHistory(this.bees, this.emitter, this.gsocResourceId, this.topic, this.ownAddress);
+    this.history = new SwarmHistory({
+      gsocResourceId: this.gsocResourceId,
+      bees: this.bees,
+      ownAddress: this.ownAddress,
+      topic: this.topic,
+      emitter: this.emitter,
+    });
 
     this.FETCH_MESSAGE_INTERVAL_TIME = settings.fetchMessageIntervalTime || this.FETCH_MESSAGE_INTERVAL_TIME;
     this.IDLE_USER_CLEANUP_INTERVAL_TIME = settings.idleUserCleanupIntervalTime || this.IDLE_USER_CLEANUP_INTERVAL_TIME;
@@ -84,79 +88,15 @@ export class SwarmChat {
     return this.emitter;
   }
 
-  private async initOwnIndex() {
-    const readerBee = this.utils.getReaderBee(this.bees);
-
-    const feedID = this.utils.generateUserOwnedFeedId(this.topic, this.ownAddress);
-    const feedTopicHex = readerBee.makeFeedTopic(feedID);
-
-    const { latestIndex } = await this.utils.retryAwaitableAsync(
-      () => this.utils.getLatestFeedIndex(readerBee, feedTopicHex, this.ownAddress),
-      10,
-      1000,
-    );
-
-    this.ownIndex = latestIndex;
+  public orderMessages(messages: any[]) {
+    return this.utils.orderMessages(messages);
   }
 
   /**
-   * Initializes the user's own feed index by retrieving the latest index from Bee storage.
-   * @returns Resolves when the self-index is successfully initialized.
-   */
-  private async init() {
-    try {
-      this.emitter.emit(EVENTS.LOADING_INIT, true);
-
-      const [ownIndexResult, historyInitResult] = await Promise.allSettled([this.initOwnIndex(), this.history.init()]);
-
-      if (ownIndexResult.status === 'rejected') {
-        throw ownIndexResult.reason;
-      }
-
-      if (historyInitResult.status === 'rejected') {
-        this.logger.warn(`historyInitResult failed: ${historyInitResult.reason}`);
-      } else {
-        await this.history.fetchPreviousMessages({
-          preDownload: false,
-        });
-      }
-
-      this.emitter.emit(EVENTS.LOADING_INIT, false);
-    } catch (error) {
-      this.errorHandler.handleError(error, 'Chat.initSelfState');
-      this.emitter.emit(EVENTS.CRITICAL_ERROR, error);
-    }
-  }
-
-  /**
-   * Starts listening for new subscribers on the main GSOC node.
-   * @throws Will throw an error if the GSOC Resource ID is not defined.
-   */
-  private listenToNewSubscribers() {
-    try {
-      if (!this.gsocResourceId) {
-        throw new Error('GSOC Resource ID is not defined');
-      }
-
-      const bee = this.utils.getMainGsocBee(this.bees);
-
-      this.logger.debug('CALLED listenToNewSubsribers');
-      this.gsocSubscribtion = this.utils.subscribeToGsoc(
-        bee.url,
-        this.topic,
-        this.gsocResourceId,
-        (gsocMessage: string) => this.gsocListenerQueue.enqueue(() => this.processGsocMessage(gsocMessage)),
-      );
-    } catch (error) {
-      this.errorHandler.handleError(error, 'Chat.listenToNewSubscribers');
-      this.emitter.emit(EVENTS.CRITICAL_ERROR, error);
-    }
-  }
-
-  /**
-   * Sends a message to the chat by uploading it to a decentralized storage system and updating the feed index.
+   * Sends a message to the chat by uploading it to a decentralized storage system and updating the feed index
+   * after updating the feed index, the message is broadcasted to all subscribers.
    * @param message The message content to send.
-   * @returns Resolves when the message is successfully sent.
+   * @returns Resolves when the message is successfully broadcasted
    * @throws Will emit a `MESSAGE_REQUEST_ERROR` event if an error occurs during the process.
    */
   public async sendMessage(message: string): Promise<void> {
@@ -191,49 +131,138 @@ export class SwarmChat {
     }
   }
 
+  /**
+   * Fetches the previous 10 latest messages of the chat
+   * @returns Resolves with the fetched messages.
+   */
   public async fetchPreviousMessages() {
     try {
       this.emitter.emit(EVENTS.LOADING_PREVIOUS_MESSAGES, true);
-      return this.history.fetchPreviousMessages({ preDownload: true });
+      const messages = await this.history.fetchPreviousMessages({ preDownloadHistory: true });
+      return messages;
     } finally {
       this.emitter.emit(EVENTS.LOADING_PREVIOUS_MESSAGES, false);
     }
   }
 
-  private async makeMessageSender() {
-    const wallet = new ethers.Wallet(this.privateKey);
-    const address = wallet.address as EthAddress;
+  /**
+   * Initializes the user's own feed index by retrieving the latest index from Bee storage
+   * also initializes the chat history if it exists and tries to load the latest 10 messages.
+   * @throws Will emit a `CRITICAL_ERROR` event if the self index initialization fails. If the history init fails, a warning will be logged.
+   * @returns Resolves when at least the self-index is successfully initialized.
+   */
+  private async init() {
+    try {
+      this.emitter.emit(EVENTS.LOADING_INIT, true);
 
-    if (address.toLowerCase() !== this.ownAddress.toLowerCase()) {
-      throw new Error('The provided address does not match the address derived from the private key');
+      const [ownIndexResult, historyInitResult] = await Promise.allSettled([this.initOwnIndex(), this.history.init()]);
+
+      if (ownIndexResult.status === 'rejected') {
+        throw ownIndexResult.reason;
+      }
+
+      if (historyInitResult.status === 'rejected') {
+        this.logger.warn(`historyInitResult failed: ${historyInitResult.reason}`);
+      }
+
+      this.emitter.emit(EVENTS.LOADING_INIT, false);
+    } catch (error) {
+      this.errorHandler.handleError(error, 'Chat.initSelfState');
+      this.emitter.emit(EVENTS.CRITICAL_ERROR, error);
     }
+  }
 
-    const timestamp = Date.now();
-    const signature = (await wallet.signMessage(
-      JSON.stringify({ username: this.nickname, address, timestamp }),
-    )) as unknown as Signature;
+  private async initOwnIndex() {
+    const RETRY_COUNT = 10;
+    const DELAY = 1000;
 
-    return {
-      address,
-      timestamp,
-      signature,
-      index: this.getOwnIndex(),
-      username: this.nickname,
-    };
+    const { latestIndex } = await this.utils.retryAwaitableAsync(
+      () => this.utils.getLatestFeedIndex(this.bees, this.topic, this.ownAddress),
+      RETRY_COUNT,
+      DELAY,
+    );
+
+    this.ownIndex = latestIndex;
+  }
+
+  /**
+   * Starts listening for new subscribers on the main GSOC node.
+   * @throws Will throw an error if the GSOC Resource ID is not defined.
+   */
+  private listenToNewSubscribers() {
+    try {
+      if (!this.gsocResourceId) {
+        throw new Error('GSOC Resource ID is not defined');
+      }
+
+      const bee = this.utils.getMainGsocBee(this.bees);
+
+      this.logger.debug('CALLED listenToNewSubsribers');
+      this.gsocSubscribtion = this.utils.subscribeToGsoc(
+        bee.url,
+        this.topic,
+        this.gsocResourceId,
+        (gsocMessage: string) => this.gsocListenerQueue.enqueue(() => this.processGsocMessage(gsocMessage)),
+      );
+    } catch (error) {
+      this.errorHandler.handleError(error, 'Chat.listenToNewSubscribers');
+      this.emitter.emit(EVENTS.CRITICAL_ERROR, error);
+    }
+  }
+
+  /**
+   * GSOC message handler that processes an incoming messages
+   *
+   * This handler updates the active users for message reading if the message is valid.
+   * It also saves the latest history entry or gives a signal for a new history entiry creation.
+   *
+   * At the moment there are two types of messages.
+   * User message with an actual chat message and a history entry that marks the next history updater.
+   * History message which is the latest known history entry.
+   * TODO - should these messages be separated on different GSOC nodes?
+   *
+   * @param gsocMessage - The GSOC message as a JSON string containing user data and history entry.
+   */
+  private processGsocMessage(message: string) {
+    try {
+      const parsedMessage: GsocMessage = JSON.parse(message);
+
+      if (!validateGsocMessage(parsedMessage)) {
+        this.logger.warn('Invalid GSOC message during processing');
+        return;
+      }
+      this.logger.debug('New GSOC message:', parsedMessage);
+
+      // TODO new punishment algorithm, is it required?
+      if (isEqual(this.latestMessage, parsedMessage)) {
+        return;
+      }
+
+      if (parsedMessage.messageSender) {
+        this.updateActiveUsers(parsedMessage.messageSender);
+        this.history.processHistoryUpdaterEntry(this.activeUsers, parsedMessage.historyEntry);
+      } else {
+        this.history.setHistoryEntry(parsedMessage.historyEntry);
+      }
+
+      this.latestMessage = parsedMessage;
+    } catch (error) {
+      this.errorHandler.handleError(error, 'Chat.userRegistrationOnGsoc');
+    }
   }
 
   private async waitForMessageBroadcast(index: number): Promise<void> {
     return waitForBroadcast<number>({
       condition: () => Object.values(this.activeUsers).some((user) => user.index === index),
       broadcast: () => this.broadcastUserMessage(),
-      maxRetries: 5,
-      intervalMs: 1500,
-      logger: this.logger,
     });
   }
 
   /**
-   * TODO: Add description
+   * Broadcasts a message to all the listeners thorugh a GSOC node.
+   * The new message will mark the next history updater.
+   * @throws Will throw an error if the GSOC Resource ID is not defined.
+   * @thorws If the broadcast result is invalid
    */
   private async broadcastUserMessage() {
     try {
@@ -267,66 +296,26 @@ export class SwarmChat {
     }
   }
 
-  public orderMessages(messages: any[]) {
-    return this.utils.orderMessages(messages);
-  }
+  private async makeMessageSender() {
+    const wallet = new ethers.Wallet(this.privateKey);
+    const address = wallet.address as EthAddress;
 
-  private isUserIndexRead(userAddress: string, checkIndex: number) {
-    const cachedIndex = this.userIndexCache[userAddress];
-    return { cachedIndex, isIndexRead: cachedIndex === checkIndex };
-  }
-
-  private setUserIndexCache(address: string, index: number) {
-    this.userIndexCache[address] = index;
-  }
-
-  private getOwnIndex() {
-    return this.ownIndex;
-  }
-
-  private removeIdleUsers() {
-    const now = Date.now();
-    for (const user of Object.values(this.activeUsers)) {
-      if (now - user.timestamp > 300 * SECOND) {
-        delete this.activeUsers[user.address];
-      }
+    if (address.toLowerCase() !== this.ownAddress.toLowerCase()) {
+      throw new Error('The provided address does not match the address derived from the private key');
     }
-  }
 
-  private updateActiveUsers(messageSender: User) {
-    this.activeUsers[messageSender.address] = messageSender;
-  }
+    const timestamp = Date.now();
+    const signature = (await wallet.signMessage(
+      JSON.stringify({ username: this.nickname, address, timestamp }),
+    )) as unknown as Signature;
 
-  /**
-   * Handles user registration through the GSOC system by processing incoming GSOC messages.
-   * @param gsocMessage The GSOC message in JSON string format containing user data.
-   */
-  private processGsocMessage(message: string) {
-    try {
-      const parsedMessage: GsocMessage = JSON.parse(message);
-
-      if (!validateGsocMessage(parsedMessage)) {
-        this.logger.warn('Invalid GSOC message during processing');
-        return;
-      }
-      this.logger.debug('New GSOC message:', parsedMessage);
-
-      // TODO new punishment algorithm, is it required?
-      if (isEqual(this.latestMessage, parsedMessage)) {
-        return;
-      }
-
-      if (parsedMessage.messageSender) {
-        this.updateActiveUsers(parsedMessage.messageSender);
-        this.history.processHistoryEntry(this.activeUsers, parsedMessage.historyEntry);
-      } else {
-        this.history.setHistoryEntry(parsedMessage.historyEntry);
-      }
-
-      this.latestMessage = parsedMessage;
-    } catch (error) {
-      this.errorHandler.handleError(error, 'Chat.userRegistrationOnGsoc');
-    }
+    return {
+      address,
+      timestamp,
+      signature,
+      index: this.getOwnIndex(),
+      username: this.nickname,
+    };
   }
 
   private async readAllActiveUserMessage() {
@@ -342,10 +331,12 @@ export class SwarmChat {
   }
 
   /**
-   * Reads a message for a specific user from the decentralized storage.
-   * This function handles message retrieval and emits the message event upon success.
+   * Reads a message from a specific user feed.
+   * The retrieved message is emitted to the MESSAGE_RECEIVED event.
+   * The function maintains a local index cache preventing the same message from being read multiple times
+   * and to make sure that all messages are read in order.
    * @param user - The user for whom the message is being read.
-   * @param rawTopic - The topic associated with the user's chat.
+   * @param rawTopic - The topic associated with the user's feed.
    * @returns Resolves when the message is successfully processed.
    */
   private async readMessage(user: User, rawTopic: string) {
@@ -373,9 +364,7 @@ export class SwarmChat {
   }
 
   private stopListenToNewSubscribers() {
-    this.logger.debug('CALLED stopListenToNewSubscribers');
     if (this.gsocSubscribtion) {
-      this.logger.debug('CALLED stopListenToNewSubscribers close');
       this.gsocSubscribtion.close();
       this.gsocSubscribtion = null;
     }
@@ -409,5 +398,31 @@ export class SwarmChat {
       clearInterval(this.idleUserCleanupInterval);
       this.idleUserCleanupInterval = null;
     }
+  }
+
+  private isUserIndexRead(userAddress: string, checkIndex: number) {
+    const cachedIndex = this.userIndexCache[userAddress];
+    return { cachedIndex, isIndexRead: cachedIndex === checkIndex };
+  }
+
+  private setUserIndexCache(address: string, index: number) {
+    this.userIndexCache[address] = index;
+  }
+
+  private getOwnIndex() {
+    return this.ownIndex;
+  }
+
+  private removeIdleUsers() {
+    const now = Date.now();
+    for (const user of Object.values(this.activeUsers)) {
+      if (now - user.timestamp > 300 * SECOND) {
+        delete this.activeUsers[user.address];
+      }
+    }
+  }
+
+  private updateActiveUsers(messageSender: User) {
+    this.activeUsers[messageSender.address] = messageSender;
   }
 }
