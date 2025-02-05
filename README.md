@@ -1,3 +1,5 @@
+TODO: this is deprecated
+
 A chat library for Swarm that enables real-time chatting over Swarm using the GSOC feature.
 
 # Usage
