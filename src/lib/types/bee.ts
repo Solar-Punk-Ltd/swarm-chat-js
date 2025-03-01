@@ -1,13 +1,4 @@
-import { BatchId, Bee } from '@ethersphere/bee-js';
-import { HexString } from '@solarpunkltd/gsoc/dist/types';
-
-import { ETH_ADDRESS_LENGTH } from '../constants';
-
-export interface Bytes<Length extends number> extends Uint8Array {
-  readonly length: Length;
-}
-
-export type EthAddress = HexString<typeof ETH_ADDRESS_LENGTH>;
+import { BatchId, Bee } from '@upcoming/bee-js';
 
 export enum BeeType {
   READER = 'reader',

@@ -1,10 +1,9 @@
+import { EthAddress, FeedIndex, Reference } from '@upcoming/bee-js';
 import { Signature } from 'ethers';
-
-import { EthAddress } from './bee';
 
 export interface User {
   username: string;
-  address: EthAddress;
+  address: string;
   timestamp: number;
   index: number;
   signature: Signature;
@@ -33,7 +32,7 @@ export interface UserHistory {
 }
 
 export type UserMessageEntry = {
-  address: EthAddress;
+  address: string;
   entry: MessageEntry;
 };
 

@@ -1,5 +1,6 @@
 import { Logger } from './logger';
 
+// TODO singleton
 export class ErrorHandler {
   private logger = Logger.getInstance();
 

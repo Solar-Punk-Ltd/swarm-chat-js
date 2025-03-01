@@ -1,7 +1,7 @@
-import { Bees, EthAddress } from './bee';
+import { Bees } from './bee';
 
 export interface ChatSettings {
-  ownAddress: EthAddress;
+  ownAddress: string;
   privateKey: string;
   nickname: string;
   topic: string;

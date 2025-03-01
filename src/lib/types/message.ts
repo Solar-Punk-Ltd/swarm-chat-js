@@ -1,11 +1,10 @@
-import { EthAddress } from './bee';
 import { ChatHistoryEntry, User } from './user';
 
 export interface MessageData {
   id: string;
   message: string;
   username: string;
-  address: EthAddress;
+  address: string;
   timestamp: number;
 }
 
