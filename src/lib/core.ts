@@ -1,8 +1,8 @@
-import { HexString } from '@solarpunkltd/gsoc/dist/types';
-import { ethers, Signature } from 'ethers';
+import { Bytes, EthAddress, GsocSubscription, PrivateKey } from '@upcoming/bee-js';
 import isEqual from 'lodash/isEqual';
 import { v4 as uuidv4 } from 'uuid';
 
+import { remove0x } from '../utils/common';
 import { ErrorHandler } from '../utils/error';
 import { EventEmitter } from '../utils/eventEmitter';
 import { Logger } from '../utils/logger';
@@ -12,7 +12,7 @@ import { waitForBroadcast } from '../utils/waitForBroadcast';
 
 import { EVENTS, SECOND } from './constants';
 import { SwarmHistory } from './history';
-import { ChatSettings, EthAddress, GsocMessage, GsocSubscription, User, UserMap } from './types';
+import { ChatSettings, User, UserMap } from './types';
 import { SwarmChatUtils } from './utils';
 
 export class SwarmChat {
@@ -38,17 +38,18 @@ export class SwarmChat {
   private latestMessage: any | null = null;
   private userIndexCache: Record<string, number> = {};
 
-  private gsocResourceId: HexString<number> | null = null;
+  private gsocResourceId: string | null = null;
   private gsocSubscription: GsocSubscription | null = null;
 
   private privateKey: string;
   private topic: string;
+  private ownAddress: string;
   private nickname: string;
-  private ownAddress: EthAddress;
-  private ownIndex: number = -1;
+  private ownIndex = -1;
 
+  // TODO: handle retry case when only soc send goes through, nothing goes through
   constructor(settings: ChatSettings) {
-    this.ownAddress = settings.ownAddress;
+    this.ownAddress = remove0x(settings.ownAddress);
     this.privateKey = settings.privateKey;
     this.topic = settings.topic;
     this.nickname = settings.nickname;
@@ -100,26 +101,26 @@ export class SwarmChat {
    * @throws Will emit a `MESSAGE_REQUEST_ERROR` event if an error occurs during the process.
    */
   public async sendMessage(message: string): Promise<void> {
+    const nextIndex = this.ownIndex === -1 ? 0 : this.ownIndex + 1;
     const messageObj = {
       id: uuidv4(),
       username: this.nickname,
       address: this.ownAddress,
       timestamp: Date.now(),
+      index: nextIndex,
       message,
     };
 
     try {
       this.emitter.emit(EVENTS.MESSAGE_REQUEST_SENT, messageObj);
 
-      const nextIndex = this.ownIndex === -1 ? 0 : this.ownIndex + 1;
-
       await this.utils.writeUserFeedDataByIndex({
         bees: this.bees,
         userAddress: this.ownAddress,
-        rawTopic: this.topic,
+        topicBase: this.topic,
         index: nextIndex,
         privateKey: this.privateKey,
-        data: { ...messageObj, index: this.ownIndex },
+        data: messageObj,
       });
 
       this.ownIndex = nextIndex;
@@ -195,14 +196,15 @@ export class SwarmChat {
         throw new Error('GSOC Resource ID is not defined');
       }
 
-      const bee = this.utils.getMainGsocBee(this.bees);
+      if (this.gsocSubscription) {
+        return;
+      }
 
-      this.logger.debug('CALLED listenToNewSubsribers', bee.url, this.topic, this.gsocResourceId);
       this.gsocSubscription = this.utils.subscribeToGsoc(
-        bee.url,
+        this.bees,
         this.topic,
         this.gsocResourceId,
-        (gsocMessage: string) => this.gsocListenerQueue.enqueue(() => this.processGsocMessage(gsocMessage)),
+        (gsocMessage: Bytes) => this.gsocListenerQueue.enqueue(() => this.processGsocMessage(gsocMessage.toJSON())),
       );
     } catch (error) {
       this.errorHandler.handleError(error, 'Chat.listenToNewSubscribers');
@@ -223,31 +225,32 @@ export class SwarmChat {
    *
    * @param gsocMessage - The GSOC message as a JSON string containing user data and history entry.
    */
-  private processGsocMessage(message: string) {
+  // TODO any
+  private processGsocMessage(message: any) {
     try {
-      const parsedMessage: GsocMessage = JSON.parse(message);
+      console.log('processGsocMessage CALLED', message);
 
-      if (!validateGsocMessage(parsedMessage)) {
+      if (!validateGsocMessage(message)) {
         this.logger.warn('Invalid GSOC message during processing');
         return;
       }
-      this.logger.debug('New GSOC message:', parsedMessage);
+      this.logger.debug('New GSOC message:', message);
 
       // TODO new punishment algorithm, is it required?
-      if (isEqual(this.latestMessage, parsedMessage)) {
+      if (isEqual(this.latestMessage, message)) {
         return;
       }
 
-      if (parsedMessage.messageSender) {
-        this.updateActiveUsers(parsedMessage.messageSender);
-        this.history.processHistoryUpdaterEntry(this.activeUsers, parsedMessage.historyEntry);
+      if (message.messageSender) {
+        this.updateActiveUsers(message.messageSender);
+        this.history.processHistoryUpdaterEntry(this.activeUsers, message.historyEntry);
       } else {
-        this.history.setHistoryEntry(parsedMessage.historyEntry);
+        this.history.setHistoryEntry(message.historyEntry);
       }
 
-      this.latestMessage = parsedMessage;
+      this.latestMessage = message;
     } catch (error) {
-      this.errorHandler.handleError(error, 'Chat.userRegistrationOnGsoc');
+      this.errorHandler.handleError(error, 'Chat.processGsocMessage');
     }
   }
 
@@ -273,13 +276,14 @@ export class SwarmChat {
 
       const messageSender = await this.makeMessageSender();
 
-      const { bee, stamp } = this.utils.getGsocBee(this.bees);
+      console.log('DEBUG broadcastUserMessage', messageSender);
 
-      const result = await this.utils.retryAwaitableAsync(() =>
+      console.log('DEBUG broadcastUserMessage itt');
+
+      await this.utils.retryAwaitableAsync(() =>
         this.utils.sendMessageToGsoc(
-          bee.url,
+          this.bees,
           this.topic,
-          stamp,
           this.gsocResourceId!,
           JSON.stringify({
             messageSender,
@@ -287,32 +291,28 @@ export class SwarmChat {
           }),
         ),
       );
-
-      this.logger.debug('broadcastUserMessage entry CALLED');
-
-      if (!result?.payload.length) throw new Error('GSOC result payload is empty');
     } catch (error) {
-      this.errorHandler.handleError(error, 'Chat.broadcastNewAppState');
+      this.errorHandler.handleError(error, 'Chat.broadcastUserMessage');
     }
   }
 
   private async makeMessageSender() {
-    const wallet = new ethers.Wallet(this.privateKey);
-    const address = wallet.address as EthAddress;
+    const ownAddress = new EthAddress(this.ownAddress).toString();
 
-    if (address.toLowerCase() !== this.ownAddress.toLowerCase()) {
+    const signer = new PrivateKey(this.privateKey);
+    const signerAddress = signer.publicKey().address().toString();
+
+    if (signerAddress !== ownAddress) {
       throw new Error('The provided address does not match the address derived from the private key');
     }
 
     const timestamp = Date.now();
-    const signature = (await wallet.signMessage(
-      JSON.stringify({ username: this.nickname, address, timestamp }),
-    )) as unknown as Signature;
+    const signature = signer.sign(JSON.stringify({ username: this.nickname, address: ownAddress, timestamp }));
 
     return {
-      address,
+      address: ownAddress,
       timestamp,
-      signature,
+      signature: signature.toHex(),
       index: this.getOwnIndex(),
       username: this.nickname,
     };
@@ -339,10 +339,13 @@ export class SwarmChat {
    * @param rawTopic - The topic associated with the user's feed.
    * @returns Resolves when the message is successfully processed.
    */
-  private async readMessage(user: User, rawTopic: string) {
+
+  // TODO skip message if fails to many times
+  private async readMessage(user: User, topic: string) {
     try {
-      let nextIndex;
+      let nextIndex: number;
       const readCacheState = this.isUserIndexRead(user.address, user.index);
+
       if (readCacheState.isIndexRead) {
         return;
       } else {
@@ -350,7 +353,7 @@ export class SwarmChat {
       }
 
       const messageData = await this.utils.fetchUserFeedDataByIndex({
-        rawTopic,
+        topicBase: topic,
         bees: this.bees,
         userAddress: user.address,
         index: nextIndex,
@@ -365,7 +368,7 @@ export class SwarmChat {
 
   private unsubFromGSOC() {
     if (this.gsocSubscription) {
-      this.gsocSubscription.ws.close();
+      this.gsocSubscription.cancel();
       this.gsocSubscription = null;
     }
   }

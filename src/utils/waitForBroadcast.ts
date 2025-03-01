@@ -15,7 +15,7 @@ export interface BroadcastWaiterOptions<T> {
  * @returns A promise that resolves when the condition is met, or rejects after maxRetries.
  */
 export async function waitForBroadcast<T>(options: BroadcastWaiterOptions<T>): Promise<void> {
-  const { condition, broadcast, maxRetries = 5, intervalMs = 1500 } = options;
+  const { condition, broadcast, maxRetries = 3, intervalMs = 2000 } = options;
 
   return new Promise<void>((resolve, reject) => {
     let counter = 0;
@@ -28,7 +28,7 @@ export async function waitForBroadcast<T>(options: BroadcastWaiterOptions<T>): P
       }
 
       if (counter >= maxRetries) {
-        return reject(new Error('Broadcast timeout'));
+        return reject(new Error('Broadcast wait timeout'));
       }
 
       counter++;

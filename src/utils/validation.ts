@@ -1,4 +1,5 @@
-import { ethers } from 'ethers';
+import { Signature } from '@upcoming/bee-js';
+import { Binary } from 'cafe-utility';
 import { z } from 'zod';
 
 import { Logger } from './logger';
@@ -9,6 +10,7 @@ const UserSchema = z.object({
   username: z.string(),
   address: z.string(),
   timestamp: z.number(),
+  index: z.number(),
   signature: z.string(),
 });
 
@@ -95,8 +97,15 @@ export function validateUserSignature(validatedUser: any): boolean {
       timestamp: validatedUser.timestamp,
     };
 
-    const returnedAddress = ethers.verifyMessage(JSON.stringify(message), validatedUser.signature);
-    if (returnedAddress !== validatedUser.address) {
+    const ENCODER = new TextEncoder();
+    const digest = Binary.concatBytes(
+      ENCODER.encode(`\x19Ethereum Signed Message:\n32`),
+      Binary.keccak256(ENCODER.encode(JSON.stringify(message))),
+    );
+
+    const isValidSig = new Signature(validatedUser.signature).isValid(digest, validatedUser.address);
+
+    if (isValidSig) {
       throw new Error('Signature verification failed!');
     }
 

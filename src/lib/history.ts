@@ -14,7 +14,6 @@ import {
   ChatEvent,
   ChatHistory,
   ChatHistoryEntry,
-  EthAddress,
   GsocMessage,
   InitializedBees,
   MessageEntry,
@@ -42,7 +41,7 @@ export class SwarmHistory {
     allTimeUsers: {},
   };
 
-  private bees;
+  private bees: InitializedBees;
   private gsocResourceId: string;
   private topic: string;
   private ownAddress: string;
@@ -216,13 +215,10 @@ export class SwarmHistory {
         throw new Error('GSOC Resource ID is not defined');
       }
 
-      const { bee, stamp } = this.utils.getGsocBee(this.bees);
-
-      const result = await this.utils.retryAwaitableAsync(() =>
+      await this.utils.retryAwaitableAsync(() =>
         this.utils.sendMessageToGsoc(
-          bee.url,
+          this.bees,
           this.topic,
-          stamp,
           this.gsocResourceId!,
           JSON.stringify({
             historyEntry,
@@ -231,8 +227,6 @@ export class SwarmHistory {
       );
 
       this.logger.debug('NEW history entry broadcast CALLED');
-
-      if (!result?.payload.length) throw new Error('GSOC result payload is empty');
     } catch (error) {
       this.errorHandler.handleError(error, 'Chat.broadcastNewAppState');
     }
@@ -246,7 +240,7 @@ export class SwarmHistory {
       throw new Error('History reference is null');
     }
 
-    return historyRef.reference;
+    return historyRef.reference.toString();
   }
 
   private async fetchHistory(historyEntry?: ChatHistoryEntry): Promise<ChatHistory | null> {
@@ -254,7 +248,7 @@ export class SwarmHistory {
     if (!latestHistoryEntry) return null;
 
     const bee = this.utils.getReaderBee(this.bees);
-    const historyData = await this.utils.downloadObjectFromBee(bee, latestHistoryEntry.ref);
+    const historyData = (await this.utils.downloadObjectFromBee(bee, latestHistoryEntry.ref)) as ChatHistory;
 
     if (!validateChatHistory(historyData)) {
       this.logger.warn('Could not fetch remote history: invalid history data');
@@ -270,19 +264,16 @@ export class SwarmHistory {
     }
 
     try {
-      // the main GSOC contains the latest state of the GSOC updates
-      const mainGsocBee = this.utils.getMainGsocBee(this.bees);
-      const message = await this.utils.fetchLatestGsocMessage(mainGsocBee.url, this.topic, this.gsocResourceId);
-      const parsedMessage: GsocMessage = JSON.parse(message);
+      const message: GsocMessage = await this.utils.fetchLatestGsocMessage(this.bees, this.topic, this.gsocResourceId);
 
-      this.logger.debug('Init GSOC message:', parsedMessage);
+      this.logger.debug('Init GSOC message:', message);
 
-      if (!validateGsocMessage(parsedMessage)) {
+      if (!validateGsocMessage(message)) {
         this.logger.warn('Invalid GSOC message during latest history entry fetch');
         return null;
       }
 
-      return parsedMessage.historyEntry;
+      return message.historyEntry;
     } catch (error) {
       this.errorHandler.handleError(error, 'Chat.fetchLatestHistoryEntry');
       return null;
@@ -296,10 +287,10 @@ export class SwarmHistory {
     await this.messagesQueue.waitForProcessing();
   }
 
-  private async readMessage(userEntry: UserMessageEntry, rawTopic: string) {
+  private async readMessage(userEntry: UserMessageEntry, topic: string) {
     try {
       const messageData = await this.utils.fetchUserFeedDataByIndex({
-        rawTopic,
+        topicBase: topic,
         bees: this.bees,
         userAddress: userEntry.address,
         index: userEntry.entry.index,
@@ -387,7 +378,7 @@ export class SwarmHistory {
       for (const user in this.history.allTimeUsers) {
         const messages = this.history.allTimeUsers[user].messageEntries;
         messages.forEach((entry) => {
-          allMessages.push({ address: user as EthAddress, entry });
+          allMessages.push({ address: user, entry });
         });
       }
 
@@ -447,7 +438,7 @@ export class SwarmHistory {
 
     for (const [address, history] of Object.entries(userHistories)) {
       for (const entry of history.messageEntries) {
-        allEntries.push({ address: address as EthAddress, entry });
+        allEntries.push({ address: address, entry });
       }
     }
 

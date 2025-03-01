@@ -35,3 +35,7 @@ export function mergeUnique<T>(
 
   return Array.from(itemMap.values()).sort(sortComparator);
 }
+
+export function remove0x(hex: string) {
+  return (hex.startsWith('0x') ? hex.slice(2) : hex).toLowerCase();
+}

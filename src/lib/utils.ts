@@ -1,13 +1,9 @@
-import { BatchId, Bee, UploadResult } from '@ethersphere/bee-js';
-import { InformationSignal } from '@solarpunkltd/gsoc';
-import { SingleOwnerChunk } from '@solarpunkltd/gsoc/dist/soc';
-import { HexString } from '@solarpunkltd/gsoc/dist/types';
+import { BatchId, Bee, Bytes, Identifier, PrivateKey, Topic, UploadResult } from '@upcoming/bee-js';
 
 import { ErrorHandler } from '../utils/error';
 import { Logger } from '../utils/logger';
 
-import { HEX_RADIX } from './constants';
-import { Bees, BeeSettings, BeeType, EthAddress, InitializedBee, InitializedBees, MultiBees } from './types';
+import { Bees, BeeSettings, BeeType, InitializedBee, InitializedBees, MultiBees } from './types';
 
 /**
  * Utility class for Swarm chat operations including feed management,
@@ -23,47 +19,56 @@ export class SwarmChatUtils {
 
   public async writeUserFeedDataByIndex(params: {
     bees: InitializedBees;
-    rawTopic: string;
-    userAddress: EthAddress;
+    topicBase: string;
+    userAddress: string;
     index: number;
     privateKey: string;
     data: any;
-  }): Promise<any> {
-    const { bee, stamp } = this.getWriterBee(params.bees);
+  }): Promise<void> {
+    const { bees, topicBase, userAddress, privateKey, index, data } = params;
 
-    const feedID = this.generateUserOwnedFeedId(params.rawTopic, params.userAddress);
-    const feedTopicHex = bee.makeFeedTopic(feedID);
-    const feedWriter = bee.makeFeedWriter('sequence', feedTopicHex, params.privateKey);
+    const { bee, stamp } = this.getWriterBee(bees);
 
-    const msgData = await this.retryAwaitableAsync(() => this.uploadObjectToBee(bee, params.data, stamp));
-    if (!msgData) throw new Error('Uploaded message data is empty');
+    const feedID = this.generateUserOwnedFeedId(topicBase, userAddress);
+    const topic = Topic.fromString(feedID);
 
-    await feedWriter.upload(stamp, msgData.reference, {
-      index: params.index,
+    console.log('DEBUG: feedID write', topic.toString(), userAddress, index, feedID);
+    const feedWriter = bee.makeFeedWriter(topic, new PrivateKey(privateKey));
+
+    await feedWriter.uploadPayload(stamp, JSON.stringify(data), {
+      index,
     });
   }
 
   public async fetchUserFeedDataByIndex(params: {
     bees: InitializedBees;
-    rawTopic: string;
-    userAddress: EthAddress;
+    topicBase: string;
+    userAddress: string;
     index: number;
     options?: { timeout?: number };
   }) {
-    const { bees, rawTopic, userAddress, index, options = {} } = params;
+    const { bees, topicBase, userAddress, index, options = {} } = params;
+
     const timeout = options.timeout ?? 1500;
 
     const bee = this.getReaderBee(bees);
-    const chatID = this.generateUserOwnedFeedId(rawTopic, userAddress);
-    const topic = bee.makeFeedTopic(chatID);
-    const feedReader = bee.makeFeedReader('sequence', topic, userAddress, { timeout });
 
-    const recordPointer = await feedReader.download({ index });
-    const data = await bee.downloadData(recordPointer.reference, {
-      headers: { 'Swarm-Redundancy-Level': '0' },
+    const feedID = this.generateUserOwnedFeedId(topicBase, userAddress);
+    const topic = Topic.fromString(feedID);
+    console.log('DEBUG: feedID read', topic.toString(), userAddress, index, feedID);
+
+    const feedReader = bee.makeFeedReader(topic, userAddress, {
+      timeout,
     });
 
-    return JSON.parse(new TextDecoder().decode(data));
+    const data = await feedReader.downloadPayload({
+      index,
+    });
+
+    console.log(data.payload.toHex());
+    console.log(data.payload.toUtf8());
+
+    return data.payload.toJSON();
   }
 
   /**
@@ -239,7 +244,8 @@ export class SwarmChatUtils {
 
   public async uploadObjectToBee(bee: Bee, jsObject: object, stamp: BatchId): Promise<UploadResult | null> {
     try {
-      const result = await bee.uploadData(stamp, this.serializeRecord(jsObject), { redundancyLevel: 4 });
+      const result = await bee.uploadData(stamp, JSON.stringify(jsObject), { redundancyLevel: 4 });
+      console.log('DEBUG: result', result.reference.toString());
       return result;
     } catch (error) {
       this.errorHandler.handleError(error, 'Utils.uploadObjectToBee');
@@ -250,25 +256,26 @@ export class SwarmChatUtils {
   public async downloadObjectFromBee(bee: Bee, reference: string): Promise<any> {
     try {
       const result = await bee.downloadData(reference);
-      return result.json();
+      return result.toJSON();
     } catch (error) {
       this.errorHandler.handleError(error, 'Utils.beeDownloadObject');
       return null;
     }
   }
 
-  public async getLatestFeedIndex(bees: InitializedBees, rawTopic: string, address: EthAddress) {
+  public async getLatestFeedIndex(bees: InitializedBees, topicBase: string, address: string) {
     try {
       const readerBee = this.getReaderBee(bees);
 
-      const feedID = this.generateUserOwnedFeedId(rawTopic, address);
-      const topic = readerBee.makeFeedTopic(feedID);
+      const feedID = this.generateUserOwnedFeedId(topicBase, address);
+      const topic = Topic.fromString(feedID);
+      console.log('DEBUG: na ez?', topic.toString(), address, feedID);
 
-      const feedReader = readerBee.makeFeedReader('sequence', topic, address);
+      const feedReader = readerBee.makeFeedReader(topic, address);
       const feedEntry = await feedReader.download();
 
-      const latestIndex = parseInt(feedEntry.feedIndex.toString(), HEX_RADIX);
-      const nextIndex = parseInt(feedEntry.feedIndexNext, HEX_RADIX);
+      const latestIndex = Number(feedEntry.feedIndex.toBigInt());
+      const nextIndex = Number(feedEntry.feedIndexNext?.toBigInt());
 
       return { latestIndex, nextIndex };
     } catch (error) {
@@ -288,30 +295,22 @@ export class SwarmChatUtils {
    * @returns The subscription instance or null if an error occurs.
    */
   public subscribeToGsoc(
-    url: string,
+    bees: InitializedBees,
     topic: string,
-    resourceId: HexString<number>,
-    callback: (gsocMessage: string) => void,
+    resourceId: string,
+    callback: (gsocMessage: Bytes) => void,
   ) {
     if (!resourceId) throw new Error('ResourceID was not provided!');
 
-    const informationSignal = new InformationSignal(url, {
-      consensus: {
-        id: `SwarmDecentralizedChat::${topic}`,
-        assertRecord: (_input) => {
-          // We handle validation at our side
-          return true;
-        },
-      },
-    });
+    const bee = this.getMainGsocBee(bees);
 
-    const gsocSub = informationSignal.subscribe(
-      {
-        onMessage: callback,
-        onError: this.logger.error,
-      },
-      resourceId,
-    );
+    const key = new PrivateKey(resourceId);
+    const identifier = Identifier.fromString(topic);
+
+    const gsocSub = bee.gsocSubscribe(key.publicKey().address(), identifier, {
+      onMessage: callback,
+      onError: this.logger.error,
+    });
 
     return gsocSub;
   }
@@ -323,22 +322,18 @@ export class SwarmChatUtils {
    * @param resourceId The resource ID for the message.
    * @returns The latest GSOC message
    */
-  public async fetchLatestGsocMessage(url: string, topic: string, resourceId: HexString<number>): Promise<any> {
+  public async fetchLatestGsocMessage(bees: InitializedBees, topic: string, resourceId: string): Promise<any> {
     if (!resourceId) throw new Error('ResourceID was not provided!');
 
-    const informationSignal = new InformationSignal(url, {
-      consensus: {
-        id: `SwarmDecentralizedChat::${topic}`,
-        assertRecord: (_input) => {
-          // We handle validation at our side
-          return true;
-        },
-      },
-    });
+    const bee = this.getMainGsocBee(bees);
 
-    const gsocData = await informationSignal.getLatestGsocData(resourceId);
+    const signer = new PrivateKey(resourceId);
+    const identifier = Identifier.fromString(topic);
 
-    return gsocData.json();
+    const { download } = bee.makeSOCReader(signer.publicKey().address());
+    const soc = await download(identifier);
+
+    return soc.payload.toJSON();
   }
 
   /**
@@ -351,50 +346,33 @@ export class SwarmChatUtils {
    * @returns The uploaded SingleOwnerChunk or undefined if an error occurs.
    */
   public async sendMessageToGsoc(
-    url: string,
+    bees: InitializedBees,
     topic: string,
-    stamp: BatchId,
-    resourceId: HexString<number>,
+    resourceId: string,
     message: string,
-  ): Promise<SingleOwnerChunk | undefined> {
+  ): Promise<void> {
     this.logger.debug('sendMessageToGsoc entry CALLED');
     if (!resourceId) throw new Error('ResourceID was not provided!');
 
-    const informationSignal = new InformationSignal(url, {
-      consensus: {
-        id: `SwarmDecentralizedChat::${topic}`,
-        assertRecord: (_input) => {
-          // We handle validation at our side
-          return true;
-        },
-      },
-    });
+    const { bee, stamp } = this.getGsocBee(bees);
 
-    const uploadedSoc = await informationSignal.write(message, resourceId, stamp, {
+    const signer = new PrivateKey(resourceId);
+    const identifier = Identifier.fromString(topic);
+
+    await bee.gsocSend(stamp, signer, identifier, message, undefined, {
       timeout: this.UPLOAD_GSOC_TIMEOUT,
     });
 
     this.logger.debug('sendMessageToGsoc end CALLED');
-    return uploadedSoc;
   }
-
   /**
    * Generate a user-specific feed ID based on topic and user address.
    * @param topic The topic identifier.
    * @param userAddress The user’s Ethereum address.
    * @returns The generated user-specific feed ID.
    */
-  private generateUserOwnedFeedId(topic: string, userAddress: EthAddress): string {
+  private generateUserOwnedFeedId(topic: string, userAddress: string) {
     return `${topic}_EthercastChat_${userAddress}`;
-  }
-
-  /**
-   * Serialize a graffiti record to a Uint8Array.
-   * @param record The graffiti record to serialize.
-   * @returns The serialized record.
-   */
-  private serializeRecord(record: Record<any, any>): Uint8Array {
-    return new TextEncoder().encode(JSON.stringify(record));
   }
 
   /**
