@@ -269,13 +269,15 @@ export class SwarmChatUtils {
 
       const feedID = this.generateUserOwnedFeedId(topicBase, address);
       const topic = Topic.fromString(feedID);
-      console.log('DEBUG: na ez?', topic.toString(), address, feedID);
 
       const feedReader = readerBee.makeFeedReader(topic, address);
-      const feedEntry = await feedReader.download();
+      const feedEntry = await feedReader.downloadPayload();
 
       const latestIndex = Number(feedEntry.feedIndex.toBigInt());
-      const nextIndex = Number(feedEntry.feedIndexNext?.toBigInt());
+      // TODO: use feedNextIndex after bee-js patch
+      const nextIndex = latestIndex + 1;
+
+      console.log('DEBUG: getLatestFeedIndex', latestIndex, nextIndex);
 
       return { latestIndex, nextIndex };
     } catch (error) {

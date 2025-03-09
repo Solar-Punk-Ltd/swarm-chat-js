@@ -2,7 +2,7 @@ import { Bee, Identifier } from '@upcoming/bee-js';
 
 const BEE_HOST = 'http://localhost:1633';
 
-const BEE = new Bee(BEE_HOST, {});
+const BEE = new Bee(BEE_HOST);
 
 async function mine(topic: string) {
   const addresses = await BEE.getNodeAddresses();

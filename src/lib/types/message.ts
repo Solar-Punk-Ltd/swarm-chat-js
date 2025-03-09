@@ -6,11 +6,7 @@ export interface MessageData {
   username: string;
   address: string;
   timestamp: number;
-}
-
-export interface VisibleMessage extends MessageData {
-  error: boolean;
-  sent: boolean;
+  index: number;
 }
 
 export interface GsocMessage {

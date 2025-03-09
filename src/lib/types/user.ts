@@ -1,12 +1,9 @@
-import { EthAddress, FeedIndex, Reference } from '@upcoming/bee-js';
-import { Signature } from 'ethers';
-
 export interface User {
   username: string;
   address: string;
   timestamp: number;
   index: number;
-  signature: Signature;
+  signature: string;
 }
 
 export interface ChatHistoryEntry {
