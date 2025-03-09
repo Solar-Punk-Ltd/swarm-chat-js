@@ -12,7 +12,7 @@ import { waitForBroadcast } from '../utils/waitForBroadcast';
 
 import { EVENTS, SECOND } from './constants';
 import { SwarmHistory } from './history';
-import { ChatSettings, User, UserMap } from './types';
+import { ChatSettings, MessageData, User, UserMap } from './types';
 import { SwarmChatUtils } from './utils';
 
 export class SwarmChat {
@@ -100,10 +100,10 @@ export class SwarmChat {
    * @returns Resolves when the message is successfully broadcasted
    * @throws Will emit a `MESSAGE_REQUEST_ERROR` event if an error occurs during the process.
    */
-  public async sendMessage(message: string): Promise<void> {
+  public async sendMessage(message: string, id?: string): Promise<void> {
     const nextIndex = this.ownIndex === -1 ? 0 : this.ownIndex + 1;
     const messageObj = {
-      id: uuidv4(),
+      id: id || uuidv4(),
       username: this.nickname,
       address: this.ownAddress,
       timestamp: Date.now(),
@@ -112,7 +112,7 @@ export class SwarmChat {
     };
 
     try {
-      this.emitter.emit(EVENTS.MESSAGE_REQUEST_SENT, messageObj);
+      this.emitter.emit(EVENTS.MESSAGE_REQUEST_INITIATED, messageObj);
 
       await this.utils.writeUserFeedDataByIndex({
         bees: this.bees,
@@ -124,6 +124,8 @@ export class SwarmChat {
       });
 
       this.ownIndex = nextIndex;
+
+      this.emitter.emit(EVENTS.MESSAGE_REQUEST_UPLOADED, messageObj);
 
       await this.waitForMessageBroadcast(nextIndex);
     } catch (error) {
@@ -146,6 +148,14 @@ export class SwarmChat {
     }
   }
 
+  public async retrySendMessage(message: MessageData) {
+    this.sendMessage(message.message, message.id);
+  }
+
+  public async retryBroadcastUserMessage(message: MessageData) {
+    this.waitForMessageBroadcast(message.index);
+  }
+
   /**
    * Initializes the user's own feed index by retrieving the latest index from Bee storage
    * also initializes the chat history if it exists and tries to load the latest 10 messages.
@@ -162,6 +172,7 @@ export class SwarmChat {
         throw ownIndexResult.reason;
       }
 
+      // TODO retry option for user if error happens
       if (historyInitResult.status === 'rejected') {
         this.logger.warn(`historyInitResult failed: ${historyInitResult.reason}`);
       }

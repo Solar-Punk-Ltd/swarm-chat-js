@@ -33,11 +33,7 @@ export async function waitForBroadcast<T>(options: BroadcastWaiterOptions<T>): P
 
       counter++;
 
-      try {
-        await broadcast();
-      } catch (error) {
-        logger.warn('Broadcast failed, will retry:', error);
-      }
+      await broadcast();
 
       setTimeout(checkCondition, intervalMs);
     };

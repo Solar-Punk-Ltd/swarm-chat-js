@@ -26,10 +26,9 @@
     "prepare": "npm run build"
   },
   "dependencies": {
-    "@upcoming/bee-js": "file:/Users/kisslevente/Documents/git/Ethersphere/bee-js",
+    "@upcoming/bee-js": "^0.16.1",
     "async-mutex": "^0.5.0",
     "cafe-utility": "^27.12.1",
-    "ethers": "^6.13.3",
     "lodash": "^4.17.21",
     "uuid": "^11.0.3",
     "zod": "^3.24.1"
