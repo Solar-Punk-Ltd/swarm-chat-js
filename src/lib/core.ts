@@ -289,8 +289,6 @@ export class SwarmChat {
 
       console.log('DEBUG broadcastUserMessage', messageSender);
 
-      console.log('DEBUG broadcastUserMessage itt');
-
       await this.utils.retryAwaitableAsync(() =>
         this.utils.sendMessageToGsoc(
           this.bees,
