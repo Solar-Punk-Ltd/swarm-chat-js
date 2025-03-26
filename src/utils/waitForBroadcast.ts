@@ -1,43 +1,52 @@
-import { Logger } from './logger';
-
-const logger = Logger.getInstance();
+import { sleep } from './common';
 
 export interface BroadcastWaiterOptions<T> {
-  condition: () => boolean;
-  broadcast: () => Promise<void>;
+  condition: () => Promise<boolean> | boolean;
+  broadcast: () => Promise<T>;
   maxRetries?: number;
-  intervalMs?: number;
+  initialDelayMs?: number;
+  checkIntervalMs?: number;
+  checkCount?: number;
 }
 
 /**
- * Waits for a condition to become true, retrying an action if needed.
- * @param options - The options to control the behavior.
- * @returns A promise that resolves when the condition is met, or rejects after maxRetries.
+ * Waits for a condition to become true, retrying broadcast if needed.
+ * Starts by broadcasting first, then waits and checks condition.
  */
 export async function waitForBroadcast<T>(options: BroadcastWaiterOptions<T>): Promise<void> {
-  const { condition, broadcast, maxRetries = 3, intervalMs = 2000 } = options;
+  const {
+    condition,
+    broadcast,
+    maxRetries = 2,
+    initialDelayMs = 2000,
+    checkIntervalMs = 1000,
+    checkCount = 10,
+  } = options;
 
   return new Promise<void>((resolve, reject) => {
-    let counter = 0;
+    let retryCount = 0;
 
-    const checkCondition = async () => {
-      const isProcessed = condition();
+    const runCycle = async () => {
+      await sleep(initialDelayMs);
 
-      if (isProcessed) {
-        return resolve();
+      for (let i = 0; i < checkCount; i++) {
+        const isReady = await Promise.resolve(condition());
+        if (isReady) {
+          return resolve();
+        }
+        await sleep(checkIntervalMs);
       }
 
-      if (counter >= maxRetries) {
+      if (++retryCount >= maxRetries) {
         return reject(new Error('Broadcast wait timeout'));
       }
 
-      counter++;
-
       await broadcast();
-
-      setTimeout(checkCondition, intervalMs);
+      runCycle();
     };
 
-    checkCondition();
+    broadcast()
+      .then(() => runCycle())
+      .catch(reject);
   });
 }

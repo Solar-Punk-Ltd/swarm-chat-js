@@ -14,7 +14,7 @@ import {
   ChatEvent,
   ChatHistory,
   ChatHistoryEntry,
-  GsocMessage,
+  ChatMessage,
   InitializedBees,
   MessageEntry,
   UserHistoryMap,
@@ -43,8 +43,10 @@ export class SwarmHistory {
 
   private bees: InitializedBees;
   private gsocResourceId: string;
-  private topic: string;
+  private gsocTopic: string;
+  private chatTopic: string;
   private ownAddress: string;
+  private swarmEmitterAddress: string;
 
   private processedUpdaterRefs = new Set();
   private loadedMessagesCache: Set<string> = new Set();
@@ -58,14 +60,18 @@ export class SwarmHistory {
     bees: InitializedBees;
     emitter: EventEmitter;
     gsocResourceId: string;
-    topic: string;
+    gsocTopic: string;
+    chatTopic: string;
     ownAddress: string;
+    swarmEmitterAddress: string;
   }) {
     this.bees = params.bees;
     this.gsocResourceId = params.gsocResourceId;
     this.emitter = params.emitter;
-    this.topic = params.topic;
+    this.gsocTopic = params.gsocTopic;
+    this.chatTopic = params.chatTopic;
     this.ownAddress = params.ownAddress;
+    this.swarmEmitterAddress = params.swarmEmitterAddress;
   }
 
   /**
@@ -198,7 +204,7 @@ export class SwarmHistory {
   }
 
   private async waitForHistoryEntryBroadcast(newEntry: ChatHistoryEntry): Promise<void> {
-    return waitForBroadcast<number>({
+    return waitForBroadcast<void>({
       condition: () => this.historyEntry.ref === newEntry.ref,
       broadcast: () => this.broadcastHistoryEntry(newEntry),
     });
@@ -218,7 +224,7 @@ export class SwarmHistory {
       await this.utils.retryAwaitableAsync(() =>
         this.utils.sendMessageToGsoc(
           this.bees,
-          this.topic,
+          this.gsocTopic,
           this.gsocResourceId!,
           JSON.stringify({
             historyEntry,
@@ -259,12 +265,12 @@ export class SwarmHistory {
   }
 
   private async fetchLatestHistoryEntry(): Promise<ChatHistoryEntry | null> {
-    if (!this.gsocResourceId) {
-      throw new Error('GSOC Resource ID is not defined');
-    }
-
     try {
-      const message: GsocMessage = await this.utils.fetchLatestGsocMessage(this.bees, this.topic, this.gsocResourceId);
+      const message: ChatMessage = await this.utils.fetchLatestChatMessage(
+        this.bees,
+        this.chatTopic,
+        this.swarmEmitterAddress,
+      );
 
       this.logger.debug('Init GSOC message:', message);
 
@@ -282,15 +288,15 @@ export class SwarmHistory {
 
   private async readAllMessageEntry(latestMessages: UserMessageEntry[]) {
     latestMessages.forEach((userEntry) => {
-      this.messagesQueue.enqueue(() => this.readMessage(userEntry, this.topic));
+      this.messagesQueue.enqueue(() => this.readMessage(userEntry, this.chatTopic));
     });
     await this.messagesQueue.waitForProcessing();
   }
 
-  private async readMessage(userEntry: UserMessageEntry, topic: string) {
+  private async readMessage(userEntry: UserMessageEntry, chatTopic: string) {
     try {
       const messageData = await this.utils.fetchUserFeedDataByIndex({
-        topicBase: topic,
+        chatTopicBase: chatTopic,
         bees: this.bees,
         userAddress: userEntry.address,
         index: userEntry.entry.index,
@@ -315,8 +321,6 @@ export class SwarmHistory {
     this.history = {
       allTimeUsers: this.mergeUserHistory(currentAllTimeUsers, this.history.allTimeUsers),
     };
-
-    this.logger.debug('updateLocalHistory - ', JSON.stringify(this.history));
   }
 
   private mergeChatHistory(remoteHistory: ChatHistory, localHistory: ChatHistory): ChatHistory {

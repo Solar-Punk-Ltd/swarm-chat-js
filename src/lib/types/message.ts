@@ -9,7 +9,7 @@ export interface MessageData {
   index: number;
 }
 
-export interface GsocMessage {
+export interface ChatMessage {
   messageSender: User;
   historyEntry: ChatHistoryEntry;
 }

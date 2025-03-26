@@ -1,5 +1,6 @@
-import { BatchId, Bee, Bytes, Identifier, PrivateKey, Topic, UploadResult } from '@upcoming/bee-js';
+import { BatchId, Bee, Bytes, FeedIndex, Identifier, PrivateKey, Topic, UploadResult } from '@upcoming/bee-js';
 
+import { remove0x } from '../utils/common';
 import { ErrorHandler } from '../utils/error';
 import { Logger } from '../utils/logger';
 
@@ -19,17 +20,17 @@ export class SwarmChatUtils {
 
   public async writeUserFeedDataByIndex(params: {
     bees: InitializedBees;
-    topicBase: string;
+    chatTopicBase: string;
     userAddress: string;
     index: number;
     privateKey: string;
     data: any;
   }): Promise<void> {
-    const { bees, topicBase, userAddress, privateKey, index, data } = params;
+    const { bees, chatTopicBase, userAddress, privateKey, index, data } = params;
 
     const { bee, stamp } = this.getWriterBee(bees);
 
-    const feedID = this.generateUserOwnedFeedId(topicBase, userAddress);
+    const feedID = this.generateUserOwnedFeedId(chatTopicBase, userAddress);
     const topic = Topic.fromString(feedID);
 
     console.log('DEBUG: feedID write', topic.toString(), userAddress, index, feedID);
@@ -42,18 +43,18 @@ export class SwarmChatUtils {
 
   public async fetchUserFeedDataByIndex(params: {
     bees: InitializedBees;
-    topicBase: string;
+    chatTopicBase: string;
     userAddress: string;
     index: number;
     options?: { timeout?: number };
   }) {
-    const { bees, topicBase, userAddress, index, options = {} } = params;
+    const { bees, chatTopicBase, userAddress, index, options = {} } = params;
 
     const timeout = options.timeout ?? 1500;
 
     const bee = this.getReaderBee(bees);
 
-    const feedID = this.generateUserOwnedFeedId(topicBase, userAddress);
+    const feedID = this.generateUserOwnedFeedId(chatTopicBase, userAddress);
     const topic = Topic.fromString(feedID);
     console.log('DEBUG: feedID read', topic.toString(), userAddress, index, feedID);
 
@@ -263,11 +264,11 @@ export class SwarmChatUtils {
     }
   }
 
-  public async getLatestFeedIndex(bees: InitializedBees, topicBase: string, address: string) {
+  public async getLatestFeedIndex(bees: InitializedBees, chatTopicBase: string, address: string) {
     try {
       const readerBee = this.getReaderBee(bees);
 
-      const feedID = this.generateUserOwnedFeedId(topicBase, address);
+      const feedID = this.generateUserOwnedFeedId(chatTopicBase, address);
       const topic = Topic.fromString(feedID);
 
       const feedReader = readerBee.makeFeedReader(topic, address);
@@ -288,7 +289,7 @@ export class SwarmChatUtils {
     }
   }
 
-  /**
+  /** DEPRECATED
    * Subscribe to GSOC messages for a topic and resource ID.
    * @param url The Bee URL.
    * @param topic The chat topic.
@@ -298,7 +299,7 @@ export class SwarmChatUtils {
    */
   public subscribeToGsoc(
     bees: InitializedBees,
-    topic: string,
+    gsocTopic: string,
     resourceId: string,
     callback: (gsocMessage: Bytes) => void,
   ) {
@@ -307,7 +308,7 @@ export class SwarmChatUtils {
     const bee = this.getMainGsocBee(bees);
 
     const key = new PrivateKey(resourceId);
-    const identifier = Identifier.fromString(topic);
+    const identifier = Identifier.fromString(gsocTopic);
 
     const gsocSub = bee.gsocSubscribe(key.publicKey().address(), identifier, {
       onMessage: callback,
@@ -324,18 +325,27 @@ export class SwarmChatUtils {
    * @param resourceId The resource ID for the message.
    * @returns The latest GSOC message
    */
-  public async fetchLatestGsocMessage(bees: InitializedBees, topic: string, resourceId: string): Promise<any> {
-    if (!resourceId) throw new Error('ResourceID was not provided!');
+  public async fetchLatestChatMessage(bees: InitializedBees, chatTopic: string, publicAddress: string): Promise<any> {
+    const { bee } = this.getGsocBee(bees);
 
-    const bee = this.getMainGsocBee(bees);
+    const reader = bee.makeFeedReader(Topic.fromString(chatTopic), remove0x(publicAddress));
+    const res = await reader.downloadPayload();
 
-    const signer = new PrivateKey(resourceId);
-    const identifier = Identifier.fromString(topic);
+    return res.payload.toJSON();
+  }
 
-    const { download } = bee.makeSOCReader(signer.publicKey().address());
-    const soc = await download(identifier);
+  public async fetchChatMessage(
+    bees: InitializedBees,
+    chatTopic: string,
+    publicAddress: string,
+    index: string,
+  ): Promise<any> {
+    const { bee } = this.getGsocBee(bees);
 
-    return soc.payload.toJSON();
+    const reader = bee.makeFeedReader(Topic.fromString(chatTopic), remove0x(publicAddress));
+    const res = await reader.downloadPayload({ index: FeedIndex.fromBigInt(BigInt(`0x${index}`)) });
+
+    return res.payload.toJSON();
   }
 
   /**
