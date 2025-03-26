@@ -1,5 +1,7 @@
 import { Bees } from './bee';
 
+export type ChainType = 'EVM' | 'SVM';
+
 export interface ChatSettings {
   ownAddress: string;
   privateKey: string;
@@ -11,6 +13,7 @@ export interface ChatSettings {
   contractAddress: string;
   swarmEmitterAddress: string;
   chatTopic: string;
+  chainType: ChainType;
   fetchMessageIntervalTime?: number;
   idleUserCleanupIntervalTime?: number;
   readMessageTimeout?: number;
