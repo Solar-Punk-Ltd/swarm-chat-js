@@ -23,7 +23,7 @@ export class SwarmEventEmitterReader {
   constructor(
     private chainType: ChainType,
     private rpcUrl: string,
-    private contractAddress: string,
+    private contractAddress: string | undefined,
     private swarmEmitterAddress: string,
   ) {
     this.init();
@@ -38,6 +38,10 @@ export class SwarmEventEmitterReader {
   }
 
   private initEvm() {
+    if (!this.contractAddress) {
+      throw new Error('Contract address is required for EVM chain type');
+    }
+
     const provider = this.rpcUrl.startsWith('ws')
       ? new ethers.WebSocketProvider(this.rpcUrl)
       : new ethers.JsonRpcProvider(this.rpcUrl);
