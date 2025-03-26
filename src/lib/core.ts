@@ -11,8 +11,8 @@ import { validateGsocMessage } from '../utils/validation';
 import { waitForBroadcast } from '../utils/waitForBroadcast';
 
 import { EVENTS, SECOND } from './constants';
-import { SwarmEventEmitterReader } from './contract';
 import { SwarmHistory } from './history';
+import { SwarmEventEmitterReader } from './swarmEventEmitterReader';
 import { ChatSettings, MessageData, User, UserMap } from './types';
 import { SwarmChatUtils } from './utils';
 
@@ -71,6 +71,7 @@ export class SwarmChat {
       swarmEmitterAddress: this.swarmEmitterAddress,
     });
     this.swarmEventEmitterReader = new SwarmEventEmitterReader(
+      settings.chainType,
       settings.rpcUrl,
       settings.contractAddress,
       settings.swarmEmitterAddress,
