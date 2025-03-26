@@ -46,7 +46,7 @@ export class SwarmHistory {
   private gsocTopic: string;
   private chatTopic: string;
   private ownAddress: string;
-  private swarmEmitterAddress: string;
+  private chatAddress: string;
 
   private processedUpdaterRefs = new Set();
   private loadedMessagesCache: Set<string> = new Set();
@@ -63,7 +63,7 @@ export class SwarmHistory {
     gsocTopic: string;
     chatTopic: string;
     ownAddress: string;
-    swarmEmitterAddress: string;
+    chatAddress: string;
   }) {
     this.bees = params.bees;
     this.gsocResourceId = params.gsocResourceId;
@@ -71,7 +71,7 @@ export class SwarmHistory {
     this.gsocTopic = params.gsocTopic;
     this.chatTopic = params.chatTopic;
     this.ownAddress = params.ownAddress;
-    this.swarmEmitterAddress = params.swarmEmitterAddress;
+    this.chatAddress = params.chatAddress;
   }
 
   /**
@@ -266,11 +266,7 @@ export class SwarmHistory {
 
   private async fetchLatestHistoryEntry(): Promise<ChatHistoryEntry | null> {
     try {
-      const message: ChatMessage = await this.utils.fetchLatestChatMessage(
-        this.bees,
-        this.chatTopic,
-        this.swarmEmitterAddress,
-      );
+      const message: ChatMessage = await this.utils.fetchLatestChatMessage(this.bees, this.chatTopic, this.chatAddress);
 
       this.logger.debug('Init GSOC message:', message);
 

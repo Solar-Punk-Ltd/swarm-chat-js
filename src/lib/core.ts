@@ -46,21 +46,23 @@ export class SwarmChat {
   private gsocTopic: string;
   private chatTopic: string;
   private ownAddress: string;
-  private swarmEmitterAddress: string;
+  private chatAddress: string;
   private nickname: string;
   private ownIndex = -1;
 
   // TODO: handle retry case when only soc send goes through, nothing goes through
   constructor(settings: ChatSettings) {
-    this.ownAddress = remove0x(settings.ownAddress);
-    this.privateKey = settings.privateKey;
-    this.gsocTopic = settings.gsocTopic;
-    this.chatTopic = settings.chatTopic;
-    this.nickname = settings.nickname;
-    this.gsocResourceId = settings.gsocResourceId;
-    this.swarmEmitterAddress = settings.swarmEmitterAddress;
+    const signer = new PrivateKey(remove0x(settings.user.privateKey));
+    this.ownAddress = signer.publicKey().address().toString();
+    this.privateKey = settings.user.privateKey;
+    this.nickname = settings.user.nickname;
 
-    this.bees = this.utils.initBees(settings.bees);
+    this.bees = this.utils.initBees(settings.infra.bees);
+    this.gsocTopic = settings.infra.gsoc.gsocTopic;
+    this.chatTopic = settings.infra.gsoc.chatTopic;
+    this.gsocResourceId = settings.infra.gsoc.gsocResourceId;
+    this.chatAddress = settings.infra.gsoc.chatAddress;
+
     this.history = new SwarmHistory({
       gsocResourceId: this.gsocResourceId,
       bees: this.bees,
@@ -68,18 +70,19 @@ export class SwarmChat {
       gsocTopic: this.gsocTopic,
       chatTopic: this.chatTopic,
       emitter: this.emitter,
-      swarmEmitterAddress: this.swarmEmitterAddress,
+      chatAddress: this.chatAddress,
     });
     this.swarmEventEmitterReader = new SwarmEventEmitterReader(
-      settings.chainType,
-      settings.rpcUrl,
-      settings.contractAddress,
-      settings.swarmEmitterAddress,
+      settings.infra.chain.chainType,
+      settings.infra.chain.rpcUrl,
+      settings.infra.chain.contractAddress,
+      settings.infra.chain.swarmEmitterAddress,
     );
 
-    this.FETCH_MESSAGE_INTERVAL_TIME = settings.fetchMessageIntervalTime || this.FETCH_MESSAGE_INTERVAL_TIME;
-    this.IDLE_USER_CLEANUP_INTERVAL_TIME = settings.idleUserCleanupIntervalTime || this.IDLE_USER_CLEANUP_INTERVAL_TIME;
-    this.READ_MESSAGE_TIMEOUT = settings.readMessageTimeout || this.READ_MESSAGE_TIMEOUT;
+    this.FETCH_MESSAGE_INTERVAL_TIME = settings.options.fetchMessageIntervalTime || this.FETCH_MESSAGE_INTERVAL_TIME;
+    this.IDLE_USER_CLEANUP_INTERVAL_TIME =
+      settings.options.idleUserCleanupIntervalTime || this.IDLE_USER_CLEANUP_INTERVAL_TIME;
+    this.READ_MESSAGE_TIMEOUT = settings.options.readMessageTimeout || this.READ_MESSAGE_TIMEOUT;
   }
 
   public start() {
@@ -248,7 +251,7 @@ export class SwarmChat {
       console.log('processGsocMessage CALLED', event);
       const [topic, index] = event.split('_');
 
-      const message = await this.utils.fetchChatMessage(this.bees, topic, this.swarmEmitterAddress, index);
+      const message = await this.utils.fetchChatMessage(this.bees, topic, this.chatAddress, index);
 
       if (!validateGsocMessage(message)) {
         this.logger.warn('Invalid GSOC message during processing');
