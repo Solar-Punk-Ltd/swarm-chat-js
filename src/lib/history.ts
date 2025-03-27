@@ -15,7 +15,7 @@ import {
   ChatHistory,
   ChatHistoryEntry,
   ChatMessage,
-  InitializedBees,
+  ChatSettingsUser,
   MessageEntry,
   UserHistoryMap,
   UserMap,
@@ -27,9 +27,6 @@ import { SwarmChatUtils } from './utils';
  * Responsible for maintaining the chat history and updating it based on incoming GSOC messages.
  */
 export class SwarmHistory {
-  private emitter: EventEmitter;
-  private utils = new SwarmChatUtils();
-
   private mutex = new Mutex();
   private logger = Logger.getInstance();
   private errorHandler = new ErrorHandler();
@@ -41,13 +38,6 @@ export class SwarmHistory {
     allTimeUsers: {},
   };
 
-  private bees: InitializedBees;
-  private gsocResourceId: string;
-  private gsocTopic: string;
-  private chatTopic: string;
-  private ownAddress: string;
-  private chatAddress: string;
-
   private processedUpdaterRefs = new Set();
   private loadedMessagesCache: Set<string> = new Set();
   private updaterEntryBuffer: ChatHistoryEntry[] = [];
@@ -56,23 +46,7 @@ export class SwarmHistory {
   private HISTORY_UPDATE_INTERVAL_TIME = 5000;
   private MAX_LOADED_MESSAGES_CACHE_SIZE = 10;
 
-  constructor(params: {
-    bees: InitializedBees;
-    emitter: EventEmitter;
-    gsocResourceId: string;
-    gsocTopic: string;
-    chatTopic: string;
-    ownAddress: string;
-    chatAddress: string;
-  }) {
-    this.bees = params.bees;
-    this.gsocResourceId = params.gsocResourceId;
-    this.emitter = params.emitter;
-    this.gsocTopic = params.gsocTopic;
-    this.chatTopic = params.chatTopic;
-    this.ownAddress = params.ownAddress;
-    this.chatAddress = params.chatAddress;
-  }
+  constructor(private userDetails: ChatSettingsUser, private utils: SwarmChatUtils, private emitter: EventEmitter) {}
 
   /**
    * Sets the last known history entry from the last known GSOC message or initializes a new one if none is found.
@@ -138,7 +112,7 @@ export class SwarmHistory {
     try {
       this.updateLocalHistory(activeUsers);
 
-      if (updaterEntry.updater === this.ownAddress) {
+      if (updaterEntry.updater === this.userDetails.ownAddress) {
         this.updaterEntryBuffer.push(updaterEntry);
       }
     } catch (error) {
@@ -217,15 +191,8 @@ export class SwarmHistory {
    */
   private async broadcastHistoryEntry(historyEntry: ChatHistoryEntry) {
     try {
-      if (!this.gsocResourceId) {
-        throw new Error('GSOC Resource ID is not defined');
-      }
-
       await this.utils.retryAwaitableAsync(() =>
         this.utils.sendMessageToGsoc(
-          this.bees,
-          this.gsocTopic,
-          this.gsocResourceId!,
           JSON.stringify({
             historyEntry,
           }),
@@ -239,22 +206,20 @@ export class SwarmHistory {
   }
 
   private async uploadHistory(newChatHistory: ChatHistory): Promise<string> {
-    const { bee, stamp } = this.utils.getWriterBee(this.bees);
-    const historyRef = await this.utils.uploadObjectToBee(bee, newChatHistory, stamp);
+    const historyRef = await this.utils.uploadObjectToBeeV2(newChatHistory);
 
     if (!historyRef) {
       throw new Error('History reference is null');
     }
 
-    return historyRef.reference.toString();
+    return historyRef;
   }
 
   private async fetchHistory(historyEntry?: ChatHistoryEntry): Promise<ChatHistory | null> {
     const latestHistoryEntry = historyEntry || (await this.fetchLatestHistoryEntry());
     if (!latestHistoryEntry) return null;
 
-    const bee = this.utils.getReaderBee(this.bees);
-    const historyData = (await this.utils.downloadObjectFromBee(bee, latestHistoryEntry.ref)) as ChatHistory;
+    const historyData = (await this.utils.downloadObjectFromBee(latestHistoryEntry.ref)) as ChatHistory;
 
     if (!validateChatHistory(historyData)) {
       this.logger.warn('Could not fetch remote history: invalid history data');
@@ -266,7 +231,7 @@ export class SwarmHistory {
 
   private async fetchLatestHistoryEntry(): Promise<ChatHistoryEntry | null> {
     try {
-      const message: ChatMessage = await this.utils.fetchLatestChatMessage(this.bees, this.chatTopic, this.chatAddress);
+      const message: ChatMessage = await this.utils.fetchLatestChatMessage();
 
       this.logger.debug('Init GSOC message:', message);
 
@@ -284,19 +249,14 @@ export class SwarmHistory {
 
   private async readAllMessageEntry(latestMessages: UserMessageEntry[]) {
     latestMessages.forEach((userEntry) => {
-      this.messagesQueue.enqueue(() => this.readMessage(userEntry, this.chatTopic));
+      this.messagesQueue.enqueue(() => this.readMessage(userEntry));
     });
     await this.messagesQueue.waitForProcessing();
   }
 
-  private async readMessage(userEntry: UserMessageEntry, chatTopic: string) {
+  private async readMessage(userEntry: UserMessageEntry) {
     try {
-      const messageData = await this.utils.fetchUserFeedDataByIndex({
-        chatTopicBase: chatTopic,
-        bees: this.bees,
-        userAddress: userEntry.address,
-        index: userEntry.entry.index,
-      });
+      const messageData = await this.utils.fetchUserFeedDataByIndex(userEntry.address, userEntry.entry.index);
 
       this.emitter.emit(EVENTS.MESSAGE_RECEIVED, messageData);
     } catch (error) {
@@ -411,7 +371,7 @@ export class SwarmHistory {
   private chooseNewUpdater(activeUsers: UserMap): string {
     const users = Object.values(activeUsers);
 
-    if (users.length === 0) return this.ownAddress;
+    if (users.length === 0) return this.userDetails.ownAddress;
 
     let randomIndex: number;
 
@@ -468,7 +428,7 @@ export class SwarmHistory {
    */
   private selectBestEntryForUpdate(entryBuffer: ChatHistoryEntry[]): ChatHistoryEntry | null {
     return entryBuffer
-      .filter((entry) => entry.updater === this.ownAddress)
+      .filter((entry) => entry.updater === this.userDetails.ownAddress)
       .reduce((bestEntry, currentEntry) => {
         if (!bestEntry) return currentEntry;
         if (currentEntry.id > bestEntry.id) return currentEntry;
@@ -487,7 +447,7 @@ export class SwarmHistory {
     return {
       id: this.historyEntry.id + 1,
       ref: historyRef,
-      updater: this.ownAddress,
+      updater: this.userDetails.ownAddress,
       timestamp: Date.now(),
     };
   }
@@ -496,7 +456,7 @@ export class SwarmHistory {
     this.historyEntry = {
       id: 0,
       ref: '',
-      updater: this.ownAddress,
+      updater: this.userDetails.ownAddress,
       timestamp: Date.now(),
     };
   }
