@@ -1,4 +1,4 @@
-import { EthAddress, PrivateKey } from '@upcoming/bee-js';
+import { Bee, EthAddress, PrivateKey } from '@ethersphere/bee-js';
 import isEqual from 'lodash/isEqual';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -13,76 +13,59 @@ import { waitForBroadcast } from '../utils/waitForBroadcast';
 import { EVENTS, SECOND } from './constants';
 import { SwarmHistory } from './history';
 import { SwarmEventEmitterReader } from './swarmEventEmitterReader';
-import { ChatSettings, MessageData, User, UserMap } from './types';
+import { ChatOptions, ChatSettings, ChatSettingsSwarm, ChatSettingsUser, MessageData, User, UserMap } from './types';
 import { SwarmChatUtils } from './utils';
 
 export class SwarmChat {
-  private emitter = new EventEmitter();
-  private utils = new SwarmChatUtils();
+  private emitter: EventEmitter;
+  private utils: SwarmChatUtils;
   private history: SwarmHistory;
   private swarmEventEmitterReader: SwarmEventEmitterReader;
+
+  private options: ChatOptions;
+  private userDetails: ChatSettingsUser;
+  private swarmSettings: ChatSettingsSwarm;
 
   private logger = Logger.getInstance();
   private errorHandler = new ErrorHandler();
 
-  private bees;
   private messagesQueue = new Queue({ clearWaitTime: 200 });
   private gsocListenerQueue = new Queue({ clearWaitTime: 200 });
-
-  private fetchMessageTimer: NodeJS.Timeout | null = null;
-  private idleUserCleanupInterval: NodeJS.Timeout | null = null;
-
-  private FETCH_MESSAGE_INTERVAL_TIME = 1000;
-  private IDLE_USER_CLEANUP_INTERVAL_TIME = 5000;
-  private READ_MESSAGE_TIMEOUT = 1500;
 
   private activeUsers: UserMap = {};
   private latestMessage: any | null = null;
   private userIndexCache: Record<string, number> = {};
 
-  private gsocResourceId: string | null = null;
-
-  private privateKey: string;
-  private gsocTopic: string;
-  private chatTopic: string;
-  private ownAddress: string;
-  private chatAddress: string;
-  private nickname: string;
-  private ownIndex = -1;
-
-  // TODO: handle retry case when only soc send goes through, nothing goes through
   constructor(settings: ChatSettings) {
     const signer = new PrivateKey(remove0x(settings.user.privateKey));
-    this.ownAddress = signer.publicKey().address().toString();
-    this.privateKey = settings.user.privateKey;
-    this.nickname = settings.user.nickname;
+    this.userDetails = {
+      privateKey: settings.user.privateKey,
+      ownAddress: signer.publicKey().address().toString(),
+      nickname: settings.user.nickname,
+      ownIndex: -1,
+    };
 
-    this.bees = this.utils.initBees(settings.infra.bees);
-    this.gsocTopic = settings.infra.gsoc.gsocTopic;
-    this.chatTopic = settings.infra.gsoc.chatTopic;
-    this.gsocResourceId = settings.infra.gsoc.gsocResourceId;
-    this.chatAddress = settings.infra.gsoc.chatAddress;
+    this.swarmSettings = {
+      bee: new Bee(settings.infra.swarm.rpcUrl),
+      stamp: settings.infra.swarm.stamp,
+      gsocTopic: settings.infra.swarm.gsocTopic,
+      gsocResourceId: settings.infra.swarm.gsocResourceId,
+      chatTopic: settings.infra.swarm.chatTopic,
+      chatAddress: settings.infra.swarm.chatAddress,
+    };
 
-    this.history = new SwarmHistory({
-      gsocResourceId: this.gsocResourceId,
-      bees: this.bees,
-      ownAddress: this.ownAddress,
-      gsocTopic: this.gsocTopic,
-      chatTopic: this.chatTopic,
-      emitter: this.emitter,
-      chatAddress: this.chatAddress,
-    });
-    this.swarmEventEmitterReader = new SwarmEventEmitterReader(
-      settings.infra.chain.chainType,
-      settings.infra.chain.rpcUrl,
-      settings.infra.chain.contractAddress,
-      settings.infra.chain.swarmEmitterAddress,
-    );
+    this.options = {
+      fetchMessageTimer: null,
+      idleUserCleanupInterval: null,
+      FETCH_MESSAGE_INTERVAL_TIME: settings.options?.fetchMessageIntervalTime || 1000,
+      IDLE_USER_CLEANUP_INTERVAL_TIME: settings.options?.idleUserCleanupIntervalTime || 5000,
+      READ_MESSAGE_TIMEOUT: settings.options?.readMessageTimeout || 1500,
+    };
 
-    this.FETCH_MESSAGE_INTERVAL_TIME = settings.options.fetchMessageIntervalTime || this.FETCH_MESSAGE_INTERVAL_TIME;
-    this.IDLE_USER_CLEANUP_INTERVAL_TIME =
-      settings.options.idleUserCleanupIntervalTime || this.IDLE_USER_CLEANUP_INTERVAL_TIME;
-    this.READ_MESSAGE_TIMEOUT = settings.options.readMessageTimeout || this.READ_MESSAGE_TIMEOUT;
+    this.emitter = new EventEmitter();
+    this.utils = new SwarmChatUtils(this.userDetails, this.swarmSettings);
+    this.history = new SwarmHistory(this.userDetails, this.utils, this.emitter);
+    this.swarmEventEmitterReader = new SwarmEventEmitterReader(settings.infra.chain);
   }
 
   public start() {
@@ -117,11 +100,11 @@ export class SwarmChat {
    * @throws Will emit a `MESSAGE_REQUEST_ERROR` event if an error occurs during the process.
    */
   public async sendMessage(message: string, id?: string): Promise<void> {
-    const nextIndex = this.ownIndex === -1 ? 0 : this.ownIndex + 1;
+    const nextIndex = this.userDetails.ownIndex === -1 ? 0 : this.userDetails.ownIndex + 1;
     const messageObj = {
       id: id || uuidv4(),
-      username: this.nickname,
-      address: this.ownAddress,
+      username: this.userDetails.nickname,
+      address: this.userDetails.ownAddress,
       timestamp: Date.now(),
       index: nextIndex,
       message,
@@ -130,16 +113,9 @@ export class SwarmChat {
     try {
       this.emitter.emit(EVENTS.MESSAGE_REQUEST_INITIATED, messageObj);
 
-      await this.utils.writeUserFeedDataByIndex({
-        bees: this.bees,
-        userAddress: this.ownAddress,
-        chatTopicBase: this.chatTopic,
-        index: nextIndex,
-        privateKey: this.privateKey,
-        data: messageObj,
-      });
+      await this.utils.writeOwnFeedDataByIndexV2(nextIndex, JSON.stringify(messageObj));
 
-      this.ownIndex = nextIndex;
+      this.userDetails.ownIndex = nextIndex;
 
       this.emitter.emit(EVENTS.MESSAGE_REQUEST_UPLOADED, messageObj);
 
@@ -205,12 +181,12 @@ export class SwarmChat {
     const DELAY = 1000;
 
     const { latestIndex } = await this.utils.retryAwaitableAsync(
-      () => this.utils.getLatestFeedIndex(this.bees, this.chatTopic, this.ownAddress),
+      () => this.utils.getOwnLatestFeedIndex(),
       RETRY_COUNT,
       DELAY,
     );
 
-    this.ownIndex = latestIndex;
+    this.userDetails.ownIndex = latestIndex;
   }
 
   /**
@@ -219,10 +195,6 @@ export class SwarmChat {
    */
   private subscribeToGSOCEvent() {
     try {
-      if (!this.gsocResourceId) {
-        throw new Error('GSOC Resource ID is not defined');
-      }
-
       this.swarmEventEmitterReader.onMessageFrom((_sender: string, event: string) =>
         this.gsocListenerQueue.enqueue(() => this.processGsocEvent(event)),
       );
@@ -249,9 +221,11 @@ export class SwarmChat {
   private async processGsocEvent(event: string) {
     try {
       console.log('processGsocMessage CALLED', event);
-      const [topic, index] = event.split('_');
+      const [_topic, index] = event.split('_');
 
-      const message = await this.utils.fetchChatMessage(this.bees, topic, this.chatAddress, index);
+      const message = await this.utils.fetchChatMessage(index);
+
+      console.log('DEBUG processGsocMessage', message);
 
       if (!validateGsocMessage(message)) {
         this.logger.warn('Invalid GSOC message during processing');
@@ -293,9 +267,6 @@ export class SwarmChat {
   private async broadcastUserMessage() {
     try {
       this.logger.debug('broadcastUserMessage entry CALLED');
-      if (!this.gsocResourceId) {
-        throw new Error('GSOC Resource ID is not defined');
-      }
 
       const messageSender = await this.makeMessageSender();
 
@@ -303,9 +274,6 @@ export class SwarmChat {
 
       await this.utils.retryAwaitableAsync(() =>
         this.utils.sendMessageToGsoc(
-          this.bees,
-          this.gsocTopic,
-          this.gsocResourceId!,
           JSON.stringify({
             messageSender,
             historyEntry: this.history.getHistoryEntryWithNewUpdater(this.activeUsers),
@@ -318,9 +286,11 @@ export class SwarmChat {
   }
 
   private async makeMessageSender() {
-    const ownAddress = new EthAddress(this.ownAddress).toString();
+    const { ownAddress: address, privateKey, nickname } = this.userDetails;
 
-    const signer = new PrivateKey(this.privateKey);
+    const ownAddress = new EthAddress(address).toString();
+
+    const signer = new PrivateKey(privateKey);
     const signerAddress = signer.publicKey().address().toString();
 
     if (signerAddress !== ownAddress) {
@@ -328,14 +298,14 @@ export class SwarmChat {
     }
 
     const timestamp = Date.now();
-    const signature = signer.sign(JSON.stringify({ username: this.nickname, address: ownAddress, timestamp }));
+    const signature = signer.sign(JSON.stringify({ username: nickname, address: ownAddress, timestamp }));
 
     return {
       address: ownAddress,
       timestamp,
       signature: signature.toHex(),
       index: this.getOwnIndex(),
-      username: this.nickname,
+      username: nickname,
     };
   }
 
@@ -347,7 +317,7 @@ export class SwarmChat {
     }
 
     for (const user of Object.values(this.activeUsers)) {
-      this.messagesQueue.enqueue(() => this.readMessage(user, this.chatTopic));
+      this.messagesQueue.enqueue(() => this.readMessage(user));
     }
   }
 
@@ -362,7 +332,7 @@ export class SwarmChat {
    */
 
   // TODO skip message if fails to many times
-  private async readMessage(user: User, chatTopic: string) {
+  private async readMessage(user: User) {
     try {
       let nextIndex: number;
       const readCacheState = this.isUserIndexRead(user.address, user.index);
@@ -373,12 +343,7 @@ export class SwarmChat {
         nextIndex = readCacheState.cachedIndex ? readCacheState.cachedIndex + 1 : user.index;
       }
 
-      const messageData = await this.utils.fetchUserFeedDataByIndex({
-        chatTopicBase: chatTopic,
-        bees: this.bees,
-        userAddress: user.address,
-        index: nextIndex,
-      });
+      const messageData = await this.utils.fetchUserFeedDataByIndex(user.address, nextIndex);
 
       this.setUserIndexCache(user.address, nextIndex);
       this.emitter.emit(EVENTS.MESSAGE_RECEIVED, messageData);
@@ -392,32 +357,43 @@ export class SwarmChat {
   }
 
   private startMessagesFetchProcess() {
-    if (this.fetchMessageTimer) {
+    const { fetchMessageTimer, FETCH_MESSAGE_INTERVAL_TIME } = this.options;
+
+    if (fetchMessageTimer) {
       this.logger.warn('Messages fetch process is already running.');
       return;
     }
-    this.fetchMessageTimer = setInterval(this.readAllActiveUserMessage.bind(this), this.FETCH_MESSAGE_INTERVAL_TIME);
+    this.options.fetchMessageTimer = setInterval(this.readAllActiveUserMessage.bind(this), FETCH_MESSAGE_INTERVAL_TIME);
   }
 
   private stopMessagesFetchProcess() {
-    if (this.fetchMessageTimer) {
-      clearInterval(this.fetchMessageTimer);
-      this.fetchMessageTimer = null;
+    const { fetchMessageTimer } = this.options;
+
+    if (fetchMessageTimer) {
+      clearInterval(fetchMessageTimer);
+      this.options.fetchMessageTimer = null;
     }
   }
 
   private startIdleUserCleanup(): void {
-    if (this.idleUserCleanupInterval) {
+    const { idleUserCleanupInterval, IDLE_USER_CLEANUP_INTERVAL_TIME } = this.options;
+
+    if (idleUserCleanupInterval) {
       this.logger.warn('Idle user cleanup is already running.');
       return;
     }
-    this.idleUserCleanupInterval = setInterval(this.removeIdleUsers.bind(this), this.IDLE_USER_CLEANUP_INTERVAL_TIME);
+    this.options.idleUserCleanupInterval = setInterval(
+      this.removeIdleUsers.bind(this),
+      IDLE_USER_CLEANUP_INTERVAL_TIME,
+    );
   }
 
   private stopIdleUserCleanup(): void {
-    if (this.idleUserCleanupInterval) {
-      clearInterval(this.idleUserCleanupInterval);
-      this.idleUserCleanupInterval = null;
+    const { idleUserCleanupInterval } = this.options;
+
+    if (idleUserCleanupInterval) {
+      clearInterval(idleUserCleanupInterval);
+      this.options.idleUserCleanupInterval = null;
     }
   }
 
@@ -431,7 +407,7 @@ export class SwarmChat {
   }
 
   private getOwnIndex() {
-    return this.ownIndex;
+    return this.userDetails.ownIndex;
   }
 
   private removeIdleUsers() {

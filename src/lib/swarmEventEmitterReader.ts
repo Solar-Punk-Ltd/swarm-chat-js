@@ -6,7 +6,7 @@ import evmAbi from '../../ABI/SwarmEventEmitter.json';
 import { SwarmEventEmitter as SvmTypes } from '../../IDL/SwarmEventEmitter';
 import svmIdl from '../../IDL/SwarmEventEmitter.json';
 
-import { ChainType } from './types';
+import { ChatSettingsChain } from './types';
 
 export class SwarmEventEmitterReader {
   private evm: {
@@ -20,38 +20,35 @@ export class SwarmEventEmitterReader {
     listenerId?: number;
   } | null = null;
 
-  constructor(
-    private chainType: ChainType,
-    private rpcUrl: string,
-    private contractAddress: string | undefined,
-    private swarmEmitterAddress: string,
-  ) {
+  constructor(private settings: ChatSettingsChain) {
     this.init();
   }
 
   private init() {
-    if (this.chainType === 'EVM') {
+    if (this.settings.chainType === 'EVM') {
       this.initEvm();
-    } else if (this.chainType === 'SVM') {
+    } else if (this.settings.chainType === 'SVM') {
       this.initSvm();
     }
   }
 
   private initEvm() {
-    if (!this.contractAddress) {
+    const { rpcUrl, contractAddress } = this.settings;
+
+    if (!contractAddress) {
       throw new Error('Contract address is required for EVM chain type');
     }
 
-    const provider = this.rpcUrl.startsWith('ws')
-      ? new ethers.WebSocketProvider(this.rpcUrl)
-      : new ethers.JsonRpcProvider(this.rpcUrl);
+    const provider = rpcUrl.startsWith('ws')
+      ? new ethers.WebSocketProvider(rpcUrl)
+      : new ethers.JsonRpcProvider(rpcUrl);
 
-    const contract = new ethers.Contract(this.contractAddress, evmAbi.abi, provider);
+    const contract = new ethers.Contract(contractAddress, evmAbi.abi, provider);
     this.evm = { provider, contract };
   }
 
   private initSvm() {
-    const provider = new Connection(this.rpcUrl, 'confirmed');
+    const provider = new Connection(this.settings.rpcUrl, 'confirmed');
     const dummyKeypair = Keypair.generate();
     const wallet = {
       signTransaction: async (tx: any) => tx,
@@ -65,16 +62,16 @@ export class SwarmEventEmitterReader {
   }
 
   public async onMessageFrom(callback: (sender: string, message: string) => void) {
-    if (this.chainType === 'EVM') {
+    if (this.settings.chainType === 'EVM') {
       this.listenToEvm(callback);
-    } else if (this.chainType === 'SVM') {
+    } else if (this.settings.chainType === 'SVM') {
       await this.listenToSvm(callback);
     }
   }
 
   private listenToEvm(callback: (sender: string, message: string) => void) {
     this.evm?.contract.on('MessageLogged', (sender: string, message: string) => {
-      if (sender.toLowerCase() === this.swarmEmitterAddress.toLowerCase()) {
+      if (sender.toLowerCase() === this.settings.swarmEmitterAddress.toLowerCase()) {
         callback(sender, message);
       }
     });
@@ -83,7 +80,7 @@ export class SwarmEventEmitterReader {
   private async listenToSvm(callback: (sender: string, message: string) => void) {
     const listenerId = this.svm?.program.addEventListener('messageLogged', (event) => {
       const { sender, message } = event;
-      if (sender.toBase58() === this.swarmEmitterAddress) {
+      if (sender.toBase58() === this.settings.swarmEmitterAddress) {
         callback(sender.toBase58(), message);
       }
     });
@@ -94,10 +91,10 @@ export class SwarmEventEmitterReader {
   }
 
   public async removeAllListeners() {
-    if (this.chainType === 'EVM') {
+    if (this.settings.chainType === 'EVM') {
       this.evm?.contract.removeAllListeners('MessageLogged');
     }
-    if (this.chainType === 'SVM' && this.svm?.listenerId !== undefined) {
+    if (this.settings.chainType === 'SVM' && this.svm?.listenerId !== undefined) {
       await this.svm.program.removeEventListener(this.svm.listenerId);
       this.svm.listenerId = undefined;
     }

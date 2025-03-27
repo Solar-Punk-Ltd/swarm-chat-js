@@ -1,4 +1,4 @@
-import { Bee, Identifier } from '@upcoming/bee-js';
+import { Bee, Identifier } from '@ethersphere/bee-js';
 
 const BEE_HOST = 'http://localhost:1633';
 

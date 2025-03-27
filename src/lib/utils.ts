@@ -1,39 +1,35 @@
-import { BatchId, Bee, Bytes, FeedIndex, Identifier, PrivateKey, Topic, UploadResult } from '@upcoming/bee-js';
+import { Bytes, FeedIndex, Identifier, PrivateKey, Stamper, Topic, UploadResult } from '@ethersphere/bee-js';
+import { Binary, MerkleTree } from 'cafe-utility';
 
+import { makeContentAddressedChunk, makeFeedIdentifier, makeSingleOwnerChunk } from '../utils/bee';
 import { remove0x } from '../utils/common';
 import { ErrorHandler } from '../utils/error';
 import { Logger } from '../utils/logger';
 
-import { Bees, BeeSettings, BeeType, InitializedBee, InitializedBees, MultiBees } from './types';
+import { ChatSettingsSwarm, ChatSettingsUser } from './types';
 
 /**
  * Utility class for Swarm chat operations including feed management,
  * user validation, and interaction with Bee and GSOC.
  */
 export class SwarmChatUtils {
+  // TODO: big enough now, but it should represent the depth of the stamp
+  private depth = 24;
   private logger = Logger.getInstance();
   private errorHandler = new ErrorHandler();
 
   private UPLOAD_GSOC_TIMEOUT = 2000;
 
-  constructor() {}
+  constructor(private userDetails: ChatSettingsUser, private swarmSettings: ChatSettingsSwarm) {}
 
-  public async writeUserFeedDataByIndex(params: {
-    bees: InitializedBees;
-    chatTopicBase: string;
-    userAddress: string;
-    index: number;
-    privateKey: string;
-    data: any;
-  }): Promise<void> {
-    const { bees, chatTopicBase, userAddress, privateKey, index, data } = params;
+  public async writeOwnFeedDataByIndex(index: number, data: any): Promise<void> {
+    const { bee, stamp, chatTopic } = this.swarmSettings;
+    const { privateKey, ownAddress } = this.userDetails;
 
-    const { bee, stamp } = this.getWriterBee(bees);
-
-    const feedID = this.generateUserOwnedFeedId(chatTopicBase, userAddress);
+    const feedID = this.generateUserOwnedFeedId(chatTopic, ownAddress);
     const topic = Topic.fromString(feedID);
 
-    console.log('DEBUG: feedID write', topic.toString(), userAddress, index, feedID);
+    console.log('DEBUG: feedID write', topic.toString(), ownAddress, index, feedID);
     const feedWriter = bee.makeFeedWriter(topic, new PrivateKey(privateKey));
 
     await feedWriter.uploadPayload(stamp, JSON.stringify(data), {
@@ -41,20 +37,40 @@ export class SwarmChatUtils {
     });
   }
 
-  public async fetchUserFeedDataByIndex(params: {
-    bees: InitializedBees;
-    chatTopicBase: string;
-    userAddress: string;
-    index: number;
-    options?: { timeout?: number };
-  }) {
-    const { bees, chatTopicBase, userAddress, index, options = {} } = params;
+  // TODO: support for wrapped chunks
+  public async writeOwnFeedDataByIndexV2(index: number, data: string): Promise<string> {
+    const { bee, stamp, chatTopic } = this.swarmSettings;
+    const { privateKey, ownAddress } = this.userDetails;
 
-    const timeout = options.timeout ?? 1500;
+    const signer = new PrivateKey(privateKey);
+    const stamper = Stamper.fromBlank(privateKey, stamp, this.depth);
 
-    const bee = this.getReaderBee(bees);
+    const feedID = this.generateUserOwnedFeedId(chatTopic, ownAddress);
+    const topic = Topic.fromString(feedID);
+    const identifier = makeFeedIdentifier(topic, index);
 
-    const feedID = this.generateUserOwnedFeedId(chatTopicBase, userAddress);
+    const cac = makeContentAddressedChunk(data);
+    const soc = makeSingleOwnerChunk(cac, identifier, signer);
+
+    // TODO: workarounds for bee-js envleope type bugs
+    const stampReadyChunk = {
+      hash: () => soc.address.toUint8Array(),
+    };
+    const envelope = stamper.stamp(stampReadyChunk as any) as any;
+
+    const { upload } = bee.makeSOCWriter(signer);
+    const payload = Bytes.fromUtf8(data);
+    const result = await upload(envelope, identifier, payload.toUint8Array());
+
+    return result.reference.toHex();
+  }
+
+  public async fetchUserFeedDataByIndex(userAddress: string, index: number, options?: { timeout?: number }) {
+    const { bee, chatTopic } = this.swarmSettings;
+
+    const timeout = options?.timeout ?? 1500;
+
+    const feedID = this.generateUserOwnedFeedId(chatTopic, userAddress);
     const topic = Topic.fromString(feedID);
     console.log('DEBUG: feedID read', topic.toString(), userAddress, index, feedID);
 
@@ -70,141 +86,6 @@ export class SwarmChatUtils {
     console.log(data.payload.toUtf8());
 
     return data.payload.toJSON();
-  }
-
-  /**
-   * Initializes Bee instances based on the provided Bees configuration.
-   * @param bees - The Bees configuration object containing single or multiple bees.
-   * @returns An object mapping each bee type (gsoc, reader, writer) to its initialized bee(s).
-   * @throws If required bees or postage stamps are not provided.
-   */
-  public initBees(bees: Bees): InitializedBees {
-    if (!bees.singleBee && !bees.multiBees) {
-      throw new Error('No bees provided');
-    }
-
-    const initializedBees: InitializedBees = {};
-
-    const initializeSingleBee = (beeConfig: BeeSettings): InitializedBee => {
-      return {
-        bee: new Bee(beeConfig.url),
-        stamp: beeConfig.stamp,
-        main: beeConfig.main,
-      };
-    };
-
-    const initializeMultipleBees = (beeConfigs?: BeeSettings[]): InitializedBee[] => {
-      if (!beeConfigs) {
-        throw new Error('No bee configurations provided');
-      }
-      return beeConfigs.map((config) => {
-        return {
-          bee: new Bee(config.url),
-          stamp: config.stamp,
-          main: config.main,
-        };
-      });
-    };
-
-    if (bees.singleBee) {
-      if (!bees.singleBee.stamp) {
-        throw new Error('No postage stamp provided for the single bee');
-      }
-      return { single: initializeSingleBee(bees.singleBee) };
-    }
-
-    const types: (keyof MultiBees)[] = ['gsoc', 'reader', 'writer'];
-    for (const type of types) {
-      const beeGroup = bees.multiBees?.[type];
-      if (!beeGroup) continue;
-
-      if (beeGroup.singleBee) {
-        initializedBees[type] = initializeSingleBee(beeGroup.singleBee);
-      } else if (beeGroup.multiBees) {
-        initializedBees[type] = initializeMultipleBees(beeGroup.multiBees);
-      }
-    }
-
-    return initializedBees;
-  }
-
-  /**
-   * Selects a Bee instance from the initialized bees based on the provided parameters.
-   * @param initializedBees The object containing initialized bees.
-   * @param type The type of bee to select (e.g., GSOC, READER, WRITER).
-   * @param main If true, selects the main bee; otherwise, selects a random non-main bee.
-   * @returns The selected Bee instance.
-   * @throws If no suitable bee is found for the specified type.
-   */
-  public selectBee(initializedBees: InitializedBees, type: BeeType, main?: boolean): InitializedBee {
-    const beeGroup = initializedBees[type];
-
-    if (!beeGroup) {
-      throw new Error(`No ${type} bees available`);
-    }
-
-    // multiple bees
-    if (Array.isArray(beeGroup)) {
-      if (main) {
-        const mainBee = beeGroup.find((bee) => bee.main);
-        if (mainBee) {
-          return mainBee;
-        }
-      }
-
-      const nonMainBees = beeGroup.filter((bee) => !bee.main);
-      if (nonMainBees.length > 0) {
-        const randomIndex = Math.floor(Math.random() * nonMainBees.length);
-        return nonMainBees[randomIndex];
-      }
-
-      throw new Error(`No non-main ${type} bees available`);
-    }
-
-    // single bee
-    if (beeGroup.bee) {
-      return beeGroup;
-    }
-
-    throw new Error(`No ${type} bees available`);
-  }
-
-  public getMainGsocBee(bees: InitializedBees) {
-    const { bee } = this.selectBee(bees, BeeType.GSOC, true);
-    if (!bee) {
-      throw new Error('Could not get main GSOC bee');
-    }
-    return bee;
-  }
-
-  public getGsocBee(bees: InitializedBees) {
-    const { bee, stamp } = this.selectBee(bees, BeeType.GSOC);
-    if (!bee) {
-      throw new Error('Could not get GSOC bee');
-    }
-    if (!stamp) {
-      throw new Error('Could not get valid gsoc stamp');
-    }
-    return { bee, stamp };
-  }
-
-  public getReaderBee(bees: InitializedBees) {
-    const { bee } = this.selectBee(bees, BeeType.READER);
-    if (!bee) {
-      throw new Error('Could not get reader bee');
-    }
-    return bee;
-  }
-
-  public getWriterBee(bees: InitializedBees) {
-    const { bee, stamp } = this.selectBee(bees, BeeType.WRITER);
-    if (!bee) {
-      throw new Error('Could not get writer bee');
-    }
-    if (!stamp) {
-      throw new Error('Could not get valid writer stamp');
-    }
-    return { bee, stamp };
   }
 
   /**
@@ -243,8 +124,9 @@ export class SwarmChatUtils {
     });
   }
 
-  public async uploadObjectToBee(bee: Bee, jsObject: object, stamp: BatchId): Promise<UploadResult | null> {
+  public async uploadObjectToBee(jsObject: object): Promise<UploadResult | null> {
     try {
+      const { bee, stamp } = this.swarmSettings;
       const result = await bee.uploadData(stamp, JSON.stringify(jsObject), { redundancyLevel: 4 });
       console.log('DEBUG: result', result.reference.toString());
       return result;
@@ -254,8 +136,32 @@ export class SwarmChatUtils {
     }
   }
 
-  public async downloadObjectFromBee(bee: Bee, reference: string): Promise<any> {
+  public async uploadObjectToBeeV2(jsObject: object): Promise<string | null> {
     try {
+      const { bee, stamp } = this.swarmSettings;
+      const { privateKey } = this.userDetails;
+
+      const stamper = Stamper.fromBlank(privateKey, stamp, this.depth);
+      const payload = Bytes.fromUtf8(JSON.stringify(jsObject));
+
+      const tree = new MerkleTree(async (chunk) => {
+        await bee.uploadChunk(stamper.stamp(chunk), chunk.build());
+      });
+
+      await tree.append(payload.toUint8Array());
+
+      const rootChunk = await tree.finalize();
+
+      return Binary.uint8ArrayToHex(rootChunk.hash());
+    } catch (error) {
+      this.errorHandler.handleError(error, 'Utils.uploadObjectToBee');
+      return null;
+    }
+  }
+
+  public async downloadObjectFromBee(reference: string): Promise<any> {
+    try {
+      const { bee } = this.swarmSettings;
       const result = await bee.downloadData(reference);
       return result.toJSON();
     } catch (error) {
@@ -264,14 +170,15 @@ export class SwarmChatUtils {
     }
   }
 
-  public async getLatestFeedIndex(bees: InitializedBees, chatTopicBase: string, address: string) {
+  public async getOwnLatestFeedIndex() {
     try {
-      const readerBee = this.getReaderBee(bees);
+      const { bee, chatTopic } = this.swarmSettings;
+      const { ownAddress } = this.userDetails;
 
-      const feedID = this.generateUserOwnedFeedId(chatTopicBase, address);
+      const feedID = this.generateUserOwnedFeedId(chatTopic, ownAddress);
       const topic = Topic.fromString(feedID);
 
-      const feedReader = readerBee.makeFeedReader(topic, address);
+      const feedReader = bee.makeFeedReader(topic, ownAddress);
       const feedEntry = await feedReader.downloadPayload();
 
       const latestIndex = Number(feedEntry.feedIndex.toBigInt());
@@ -289,35 +196,6 @@ export class SwarmChatUtils {
     }
   }
 
-  /** DEPRECATED
-   * Subscribe to GSOC messages for a topic and resource ID.
-   * @param url The Bee URL.
-   * @param topic The chat topic.
-   * @param resourceId The resource ID for subscription.
-   * @param callback Callback to handle incoming messages.
-   * @returns The subscription instance or null if an error occurs.
-   */
-  public subscribeToGsoc(
-    bees: InitializedBees,
-    gsocTopic: string,
-    resourceId: string,
-    callback: (gsocMessage: Bytes) => void,
-  ) {
-    if (!resourceId) throw new Error('ResourceID was not provided!');
-
-    const bee = this.getMainGsocBee(bees);
-
-    const key = new PrivateKey(resourceId);
-    const identifier = Identifier.fromString(gsocTopic);
-
-    const gsocSub = bee.gsocSubscribe(key.publicKey().address(), identifier, {
-      onMessage: callback,
-      onError: this.logger.error,
-    });
-
-    return gsocSub;
-  }
-
   /**
    * Fetch the latest GSOC message for a specific topic and resource ID.
    * @param url The Bee URL.
@@ -325,24 +203,19 @@ export class SwarmChatUtils {
    * @param resourceId The resource ID for the message.
    * @returns The latest GSOC message
    */
-  public async fetchLatestChatMessage(bees: InitializedBees, chatTopic: string, publicAddress: string): Promise<any> {
-    const { bee } = this.getGsocBee(bees);
+  public async fetchLatestChatMessage(): Promise<any> {
+    const { bee, chatTopic, chatAddress } = this.swarmSettings;
 
-    const reader = bee.makeFeedReader(Topic.fromString(chatTopic), remove0x(publicAddress));
+    const reader = bee.makeFeedReader(Topic.fromString(chatTopic), remove0x(chatAddress));
     const res = await reader.downloadPayload();
 
     return res.payload.toJSON();
   }
 
-  public async fetchChatMessage(
-    bees: InitializedBees,
-    chatTopic: string,
-    publicAddress: string,
-    index: string,
-  ): Promise<any> {
-    const { bee } = this.getGsocBee(bees);
+  public async fetchChatMessage(index: string): Promise<any> {
+    const { bee, chatTopic, chatAddress } = this.swarmSettings;
 
-    const reader = bee.makeFeedReader(Topic.fromString(chatTopic), remove0x(publicAddress));
+    const reader = bee.makeFeedReader(Topic.fromString(chatTopic), remove0x(chatAddress));
     const res = await reader.downloadPayload({ index: FeedIndex.fromBigInt(BigInt(`0x${index}`)) });
 
     return res.payload.toJSON();
@@ -357,23 +230,32 @@ export class SwarmChatUtils {
    * @param message The message to send.
    * @returns The uploaded SingleOwnerChunk or undefined if an error occurs.
    */
-  public async sendMessageToGsoc(
-    bees: InitializedBees,
-    topic: string,
-    resourceId: string,
-    message: string,
-  ): Promise<void> {
+  public async sendMessageToGsoc(message: string): Promise<void> {
     this.logger.debug('sendMessageToGsoc entry CALLED');
-    if (!resourceId) throw new Error('ResourceID was not provided!');
 
-    const { bee, stamp } = this.getGsocBee(bees);
+    const { bee, stamp, gsocTopic, gsocResourceId } = this.swarmSettings;
+    const { privateKey } = this.userDetails;
 
-    const signer = new PrivateKey(resourceId);
-    const identifier = Identifier.fromString(topic);
+    const stamper = Stamper.fromBlank(privateKey, stamp, this.depth);
 
-    await bee.gsocSend(stamp, signer, identifier, message, undefined, {
+    const signer = new PrivateKey(gsocResourceId);
+    const identifier = Identifier.fromString(gsocTopic);
+
+    const data = Bytes.fromUtf8(message);
+
+    const cac = makeContentAddressedChunk(data.toUint8Array());
+    const soc = makeSingleOwnerChunk(cac, identifier, signer);
+    const stampReadyChunk = {
+      hash: () => soc.address.toUint8Array(),
+    };
+
+    // TODO: workarounds for bee-js envleope type bugs
+    const envelope = stamper.stamp(stampReadyChunk as any) as any;
+
+    const { upload } = bee.makeSOCWriter(signer, {
       timeout: this.UPLOAD_GSOC_TIMEOUT,
     });
+    await upload(envelope, identifier, data.toUint8Array());
 
     this.logger.debug('sendMessageToGsoc end CALLED');
   }

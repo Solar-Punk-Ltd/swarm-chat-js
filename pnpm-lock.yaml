@@ -11,12 +11,12 @@ importers:
       '@coral-xyz/anchor':
         specifier: ^0.31.0
         version: 0.31.0(bufferutil@4.0.9)(utf-8-validate@5.0.10)
+      '@ethersphere/bee-js':
+        specifier: ^9.0.3
+        version: 9.0.3(bufferutil@4.0.9)(utf-8-validate@5.0.10)
       '@solana/web3.js':
         specifier: ^1.98.0
         version: 1.98.0(bufferutil@4.0.9)(utf-8-validate@5.0.10)
-      '@upcoming/bee-js':
-        specifier: ^0.16.1
-        version: 0.16.1(bufferutil@4.0.9)(utf-8-validate@5.0.10)
       async-mutex:
         specifier: ^0.5.0
         version: 0.5.0
@@ -277,6 +277,10 @@ packages:
   '@eslint/js@8.57.1':
     resolution: {integrity: sha512-d9zaMRSTIKDLhctzH12MtXvJKSSUhaHcjV+2Z+GK+EEY7XKpP5yR4x+N3TAcHTcu963nIr+TMcCb4DBCYX1z6Q==}
     engines: {node: ^12.22.0 || ^14.17.0 || >=16.0.0}
+
+  '@ethersphere/bee-js@9.0.3':
+    resolution: {integrity: sha512-/06EvKUgJsbjYejMjgoaKAi96PiL3w2HjfN6hUP6K174pNhvVPID+V1sPYFDQ5TY7OYbNsiiDZa2xDMKhSWvaw==}
+    engines: {bee: 2.4.0-390a402e, beeApiVersion: 7.2.0}
 
   '@humanwhocodes/config-array@0.13.0':
     resolution: {integrity: sha512-DZLEEqFWQFiyK6h5YIeynKx7JlvCYWL0cImfSRXZ9l4Sg2efkFGTuFf6vzXjK1cq6IYkU+Eg/JizXw+TD2vRNw==}
@@ -640,10 +644,6 @@ packages:
   '@ungap/structured-clone@1.2.0':
     resolution: {integrity: sha512-zuVdFrMJiuCDQUMCzQaD6KL28MjnqqN8XnAqiEq9PNm/hCPTSGfrXCOfwj1ow4LFb/tNymJPwsNbVePc1xFqrQ==}
 
-  '@upcoming/bee-js@0.16.1':
-    resolution: {integrity: sha512-Pux6E7RSNC/uf+AZsydEcmnEe8Uj/gx85GDH1v4RSJJ8qfUyfZvGZrTt1b4DnZJxxrT+M0IDFsG1ESMaarKidA==}
-    engines: {bee: 2.4.0-390a402e, beeApiVersion: 7.2.0}
-
   '@volar/language-core@2.4.6':
     resolution: {integrity: sha512-FxUfxaB8sCqvY46YjyAAV6c3mMIq/NWQMVvJ+uS4yxr1KzOvyg61gAuOnNvgCvO4TZ7HcLExBEsWcDu4+K4E8A==}
 
@@ -867,8 +867,8 @@ packages:
   cafe-utility@27.12.1:
     resolution: {integrity: sha512-saxVTRB1qx5ChDmpfPZshwk5IOKYLd5MPgEVTuQq2WUWcOVAXYR2Dc9hPvlfCr96vA9wTgxhVIsrrVdzjLFkMg==}
 
-  cafe-utility@27.14.1:
-    resolution: {integrity: sha512-u3vpH/6h/IEGYCyeyMaBl4+4ziQblpWBtQhg+UhyeiMx8D+hpclBhy1yCvAyeSkUbZuLUFEAxiNLf0+gBsrylQ==}
+  cafe-utility@27.14.2:
+    resolution: {integrity: sha512-/FKZKrfdj46VcinJHvXoIbj3FWTmVEU5Lc83+0Ep08B1O85NMGuCDLRI8CLUCpTb2clvJ0osscPBGEx/Ql1tKQ==}
 
   call-bind@1.0.7:
     resolution: {integrity: sha512-GHTSNSYICQ7scH7sZ+M2rFopRoLh8t2bLSW6BbgrtLsahOIB5iyAVJf9GjWK3cYTDaMj4XdBpM1cA6pIS0Kv2w==}
@@ -2391,6 +2391,18 @@ snapshots:
 
   '@eslint/js@8.57.1': {}
 
+  '@ethersphere/bee-js@9.0.3(bufferutil@4.0.9)(utf-8-validate@5.0.10)':
+    dependencies:
+      axios: 0.28.1
+      cafe-utility: 27.14.2
+      isomorphic-ws: 4.0.1(ws@8.18.0(bufferutil@4.0.9)(utf-8-validate@5.0.10))
+      semver: 7.6.3
+      ws: 8.18.0(bufferutil@4.0.9)(utf-8-validate@5.0.10)
+    transitivePeerDependencies:
+      - bufferutil
+      - debug
+      - utf-8-validate
+
   '@humanwhocodes/config-array@0.13.0':
     dependencies:
       '@humanwhocodes/object-schema': 2.0.3
@@ -2771,18 +2783,6 @@ snapshots:
 
   '@ungap/structured-clone@1.2.0': {}
 
-  '@upcoming/bee-js@0.16.1(bufferutil@4.0.9)(utf-8-validate@5.0.10)':
-    dependencies:
-      axios: 0.28.1
-      cafe-utility: 27.14.1
-      isomorphic-ws: 4.0.1(ws@8.18.0(bufferutil@4.0.9)(utf-8-validate@5.0.10))
-      semver: 7.6.3
-      ws: 8.18.0(bufferutil@4.0.9)(utf-8-validate@5.0.10)
-    transitivePeerDependencies:
-      - bufferutil
-      - debug
-      - utf-8-validate
-
   '@volar/language-core@2.4.6':
     dependencies:
       '@volar/source-map': 2.4.6
@@ -3085,7 +3085,7 @@ snapshots:
 
   cafe-utility@27.12.1: {}
 
-  cafe-utility@27.14.1: {}
+  cafe-utility@27.14.2: {}
 
   call-bind@1.0.7:
     dependencies:

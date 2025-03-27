@@ -1,4 +1,4 @@
-import { Signature } from '@upcoming/bee-js';
+import { Signature } from '@ethersphere/bee-js';
 import { Binary } from 'cafe-utility';
 import { z } from 'zod';
 
