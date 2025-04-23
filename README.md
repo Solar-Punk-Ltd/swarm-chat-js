@@ -1,4 +1,4 @@
-TODO: this is deprecated
+TODO: this is deprecated with inlince docs as well
 
 A chat library for Swarm that enables real-time chatting over Swarm using the GSOC feature.
 

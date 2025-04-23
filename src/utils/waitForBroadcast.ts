@@ -41,10 +41,12 @@ export async function waitForBroadcast<T>(options: BroadcastWaiterOptions<T>): P
         return reject(new Error('Broadcast wait timeout'));
       }
 
+      console.warn(`Retrying broadcast... Attempt ${retryCount} of ${maxRetries}`);
       await broadcast();
       runCycle();
     };
 
+    console.log('Starting broadcast...');
     broadcast()
       .then(() => runCycle())
       .catch(reject);
