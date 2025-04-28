@@ -307,6 +307,7 @@ export class SwarmChat {
       signature: signature.toHex(),
       index: this.getOwnIndex(),
       username: nickname,
+      topic: this.swarmSettings.chatTopic,
     };
   }
 
