@@ -65,7 +65,7 @@ export class SwarmChat {
 
     this.emitter = new EventEmitter();
     this.utils = new SwarmChatUtils(this.userDetails, this.swarmSettings);
-    this.history = new SwarmHistory(this.userDetails, this.utils, this.emitter);
+    this.history = new SwarmHistory(this.userDetails, this.utils, this.swarmSettings, this.emitter);
     this.swarmEventEmitterReader = new SwarmEventEmitterReader(settings.infra.chain);
   }
 
@@ -120,7 +120,8 @@ export class SwarmChat {
 
       this.emitter.emit(EVENTS.MESSAGE_REQUEST_UPLOADED, messageObj);
 
-      await this.waitForMessageBroadcast(nextIndex);
+      // TODO - add a retry option for the user if error happens, GSOC? BUG
+      await this.broadcastUserMessage();
     } catch (error) {
       this.emitter.emit(EVENTS.MESSAGE_REQUEST_ERROR, messageObj);
       this.errorHandler.handleError(error, 'Chat.sendMessage');
@@ -145,8 +146,9 @@ export class SwarmChat {
     this.sendMessage(message.message, message.id);
   }
 
-  public async retryBroadcastUserMessage(message: MessageData) {
-    this.waitForMessageBroadcast(message.index);
+  // TODO - add a retry option for the user if error happens, GSOC? BUG
+  public async retryBroadcastUserMessage(_message: MessageData) {
+    this.broadcastUserMessage();
   }
 
   /**
@@ -276,6 +278,7 @@ export class SwarmChat {
       await this.utils.retryAwaitableAsync(() =>
         this.utils.sendMessageToGsoc(
           JSON.stringify({
+            topic: this.swarmSettings.chatTopic,
             messageSender,
             historyEntry: this.history.getHistoryEntryWithNewUpdater(this.activeUsers),
           }),
@@ -307,7 +310,6 @@ export class SwarmChat {
       signature: signature.toHex(),
       index: this.getOwnIndex(),
       username: nickname,
-      topic: this.swarmSettings.chatTopic,
     };
   }
 
@@ -348,7 +350,7 @@ export class SwarmChat {
       const messageData = await this.utils.fetchUserFeedDataByIndex(user.address, nextIndex);
 
       this.setUserIndexCache(user.address, nextIndex);
-      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, messageData);
+      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, JSON.parse(messageData));
     } catch (error) {
       this.errorHandler.handleError(error, 'readMessage');
     }

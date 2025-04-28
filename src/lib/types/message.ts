@@ -7,6 +7,7 @@ export interface MessageData {
   address: string;
   timestamp: number;
   index: number;
+  topic: string;
 }
 
 export interface ChatMessage {

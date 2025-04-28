@@ -1,7 +1,7 @@
 import { Mutex } from 'async-mutex';
 import mergeWith from 'lodash/fp/mergeWith';
 
-import { mergeUnique } from '../utils/common';
+import { mergeUnique, remove0x } from '../utils/common';
 import { ErrorHandler } from '../utils/error';
 import { EventEmitter } from '../utils/eventEmitter';
 import { Logger } from '../utils/logger';
@@ -15,6 +15,7 @@ import {
   ChatHistory,
   ChatHistoryEntry,
   ChatMessage,
+  ChatSettingsSwarm,
   ChatSettingsUser,
   MessageEntry,
   UserHistoryMap,
@@ -46,7 +47,12 @@ export class SwarmHistory {
   private HISTORY_UPDATE_INTERVAL_TIME = 5000;
   private MAX_LOADED_MESSAGES_CACHE_SIZE = 10;
 
-  constructor(private userDetails: ChatSettingsUser, private utils: SwarmChatUtils, private emitter: EventEmitter) {}
+  constructor(
+    private userDetails: ChatSettingsUser,
+    private utils: SwarmChatUtils,
+    private chatSettings: ChatSettingsSwarm,
+    private emitter: EventEmitter,
+  ) {}
 
   /**
    * Sets the last known history entry from the last known GSOC message or initializes a new one if none is found.
@@ -55,7 +61,7 @@ export class SwarmHistory {
   public async init() {
     const entry = await this.fetchLatestHistoryEntry();
 
-    if (!this.historyEntry && !entry) {
+    if ((!this.historyEntry && !entry) || !entry?.ref) {
       this.initializeDefaultEntry();
       return;
     }
@@ -112,7 +118,7 @@ export class SwarmHistory {
     try {
       this.updateLocalHistory(activeUsers);
 
-      if (updaterEntry.updater === this.userDetails.ownAddress) {
+      if (remove0x(updaterEntry.updater.toLowerCase()) === remove0x(this.userDetails.ownAddress.toLowerCase())) {
         this.updaterEntryBuffer.push(updaterEntry);
       }
     } catch (error) {
@@ -194,6 +200,7 @@ export class SwarmHistory {
       await this.utils.retryAwaitableAsync(() =>
         this.utils.sendMessageToGsoc(
           JSON.stringify({
+            topic: this.chatSettings.chatTopic,
             historyEntry,
           }),
         ),
