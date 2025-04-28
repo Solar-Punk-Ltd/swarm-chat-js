@@ -46,8 +46,9 @@ export class SwarmChat {
     };
 
     this.swarmSettings = {
-      bee: new Bee(settings.infra.swarm.rpcUrl),
-      stamp: settings.infra.swarm.stamp,
+      bee: new Bee(settings.infra.swarm.beeUrl),
+      stamp: settings.infra.swarm.stamp || '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      enveloped: settings.infra.swarm.enveloped,
       gsocTopic: settings.infra.swarm.gsocTopic,
       gsocResourceId: settings.infra.swarm.gsocResourceId,
       chatTopic: settings.infra.swarm.chatTopic,
@@ -113,7 +114,7 @@ export class SwarmChat {
     try {
       this.emitter.emit(EVENTS.MESSAGE_REQUEST_INITIATED, messageObj);
 
-      await this.utils.writeOwnFeedDataByIndexV2(nextIndex, JSON.stringify(messageObj));
+      await this.utils.writeOwnFeedDataByIndex(nextIndex, JSON.stringify(messageObj));
 
       this.userDetails.ownIndex = nextIndex;
 

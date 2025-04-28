@@ -9,8 +9,9 @@ export interface ChatSettings {
   };
   infra: {
     swarm: {
-      rpcUrl: string;
-      stamp: string;
+      beeUrl: string;
+      enveloped: boolean;
+      stamp?: string;
       gsocTopic: string;
       gsocResourceId: string;
       chatTopic: string;
@@ -54,6 +55,7 @@ export interface ChatSettingsUser {
 export interface ChatSettingsSwarm {
   bee: Bee;
   stamp: string;
+  enveloped: boolean;
   gsocTopic: string;
   gsocResourceId: string;
   chatTopic: string;

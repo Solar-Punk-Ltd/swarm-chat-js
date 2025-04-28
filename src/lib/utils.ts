@@ -22,7 +22,19 @@ export class SwarmChatUtils {
 
   constructor(private userDetails: ChatSettingsUser, private swarmSettings: ChatSettingsSwarm) {}
 
-  public async writeOwnFeedDataByIndex(index: number, data: any): Promise<void> {
+  public async writeOwnFeedDataByIndex(index: number, data: any) {
+    const { enveloped, stamp } = this.swarmSettings;
+
+    if (!enveloped) {
+      await this.writeOwnFeedDataByIndexOwned(index, data);
+    } else if (stamp) {
+      await this.writeOwnFeedDataByIndexEnvelope(index, data);
+    } else {
+      throw new Error('Enveloped mode is enabled, but stamp is not provided');
+    }
+  }
+
+  private async writeOwnFeedDataByIndexOwned(index: number, data: any): Promise<void> {
     const { bee, stamp, chatTopic } = this.swarmSettings;
     const { privateKey, ownAddress } = this.userDetails;
 
@@ -38,7 +50,7 @@ export class SwarmChatUtils {
   }
 
   // TODO: support for wrapped chunks
-  public async writeOwnFeedDataByIndexV2(index: number, data: string): Promise<string> {
+  private async writeOwnFeedDataByIndexEnvelope(index: number, data: string): Promise<string> {
     const { bee, stamp, chatTopic } = this.swarmSettings;
     const { privateKey, ownAddress } = this.userDetails;
 
@@ -124,19 +136,31 @@ export class SwarmChatUtils {
     });
   }
 
-  public async uploadObjectToBee(jsObject: object): Promise<UploadResult | null> {
+  public async uploadObjectToBee(jsObject: object): Promise<string | null> {
+    const { enveloped, stamp } = this.swarmSettings;
+
+    if (!enveloped) {
+      return this.uploadObjectToBeeOwn(jsObject);
+    } else if (stamp) {
+      return this.uploadObjectToBeeEnvelope(jsObject);
+    } else {
+      throw new Error('Enveloped mode is enabled, but stamp is not provided');
+    }
+  }
+
+  private async uploadObjectToBeeOwn(jsObject: object): Promise<string | null> {
     try {
       const { bee, stamp } = this.swarmSettings;
       const result = await bee.uploadData(stamp, JSON.stringify(jsObject), { redundancyLevel: 4 });
       console.log('DEBUG: result', result.reference.toString());
-      return result;
+      return result.reference.toString();
     } catch (error) {
       this.errorHandler.handleError(error, 'Utils.uploadObjectToBee');
       return null;
     }
   }
 
-  public async uploadObjectToBeeV2(jsObject: object): Promise<string | null> {
+  private async uploadObjectToBeeEnvelope(jsObject: object): Promise<string | null> {
     try {
       const { bee, stamp } = this.swarmSettings;
       const { privateKey } = this.userDetails;
@@ -221,16 +245,37 @@ export class SwarmChatUtils {
     return res.payload.toJSON();
   }
 
-  /**
-   * Send a message to GSOC for a specific topic and resource ID.
-   * @param url The Bee URL.
-   * @param stamp The postage stamp.
-   * @param topic The chat topic.
-   * @param resourceId The resource ID for the message.
-   * @param message The message to send.
-   * @returns The uploaded SingleOwnerChunk or undefined if an error occurs.
-   */
   public async sendMessageToGsoc(message: string): Promise<void> {
+    const { enveloped, stamp } = this.swarmSettings;
+
+    if (!enveloped) {
+      await this.sendMessageToGsocOwn(message);
+    } else if (stamp) {
+      await this.sendMessageToGsocEnvelope(message);
+    } else {
+      throw new Error('Enveloped mode is enabled, but stamp is not provided');
+    }
+  }
+
+  private async sendMessageToGsocOwn(message: string): Promise<void> {
+    this.logger.debug('sendMessageToGsoc entry CALLED');
+
+    const { bee, stamp, gsocTopic, gsocResourceId } = this.swarmSettings;
+
+    const signer = new PrivateKey(gsocResourceId);
+    const identifier = Identifier.fromString(gsocTopic);
+
+    const data = Bytes.fromUtf8(message);
+
+    const { upload } = bee.makeSOCWriter(signer, {
+      timeout: this.UPLOAD_GSOC_TIMEOUT,
+    });
+    await upload(stamp, identifier, data.toUint8Array());
+
+    this.logger.debug('sendMessageToGsoc end CALLED');
+  }
+
+  private async sendMessageToGsocEnvelope(message: string): Promise<void> {
     this.logger.debug('sendMessageToGsoc entry CALLED');
 
     const { bee, stamp, gsocTopic, gsocResourceId } = this.swarmSettings;
