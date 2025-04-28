@@ -22,6 +22,7 @@ const HistoryEntrySchema = z.object({
 });
 
 const GsocMessageSchema = z.object({
+  topic: z.string(),
   messageSender: UserSchema.optional(),
   historyEntry: HistoryEntrySchema,
 });

@@ -5,6 +5,7 @@ import { Contract, ethers, JsonRpcProvider, WebSocketProvider } from 'ethers';
 import evmAbi from '../../ABI/SwarmEventEmitter.json';
 import { SwarmEventEmitter as SvmTypes } from '../../IDL/SwarmEventEmitter';
 import svmIdl from '../../IDL/SwarmEventEmitter.json';
+import { remove0x } from '../utils/common';
 
 import { ChatSettingsChain } from './types';
 
@@ -71,7 +72,7 @@ export class SwarmEventEmitterReader {
 
   private listenToEvm(callback: (sender: string, message: string) => void) {
     this.evm?.contract.on('MessageLogged', (sender: string, message: string) => {
-      if (sender.toLowerCase() === this.settings.swarmEmitterAddress.toLowerCase()) {
+      if (remove0x(sender.toLowerCase()) === remove0x(this.settings.swarmEmitterAddress.toLowerCase())) {
         callback(sender, message);
       }
     });

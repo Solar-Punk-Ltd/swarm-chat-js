@@ -6,7 +6,7 @@ import { remove0x } from '../utils/common';
 import { ErrorHandler } from '../utils/error';
 import { Logger } from '../utils/logger';
 
-import { ChatSettingsSwarm, ChatSettingsUser } from './types';
+import { ChatSettingsSwarm, ChatSettingsUser, MessageData } from './types';
 
 /**
  * Utility class for Swarm chat operations including feed management,
@@ -94,10 +94,8 @@ export class SwarmChatUtils {
       index,
     });
 
-    console.log(data.payload.toHex());
-    console.log(data.payload.toUtf8());
-
-    return data.payload.toJSON();
+    // TODO: this is a JSON string, why?
+    return data.payload.toJSON() as string;
   }
 
   /**
