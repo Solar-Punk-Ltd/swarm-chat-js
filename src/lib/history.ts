@@ -206,7 +206,7 @@ export class SwarmHistory {
   }
 
   private async uploadHistory(newChatHistory: ChatHistory): Promise<string> {
-    const historyRef = await this.utils.uploadObjectToBeeV2(newChatHistory);
+    const historyRef = await this.utils.uploadObjectToBee(newChatHistory);
 
     if (!historyRef) {
       throw new Error('History reference is null');
