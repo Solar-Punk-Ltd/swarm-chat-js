@@ -62,26 +62,29 @@ export class SwarmEventEmitterReader {
     this.svm = { provider, program };
   }
 
-  public async onMessageFrom(callback: (sender: string, message: string) => void) {
+  public async onMessageFrom(topic: string, callback: (sender: string, message: string) => void) {
     if (this.settings.chainType === 'EVM') {
-      this.listenToEvm(callback);
+      this.listenToEvm(topic, callback);
     } else if (this.settings.chainType === 'SVM') {
-      await this.listenToSvm(callback);
+      await this.listenToSvm(topic, callback);
     }
   }
 
-  private listenToEvm(callback: (sender: string, message: string) => void) {
+  private listenToEvm(topic: string, callback: (sender: string, message: string) => void) {
     this.evm?.contract.on('MessageLogged', (sender: string, message: string) => {
-      if (remove0x(sender.toLowerCase()) === remove0x(this.settings.swarmEmitterAddress.toLowerCase())) {
+      const [t, _index] = message.split('_');
+      if (remove0x(sender.toLowerCase()) === remove0x(this.settings.swarmEmitterAddress.toLowerCase()) && t === topic) {
         callback(sender, message);
       }
     });
   }
 
-  private async listenToSvm(callback: (sender: string, message: string) => void) {
+  private async listenToSvm(topic: string, callback: (sender: string, message: string) => void) {
     const listenerId = this.svm?.program.addEventListener('messageLogged', (event) => {
       const { sender, message } = event;
-      if (sender.toBase58() === this.settings.swarmEmitterAddress) {
+      const [t, _index] = message.split('_');
+
+      if (sender.toBase58() === this.settings.swarmEmitterAddress && t === topic) {
         callback(sender.toBase58(), message);
       }
     });
