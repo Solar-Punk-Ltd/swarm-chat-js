@@ -49,6 +49,7 @@ export class SwarmChat {
       bee: new Bee(settings.infra.swarm.beeUrl),
       stamp: settings.infra.swarm.stamp || '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
       enveloped: settings.infra.swarm.enveloped,
+      customGsocCallback: settings.infra.swarm.customGsocCallback,
       gsocTopic: settings.infra.swarm.gsocTopic,
       gsocResourceId: settings.infra.swarm.gsocResourceId,
       chatTopic: settings.infra.swarm.chatTopic,
@@ -71,7 +72,9 @@ export class SwarmChat {
 
   public start() {
     this.init();
-    this.subscribeToGSOCEvent();
+    if (!this.swarmSettings.customGsocCallback) {
+      this.subscribeToGSOCEvent();
+    }
     this.startMessagesFetchProcess();
     this.startIdleUserCleanup();
     this.history.startHistoryUpdateProcess();
@@ -198,11 +201,20 @@ export class SwarmChat {
    */
   private subscribeToGSOCEvent() {
     try {
-      this.swarmEventEmitterReader.onMessageFrom((_sender: string, event: string) =>
+      this.swarmEventEmitterReader.onMessageFrom(this.swarmSettings.chatTopic, (_sender: string, event: string) =>
         this.gsocListenerQueue.enqueue(() => this.processGsocEvent(event)),
       );
     } catch (error) {
-      this.errorHandler.handleError(error, 'Chat.listenToNewSubscribers');
+      this.errorHandler.handleError(error, 'Chat.subscribeToGSOCEvent');
+      this.emitter.emit(EVENTS.CRITICAL_ERROR, error);
+    }
+  }
+
+  public callbackProcessGsocEvent(event: string) {
+    try {
+      this.gsocListenerQueue.enqueue(() => this.processGsocEvent(event));
+    } catch (error) {
+      this.errorHandler.handleError(error, 'Chat.callbackProcessGsocEvent');
       this.emitter.emit(EVENTS.CRITICAL_ERROR, error);
     }
   }

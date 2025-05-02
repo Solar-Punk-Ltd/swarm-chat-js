@@ -1,4 +1,4 @@
-import { Bytes, FeedIndex, Identifier, PrivateKey, Stamper, Topic, UploadResult } from '@ethersphere/bee-js';
+import { Bytes, FeedIndex, Identifier, PrivateKey, Stamper, Topic } from '@ethersphere/bee-js';
 import { Binary, MerkleTree } from 'cafe-utility';
 
 import { makeContentAddressedChunk, makeFeedIdentifier, makeSingleOwnerChunk } from '../utils/bee';
@@ -6,7 +6,7 @@ import { remove0x } from '../utils/common';
 import { ErrorHandler } from '../utils/error';
 import { Logger } from '../utils/logger';
 
-import { ChatSettingsSwarm, ChatSettingsUser, MessageData } from './types';
+import { ChatSettingsSwarm, ChatSettingsUser } from './types';
 
 /**
  * Utility class for Swarm chat operations including feed management,
