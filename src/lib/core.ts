@@ -67,23 +67,30 @@ export class SwarmChat {
     this.emitter = new EventEmitter();
     this.utils = new SwarmChatUtils(this.userDetails, this.swarmSettings);
     this.history = new SwarmHistory(this.utils, this.emitter);
-    this.swarmEventEmitterReader = new SwarmEventEmitterReader(settings.infra.chain);
+
+    if (!this.swarmSettings.customGsocCallback && settings.infra.chain) {
+      this.swarmEventEmitterReader = new SwarmEventEmitterReader(settings.infra.chain);
+    }
   }
 
   public start() {
     this.init();
+    this.startMessagesFetchProcess();
+    this.startIdleUserCleanup();
+
     if (!this.swarmSettings.customGsocCallback) {
       this.subscribeToGSOCEvent();
     }
-    this.startMessagesFetchProcess();
-    this.startIdleUserCleanup();
   }
 
   public stop() {
     this.stopMessagesFetchProcess();
     this.stopIdleUserCleanup();
-    this.unsubFromGSOCEvent();
     this.emitter.cleanAll();
+
+    if (!this.swarmSettings.customGsocCallback) {
+      this.unsubFromGSOCEvent();
+    }
   }
 
   public getEmitter() {
