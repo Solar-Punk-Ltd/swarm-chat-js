@@ -18,7 +18,7 @@ export interface ChatSettings {
       chatTopic: string;
       chatAddress: string;
     };
-    chain: {
+    chain?: {
       rpcUrl: string;
       contractAddress?: string;
       chainType: ChainType;
