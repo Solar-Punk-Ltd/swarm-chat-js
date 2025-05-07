@@ -1,12 +1,12 @@
 import { Bee, EthAddress, FeedIndex, PrivateKey } from '@ethersphere/bee-js';
 import isEqual from 'lodash/isEqual';
+import PQueue from 'p-queue';
 import { v4 as uuidv4 } from 'uuid';
 
 import { remove0x } from '../utils/common';
 import { ErrorHandler } from '../utils/error';
 import { EventEmitter } from '../utils/eventEmitter';
 import { Logger } from '../utils/logger';
-import { Queue } from '../utils/queue';
 import { validateGsocMessage } from '../utils/validation';
 import { waitForBroadcast } from '../utils/waitForBroadcast';
 
@@ -29,8 +29,8 @@ export class SwarmChat {
   private logger = Logger.getInstance();
   private errorHandler = new ErrorHandler();
 
-  private messagesQueue = new Queue({ clearWaitTime: 200 });
-  private gsocListenerQueue = new Queue({ clearWaitTime: 200 });
+  private messagesQueue = new PQueue({ concurrency: 1 });
+  private gsocListenerQueue = new PQueue({ concurrency: 1 });
 
   private activeUsers: UserMap = {};
   private latestMessage: any | null = null;
@@ -207,7 +207,7 @@ export class SwarmChat {
   private subscribeToGSOCEvent() {
     try {
       this.swarmEventEmitterReader.onMessageFrom(this.swarmSettings.chatTopic, (_sender: string, event: string) =>
-        this.gsocListenerQueue.enqueue(() => this.processGsocEvent(event)),
+        this.gsocListenerQueue.add(() => this.processGsocEvent(event)),
       );
     } catch (error) {
       this.errorHandler.handleError(error, 'Chat.subscribeToGSOCEvent');
@@ -217,7 +217,7 @@ export class SwarmChat {
 
   public callbackProcessGsocEvent(event: string) {
     try {
-      this.gsocListenerQueue.enqueue(() => this.processGsocEvent(event));
+      this.gsocListenerQueue.add(() => this.processGsocEvent(event));
     } catch (error) {
       this.errorHandler.handleError(error, 'Chat.callbackProcessGsocEvent');
       this.emitter.emit(EVENTS.CRITICAL_ERROR, error);
@@ -326,13 +326,13 @@ export class SwarmChat {
 
   private async readAllActiveUserMessage() {
     // Return when the previous batch is still processing
-    const isWaiting = await this.messagesQueue.waitForProcessing();
+    const isWaiting = this.messagesQueue.size > 0 || this.messagesQueue.pending > 0;
     if (isWaiting) {
       return;
     }
 
     for (const user of Object.values(this.activeUsers)) {
-      this.messagesQueue.enqueue(() => this.readMessage(user));
+      this.messagesQueue.add(() => this.readMessage(user));
     }
   }
 
