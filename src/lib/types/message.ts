@@ -1,4 +1,4 @@
-import { ChatHistoryEntry, User } from './user';
+import { User } from './user';
 
 export interface MessageData {
   id: string;
@@ -12,5 +12,4 @@ export interface MessageData {
 
 export interface ChatMessage {
   messageSender: User;
-  historyEntry: ChatHistoryEntry;
 }

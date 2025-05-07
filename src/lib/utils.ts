@@ -6,7 +6,7 @@ import { remove0x } from '../utils/common';
 import { ErrorHandler } from '../utils/error';
 import { Logger } from '../utils/logger';
 
-import { ChatSettingsSwarm, ChatSettingsUser } from './types';
+import { ChatSettingsSwarm, ChatSettingsUser, MessageData } from './types';
 
 /**
  * Utility class for Swarm chat operations including feed management,
@@ -225,20 +225,20 @@ export class SwarmChatUtils {
    * @param resourceId The resource ID for the message.
    * @returns The latest GSOC message
    */
-  public async fetchLatestChatMessage(): Promise<any> {
+  public async fetchLatestChatMessage(): Promise<{ message: MessageData; index: FeedIndex }> {
     const { bee, chatTopic, chatAddress } = this.swarmSettings;
 
     const reader = bee.makeFeedReader(Topic.fromString(chatTopic), remove0x(chatAddress));
     const res = await reader.downloadPayload();
 
-    return res.payload.toJSON();
+    return { message: res.payload.toJSON() as MessageData, index: res.feedIndex };
   }
 
-  public async fetchChatMessage(index: string): Promise<any> {
+  public async fetchChatMessage(index: FeedIndex): Promise<any> {
     const { bee, chatTopic, chatAddress } = this.swarmSettings;
 
     const reader = bee.makeFeedReader(Topic.fromString(chatTopic), remove0x(chatAddress));
-    const res = await reader.downloadPayload({ index: FeedIndex.fromBigInt(BigInt(`0x${index}`)) });
+    const res = await reader.downloadPayload({ index });
 
     return res.payload.toJSON();
   }

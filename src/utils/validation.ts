@@ -14,26 +14,9 @@ const UserSchema = z.object({
   signature: z.string(),
 });
 
-const HistoryEntrySchema = z.object({
-  id: z.number(),
-  ref: z.string(),
-  updater: z.string(),
-  timestamp: z.number(),
-});
-
 const GsocMessageSchema = z.object({
   topic: z.string(),
-  messageSender: UserSchema.optional(),
-  historyEntry: HistoryEntrySchema,
-});
-
-const UserHistorySchema = z.object({
-  events: z.array(z.object({ type: z.string(), timestamp: z.number() })),
-  messageEntries: z.array(z.object({ index: z.number(), timestamp: z.number() })),
-});
-
-const ChatHistorySchema = z.object({
-  allTimeUsers: z.record(UserHistorySchema),
+  messageSender: UserSchema,
 });
 
 export function validateGsocMessage(message: any): boolean {
@@ -44,37 +27,6 @@ export function validateGsocMessage(message: any): boolean {
   }
   if (message.messageSender && !validateUser(message.messageSender)) {
     console.warn('Invalid messageSender');
-    return false;
-  }
-  if (!validateHistoryEntry(message.historyEntry)) {
-    console.warn('Invalid historyEntry');
-    return false;
-  }
-  return true;
-}
-
-export function validateHistoryEntry(entry: any): boolean {
-  const result = HistoryEntrySchema.safeParse(entry);
-  if (!result.success) {
-    logger.warn(result.error.format());
-    return false;
-  }
-  return true;
-}
-
-export function validateChatHistory(chatHistory: any): boolean {
-  const result = ChatHistorySchema.safeParse(chatHistory);
-  if (!result.success) {
-    logger.warn(result.error.format());
-    return false;
-  }
-  return true;
-}
-
-export function validateUserHistory(userHistory: any): boolean {
-  const result = UserHistorySchema.safeParse(userHistory);
-  if (!result.success) {
-    logger.warn(result.error.format());
     return false;
   }
   return true;

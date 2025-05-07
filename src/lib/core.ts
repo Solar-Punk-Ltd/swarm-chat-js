@@ -1,4 +1,4 @@
-import { Bee, EthAddress, PrivateKey } from '@ethersphere/bee-js';
+import { Bee, EthAddress, FeedIndex, PrivateKey } from '@ethersphere/bee-js';
 import isEqual from 'lodash/isEqual';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -66,7 +66,7 @@ export class SwarmChat {
 
     this.emitter = new EventEmitter();
     this.utils = new SwarmChatUtils(this.userDetails, this.swarmSettings);
-    this.history = new SwarmHistory(this.userDetails, this.utils, this.swarmSettings, this.emitter);
+    this.history = new SwarmHistory(this.utils, this.emitter);
     this.swarmEventEmitterReader = new SwarmEventEmitterReader(settings.infra.chain);
   }
 
@@ -77,14 +77,12 @@ export class SwarmChat {
     }
     this.startMessagesFetchProcess();
     this.startIdleUserCleanup();
-    this.history.startHistoryUpdateProcess();
   }
 
   public stop() {
     this.stopMessagesFetchProcess();
     this.stopIdleUserCleanup();
     this.unsubFromGSOCEvent();
-    this.history.stopHistoryUpdateProcess();
     this.emitter.cleanAll();
   }
 
@@ -138,7 +136,7 @@ export class SwarmChat {
   public async fetchPreviousMessages() {
     try {
       this.emitter.emit(EVENTS.LOADING_PREVIOUS_MESSAGES, true);
-      const messages = await this.history.fetchPreviousMessages({ preDownloadHistory: true });
+      const messages = await this.history.fetchPreviousMessages();
       return messages;
     } finally {
       this.emitter.emit(EVENTS.LOADING_PREVIOUS_MESSAGES, false);
@@ -238,7 +236,8 @@ export class SwarmChat {
       console.log('processGsocMessage CALLED', event);
       const [_topic, index] = event.split('_');
 
-      const message = await this.utils.fetchChatMessage(index);
+      const feedIndex = FeedIndex.fromBigInt(BigInt(`0x${index}`));
+      const message = await this.utils.fetchChatMessage(feedIndex);
 
       console.log('DEBUG processGsocMessage', message);
 
@@ -253,13 +252,7 @@ export class SwarmChat {
         return;
       }
 
-      if (message.messageSender) {
-        this.updateActiveUsers(message.messageSender);
-        this.history.processHistoryUpdaterEntry(this.activeUsers, message.historyEntry);
-      } else {
-        this.history.setHistoryEntry(message.historyEntry);
-      }
-
+      this.updateActiveUsers(message.messageSender);
       this.latestMessage = message;
     } catch (error) {
       this.errorHandler.handleError(error, 'Chat.processGsocMessage');
@@ -292,7 +285,6 @@ export class SwarmChat {
           JSON.stringify({
             topic: this.swarmSettings.chatTopic,
             messageSender,
-            historyEntry: this.history.getHistoryEntryWithNewUpdater(this.activeUsers),
           }),
         ),
       );
