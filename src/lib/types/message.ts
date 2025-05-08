@@ -1,15 +1,11 @@
-import { User } from './user';
-
 export interface MessageData {
   id: string;
   message: string;
   username: string;
   address: string;
   timestamp: number;
+  signature: string;
   index: number;
-  topic: string;
-}
-
-export interface ChatMessage {
-  messageSender: User;
+  chatTopic: string;
+  userTopic: string;
 }

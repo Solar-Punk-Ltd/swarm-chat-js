@@ -6,40 +6,37 @@ import { Logger } from './logger';
 
 const logger = Logger.getInstance();
 
-const UserSchema = z.object({
+const MessageSchema = z.object({
+  id: z.string(),
+  message: z.string(),
   username: z.string(),
   address: z.string(),
   timestamp: z.number(),
-  index: z.number(),
   signature: z.string(),
-});
-
-const GsocMessageSchema = z.object({
-  topic: z.string(),
-  messageSender: UserSchema,
+  index: z.number(),
+  chatTopic: z.string(),
+  userTopic: z.string(),
 });
 
 export function validateGsocMessage(message: any): boolean {
-  const result = GsocMessageSchema.safeParse(message);
+  const result = MessageSchema.safeParse(message);
   if (!result.success) {
     logger.warn(result.error.format());
     return false;
   }
-  if (message.messageSender && !validateUser(message.messageSender)) {
+
+  if (
+    !validateUserSignature({
+      usnermame: message.username,
+      address: message.address,
+      timestamp: message.timestamp,
+    })
+  ) {
     console.warn('Invalid messageSender');
     return false;
   }
+
   return true;
-}
-
-export function validateUser(user: any): boolean {
-  const result = UserSchema.safeParse(user);
-  if (!result.success) {
-    logger.warn(result.error.format());
-    return false;
-  }
-
-  return validateUserSignature(user);
 }
 
 export function validateUserSignature(validatedUser: any): boolean {

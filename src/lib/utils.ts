@@ -8,10 +8,6 @@ import { Logger } from '../utils/logger';
 
 import { ChatSettingsSwarm, ChatSettingsUser, MessageData } from './types';
 
-/**
- * Utility class for Swarm chat operations including feed management,
- * user validation, and interaction with Bee and GSOC.
- */
 export class SwarmChatUtils {
   // TODO: big enough now, but it should represent the depth of the stamp
   private depth = 24;
@@ -77,32 +73,6 @@ export class SwarmChatUtils {
     return result.reference.toHex();
   }
 
-  public async fetchUserFeedDataByIndex(userAddress: string, index: number, options?: { timeout?: number }) {
-    const { bee, chatTopic } = this.swarmSettings;
-
-    const timeout = options?.timeout ?? 1500;
-
-    const feedID = this.generateUserOwnedFeedId(chatTopic, userAddress);
-    const topic = Topic.fromString(feedID);
-    console.log('DEBUG: feedID read', topic.toString(), userAddress, index, feedID);
-
-    const feedReader = bee.makeFeedReader(topic, userAddress, {
-      timeout,
-    });
-
-    const data = await feedReader.downloadPayload({
-      index,
-    });
-
-    // TODO: this is a JSON string, why?
-    return data.payload.toJSON() as string;
-  }
-
-  /**
-   * Sort messages by their timestamp in ascending order.
-   * @param messages The list of messages to sort.
-   * @returns The sorted list of messages.
-   */
   public orderMessages(messages: any[]): any[] {
     return messages.sort((a, b) => a.timestamp - b.timestamp);
   }
@@ -181,17 +151,6 @@ export class SwarmChatUtils {
     }
   }
 
-  public async downloadObjectFromBee(reference: string): Promise<any> {
-    try {
-      const { bee } = this.swarmSettings;
-      const result = await bee.downloadData(reference);
-      return result.toJSON();
-    } catch (error) {
-      this.errorHandler.handleError(error, 'Utils.beeDownloadObject');
-      return null;
-    }
-  }
-
   public async getOwnLatestFeedIndex() {
     try {
       const { bee, chatTopic } = this.swarmSettings;
@@ -218,13 +177,6 @@ export class SwarmChatUtils {
     }
   }
 
-  /**
-   * Fetch the latest GSOC message for a specific topic and resource ID.
-   * @param url The Bee URL.
-   * @param topic The chat topic.
-   * @param resourceId The resource ID for the message.
-   * @returns The latest GSOC message
-   */
   public async fetchLatestChatMessage(): Promise<{ message: MessageData; index: FeedIndex }> {
     const { bee, chatTopic, chatAddress } = this.swarmSettings;
 
@@ -253,6 +205,22 @@ export class SwarmChatUtils {
     } else {
       throw new Error('Enveloped mode is enabled, but stamp is not provided');
     }
+  }
+
+  public async rawSocDownload(owner: string, id: string): Promise<any> {
+    const { beeUrl } = this.swarmSettings;
+
+    const response = await fetch(`${beeUrl}/soc/${owner}/${id}`, {
+      headers: {
+        'swarm-chunk-retrieval-timeout': '2000ms',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch: ${owner}/${id}`);
+    }
+
+    return response;
   }
 
   private async sendMessageToGsocOwn(message: string): Promise<void> {
@@ -302,21 +270,11 @@ export class SwarmChatUtils {
 
     this.logger.debug('sendMessageToGsoc end CALLED');
   }
-  /**
-   * Generate a user-specific feed ID based on topic and user address.
-   * @param topic The topic identifier.
-   * @param userAddress The user’s Ethereum address.
-   * @returns The generated user-specific feed ID.
-   */
-  private generateUserOwnedFeedId(topic: string, userAddress: string) {
+
+  public generateUserOwnedFeedId(topic: string, userAddress: string) {
     return `${topic}_EthercastChat_${userAddress}`;
   }
 
-  /**
-   * Determine if an error is related to a 404 Not Found response.
-   * @param error The error object.
-   * @returns True if it is a Not Found error, false otherwise.
-   */
   private isNotFoundError(error: any): boolean {
     // TODO: why bee-js do this?
     // status is undefined in the error object
