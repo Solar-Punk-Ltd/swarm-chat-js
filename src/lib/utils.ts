@@ -220,7 +220,7 @@ export class SwarmChatUtils {
       throw new Error(`Failed to fetch: ${owner}/${id}`);
     }
 
-    return response;
+    return response.text();
   }
 
   private async sendMessageToGsocOwn(message: string): Promise<void> {
@@ -275,10 +275,15 @@ export class SwarmChatUtils {
     return `${topic}_EthercastChat_${userAddress}`;
   }
 
-  private isNotFoundError(error: any): boolean {
+  public isNotFoundError(error: any): boolean {
     // TODO: why bee-js do this?
     // status is undefined in the error object
     // Determines if the error is about 'Not Found'
-    return error.stack.includes('404') || error.message.includes('Not Found') || error.message.includes('404');
+    return (
+      error.stack.includes('404') ||
+      error.message.includes('Not Found') ||
+      error.message.includes('404') ||
+      error.code === 404
+    );
   }
 }

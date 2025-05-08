@@ -25,13 +25,7 @@ export function validateGsocMessage(message: any): boolean {
     return false;
   }
 
-  if (
-    !validateUserSignature({
-      usnermame: message.username,
-      address: message.address,
-      timestamp: message.timestamp,
-    })
-  ) {
+  if (!validateUserSignature(message)) {
     console.warn('Invalid messageSender');
     return false;
   }

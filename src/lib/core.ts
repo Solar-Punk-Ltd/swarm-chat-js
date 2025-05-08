@@ -24,7 +24,8 @@ export class SwarmChat {
   private errorHandler = new ErrorHandler();
 
   private gsocIndex: FeedIndex | null = null;
-  private fetchMessageTimer: NodeJS.Timeout | null = null;
+  private fetchProcessRunning = false;
+  private stopFetch = false;
 
   constructor(settings: ChatSettings) {
     const signer = new PrivateKey(remove0x(settings.user.privateKey));
@@ -44,7 +45,6 @@ export class SwarmChat {
       gsocResourceId: settings.infra.gsocResourceId,
       chatTopic: settings.infra.chatTopic,
       chatAddress: settings.infra.chatAddress,
-      messageFetchInterval: settings.infra.messageFetchInterval || 1500,
     };
 
     this.emitter = new EventEmitter();
@@ -158,27 +158,29 @@ export class SwarmChat {
   // TODO - batch requests
   private async fetchLatestMessage() {
     try {
-      const nextIndex = this.gsocIndex?.next();
-      if (!nextIndex) {
-        this.logger.error('No next index available for fetching the latest message.');
+      if (!this.gsocIndex) {
         return;
       }
 
       const topic = Topic.fromString(this.swarmSettings.chatTopic);
-      const id = makeFeedIdentifier(topic, nextIndex);
+      const id = makeFeedIdentifier(topic, this.gsocIndex);
 
       const message = await this.utils.rawSocDownload(this.swarmSettings.chatAddress, id.toString());
+      const parsedMessage = JSON.parse(message);
 
       this.logger.debug('fetchLatestMessage entry CALLED', message);
 
-      if (!validateGsocMessage(message)) {
+      if (!validateGsocMessage(parsedMessage)) {
         this.logger.warn('Invalid GSOC message during fetching');
         return;
       }
 
-      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, JSON.parse(message));
-      this.gsocIndex = nextIndex;
-    } catch (error) {
+      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, parsedMessage);
+      this.gsocIndex = this.gsocIndex.next();
+    } catch (error: any) {
+      if (this.utils.isNotFoundError(error)) {
+        return;
+      }
       this.errorHandler.handleError(error, 'Chat.fetchLatestMessage');
     }
   }
@@ -213,20 +215,26 @@ export class SwarmChat {
     return signature.toHex();
   }
 
-  private startMessagesFetchProcess() {
-    const { messageFetchInterval } = this.swarmSettings;
+  private async startMessagesFetchProcess() {
+    if (this.fetchProcessRunning) return;
 
-    if (this.fetchMessageTimer) {
-      this.logger.warn('Messages fetch process is already running.');
-      return;
-    }
-    this.fetchMessageTimer = setInterval(this.fetchLatestMessage.bind(this), messageFetchInterval);
+    this.fetchProcessRunning = true;
+    this.stopFetch = false;
+
+    const poll = async () => {
+      if (this.stopFetch) {
+        this.fetchProcessRunning = false;
+        return;
+      }
+
+      await this.fetchLatestMessage();
+      setTimeout(poll, 200); // with a little delay
+    };
+
+    poll();
   }
 
   private stopMessagesFetchProcess() {
-    if (this.fetchMessageTimer) {
-      clearInterval(this.fetchMessageTimer);
-      this.fetchMessageTimer = null;
-    }
+    this.stopFetch = true;
   }
 }
