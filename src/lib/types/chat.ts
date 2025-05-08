@@ -8,7 +8,6 @@ export interface ChatSettings {
   infra: {
     beeUrl: string;
     enveloped: boolean;
-    customGsocCallback: boolean;
     stamp?: string;
     gsocTopic: string;
     gsocResourceId: string;
@@ -30,7 +29,6 @@ export interface ChatSettingsSwarm {
   beeUrl: string;
   stamp: string;
   enveloped: boolean;
-  customGsocCallback: boolean;
   gsocTopic: string;
   gsocResourceId: string;
   chatTopic: string;

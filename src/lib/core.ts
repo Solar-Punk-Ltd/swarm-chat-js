@@ -1,7 +1,7 @@
 import { Bee, EthAddress, FeedIndex, PrivateKey, Topic } from '@ethersphere/bee-js';
-import { makeFeedIdentifier } from 'src/utils/bee';
 import { v4 as uuidv4 } from 'uuid';
 
+import { makeFeedIdentifier } from '../utils/bee';
 import { remove0x } from '../utils/common';
 import { ErrorHandler } from '../utils/error';
 import { EventEmitter } from '../utils/eventEmitter';
@@ -40,7 +40,6 @@ export class SwarmChat {
       beeUrl: settings.infra.beeUrl,
       stamp: settings.infra.stamp || '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
       enveloped: settings.infra.enveloped,
-      customGsocCallback: settings.infra.customGsocCallback,
       gsocTopic: settings.infra.gsocTopic,
       gsocResourceId: settings.infra.gsocResourceId,
       chatTopic: settings.infra.chatTopic,
