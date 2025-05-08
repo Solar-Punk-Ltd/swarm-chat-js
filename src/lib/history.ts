@@ -22,7 +22,7 @@ export class SwarmHistory {
 
       await this.fetchPreviousMessages();
 
-      return this.historyIndex;
+      return res.index;
     } catch (error) {
       this.errorHandler.handleError(error, 'SwarmHistory.init');
       return FeedIndex.fromBigInt(0n);

@@ -1,6 +1,6 @@
 {
   "name": "@solarpunkltd/swarm-chat-js",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "description": "JS library for chatting on Swarm",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
