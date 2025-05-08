@@ -13,7 +13,6 @@ export interface ChatSettings {
     gsocResourceId: string;
     chatTopic: string;
     chatAddress: string;
-    messageFetchInterval?: number;
   };
 }
 
@@ -33,5 +32,4 @@ export interface ChatSettingsSwarm {
   gsocResourceId: string;
   chatTopic: string;
   chatAddress: string;
-  messageFetchInterval?: number;
 }
