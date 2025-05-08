@@ -21,8 +21,11 @@ export class SwarmHistory {
       this.historyIndex = res.index;
 
       await this.fetchPreviousMessages();
+
+      return this.historyIndex;
     } catch (error) {
       this.errorHandler.handleError(error, 'SwarmHistory.init');
+      return FeedIndex.fromBigInt(0n);
     }
   }
 
