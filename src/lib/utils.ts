@@ -217,7 +217,9 @@ export class SwarmChatUtils {
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch: ${owner}/${id}`);
+      const error = new Error(`Failed to fetch: ${owner}/${id} [${response.status}]`);
+      (error as any).status = response.status;
+      throw error;
     }
 
     return response.text();
