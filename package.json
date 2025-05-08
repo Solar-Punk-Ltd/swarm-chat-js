@@ -1,6 +1,6 @@
 {
   "name": "@solarpunkltd/swarm-chat-js",
-  "version": "4.1.0",
+  "version": "4.2.0",
   "description": "JS library for chatting on Swarm",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
@@ -26,18 +26,12 @@
     "prepare": "npm run build"
   },
   "dependencies": {
-    "@coral-xyz/anchor": "^0.31.0",
     "@ethersphere/bee-js": "^9.0.3",
-    "@solana/web3.js": "^1.98.0",
     "cafe-utility": "^27.12.1",
-    "ethers": "^6.13.5",
-    "lodash": "^4.17.21",
-    "p-queue": "^8.1.0",
     "uuid": "^11.0.3",
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@types/lodash": "^4.17.14",
     "@types/node": "^22.7.5",
     "@typescript-eslint/eslint-plugin": "^6.14.0",
     "@typescript-eslint/parser": "^6.14.0",
