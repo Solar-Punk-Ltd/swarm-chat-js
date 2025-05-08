@@ -178,9 +178,11 @@ export class SwarmChat {
       this.emitter.emit(EVENTS.MESSAGE_RECEIVED, parsedMessage);
       this.gsocIndex = this.gsocIndex.next();
     } catch (error: any) {
-      if (this.utils.isNotFoundError(error)) {
+      // TODO - correct error omit
+      if (this.utils.isNotFoundError(error) || error.message.includes('Failed to fetch')) {
         return;
       }
+
       this.errorHandler.handleError(error, 'Chat.fetchLatestMessage');
     }
   }
