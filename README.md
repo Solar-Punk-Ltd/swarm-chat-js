@@ -1,4 +1,4 @@
-TODO: this is deprecated with inlince docs as well
+/depreacted todo
 
 A chat library for Swarm that enables real-time chatting over Swarm using the GSOC feature.
 
@@ -125,9 +125,7 @@ GSOC Node Readiness: GSOC nodes are still under development and may occasionally
 Helpful docs:
 
 - https://docs.ethswarm.org/docs/develop/tools-and-features/feeds#what-are-feeds
-- https://blog.ethswarm.org/foundation/2024/bee-2-3-pre-release/
-- https://github.com/ethersphere/SWIPs/blob/99e6cf90a4768b24d27e5339b205c18825b53322/SWIPs/swip-draft_graffiti-soc.md
-- https://www.npmjs.com/package/@anythread/gsoc?activeTab=readme
+- https://docs.ethswarm.org/docs/develop/tools-and-features/gsoc/#introduction
 
 An example demo project to demonstrate a simple use case:
 https://github.com/Solar-Punk-Ltd/swarm-chat-react-example

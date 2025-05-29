@@ -9,7 +9,7 @@ import { SwarmChatUtils } from './utils';
 
 export class SwarmHistory {
   private logger = Logger.getInstance();
-  private errorHandler = new ErrorHandler();
+  private errorHandler = ErrorHandler.getInstance();
 
   private historyIndex: FeedIndex | null = null;
 

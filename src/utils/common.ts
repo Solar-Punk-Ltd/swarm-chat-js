@@ -1,8 +1,9 @@
-/**
- * Pauses the execution of an asynchronous function for a specified duration.
- * @param delay - The delay duration in milliseconds.
- * @returns A promise that resolves after the specified delay.
- */
+import { ErrorHandler } from './error';
+import { Logger } from './logger';
+
+const logger = Logger.getInstance();
+const errorHandler = ErrorHandler.getInstance();
+
 export function sleep(delay: number) {
   return new Promise((resolve) => {
     setTimeout(resolve, delay);
@@ -11,4 +12,28 @@ export function sleep(delay: number) {
 
 export function remove0x(hex: string) {
   return (hex.startsWith('0x') ? hex.slice(2) : hex).toLowerCase();
+}
+
+export async function retryAwaitableAsync<T>(
+  fn: () => Promise<T>,
+  retries: number = 3,
+  delay: number = 250,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    fn()
+      .then(resolve)
+      .catch((error) => {
+        if (retries > 0) {
+          logger.info(`Retrying... Attempts left: ${retries}. Error: ${error.message}`);
+          setTimeout(() => {
+            retryAwaitableAsync(fn, retries - 1, delay)
+              .then(resolve)
+              .catch(reject);
+          }, delay);
+        } else {
+          errorHandler.handleError(error, 'Utils.retryAwaitableAsync');
+          reject(error);
+        }
+      });
+  });
 }

@@ -1,14 +1,14 @@
+#!/usr/bin/env node
 import { Bee, Identifier } from '@ethersphere/bee-js';
 
-const BEE_HOST = 'http://localhost:1633';
-
-const BEE = new Bee(BEE_HOST);
-
-async function mine(topic: string) {
+async function mine(beeUrl: string, topic: string) {
+  const BEE = new Bee(beeUrl);
   const addresses = await BEE.getNodeAddresses();
   const identifier = Identifier.fromString(topic);
   const privateKey = BEE.gsocMine(addresses.overlay, identifier);
   console.log(privateKey.toString());
 }
 
-mine('DOOMSDAY');
+const beeUrl = process.argv[2] || 'http://localhost:1633';
+const topic = process.argv[3] || 'DOOMSDAY';
+mine(beeUrl, topic);

@@ -1,22 +1,35 @@
 import { Bytes, FeedIndex, Identifier, PrivateKey, Stamper, Topic } from '@ethersphere/bee-js';
 import { Binary, MerkleTree } from 'cafe-utility';
 
+import { ChatSettingsSwarm, ChatSettingsUser, MessageData } from '../interfaces';
 import { makeContentAddressedChunk, makeFeedIdentifier, makeSingleOwnerChunk } from '../utils/bee';
 import { remove0x } from '../utils/common';
 import { ErrorHandler } from '../utils/error';
-import { Logger } from '../utils/logger';
-
-import { ChatSettingsSwarm, ChatSettingsUser, MessageData } from './types';
 
 export class SwarmChatUtils {
   // TODO: big enough now, but it should represent the depth of the stamp
-  private depth = 24;
-  private logger = Logger.getInstance();
-  private errorHandler = new ErrorHandler();
+  private depth = 26;
+  private errorHandler = ErrorHandler.getInstance();
 
   private UPLOAD_GSOC_TIMEOUT = 2000;
 
   constructor(private userDetails: ChatSettingsUser, private swarmSettings: ChatSettingsSwarm) {}
+
+  public generateUserOwnedFeedId(topic: string, userAddress: string) {
+    return `${topic}_EthercastChat_${userAddress}`;
+  }
+
+  public isNotFoundError(error: any): boolean {
+    // TODO: why bee-js do this?
+    // status is undefined in the error object
+    // Determines if the error is about 'Not Found'
+    return (
+      error.stack.includes('404') ||
+      error.message.includes('Not Found') ||
+      error.message.includes('404') ||
+      error.code === 404
+    );
+  }
 
   public async writeOwnFeedDataByIndex(index: number, data: any) {
     const { enveloped, stamp } = this.swarmSettings;
@@ -37,7 +50,6 @@ export class SwarmChatUtils {
     const feedID = this.generateUserOwnedFeedId(chatTopic, ownAddress);
     const topic = Topic.fromString(feedID);
 
-    console.log('DEBUG: feedID write', topic.toString(), ownAddress, index, feedID);
     const feedWriter = bee.makeFeedWriter(topic, new PrivateKey(privateKey));
 
     await feedWriter.uploadPayload(stamp, JSON.stringify(data), {
@@ -77,33 +89,6 @@ export class SwarmChatUtils {
     return messages.sort((a, b) => a.timestamp - b.timestamp);
   }
 
-  /**
-   * Retry an asynchronous operation with exponential backoff.
-   * @param fn The function to retry.
-   * @param retries The number of retries.
-   * @param delay The delay between retries in milliseconds.
-   * @returns The result of the operation.
-   */
-  public async retryAwaitableAsync<T>(fn: () => Promise<T>, retries: number = 3, delay: number = 250): Promise<T> {
-    return new Promise((resolve, reject) => {
-      fn()
-        .then(resolve)
-        .catch((error) => {
-          if (retries > 0) {
-            this.logger.info(`Retrying... Attempts left: ${retries}. Error: ${error.message}`);
-            setTimeout(() => {
-              this.retryAwaitableAsync(fn, retries - 1, delay)
-                .then(resolve)
-                .catch(reject);
-            }, delay);
-          } else {
-            this.errorHandler.handleError(error, 'Utils.retryAwaitableAsync');
-            reject(error);
-          }
-        });
-    });
-  }
-
   public async uploadObjectToBee(jsObject: object): Promise<string | null> {
     const { enveloped, stamp } = this.swarmSettings;
 
@@ -120,7 +105,6 @@ export class SwarmChatUtils {
     try {
       const { bee, stamp } = this.swarmSettings;
       const result = await bee.uploadData(stamp, JSON.stringify(jsObject), { redundancyLevel: 4 });
-      console.log('DEBUG: result', result.reference.toString());
       return result.reference.toString();
     } catch (error) {
       this.errorHandler.handleError(error, 'Utils.uploadObjectToBee');
@@ -165,8 +149,6 @@ export class SwarmChatUtils {
       const latestIndex = Number(feedEntry.feedIndex.toBigInt());
       // TODO: use feedNextIndex after bee-js patch
       const nextIndex = latestIndex + 1;
-
-      console.log('DEBUG: getLatestFeedIndex', latestIndex, nextIndex);
 
       return { latestIndex, nextIndex };
     } catch (error) {
@@ -226,8 +208,6 @@ export class SwarmChatUtils {
   }
 
   private async sendMessageToGsocOwn(message: string): Promise<void> {
-    this.logger.debug('sendMessageToGsoc entry CALLED');
-
     const { bee, stamp, gsocTopic, gsocResourceId } = this.swarmSettings;
 
     const signer = new PrivateKey(gsocResourceId);
@@ -238,14 +218,11 @@ export class SwarmChatUtils {
     const { upload } = bee.makeSOCWriter(signer, {
       timeout: this.UPLOAD_GSOC_TIMEOUT,
     });
-    await upload(stamp, identifier, data.toUint8Array());
 
-    this.logger.debug('sendMessageToGsoc end CALLED');
+    await upload(stamp, identifier, data.toUint8Array());
   }
 
   private async sendMessageToGsocEnvelope(message: string): Promise<void> {
-    this.logger.debug('sendMessageToGsoc entry CALLED');
-
     const { bee, stamp, gsocTopic, gsocResourceId } = this.swarmSettings;
     const { privateKey } = this.userDetails;
 
@@ -268,24 +245,7 @@ export class SwarmChatUtils {
     const { upload } = bee.makeSOCWriter(signer, {
       timeout: this.UPLOAD_GSOC_TIMEOUT,
     });
+
     await upload(envelope, identifier, data.toUint8Array());
-
-    this.logger.debug('sendMessageToGsoc end CALLED');
-  }
-
-  public generateUserOwnedFeedId(topic: string, userAddress: string) {
-    return `${topic}_EthercastChat_${userAddress}`;
-  }
-
-  public isNotFoundError(error: any): boolean {
-    // TODO: why bee-js do this?
-    // status is undefined in the error object
-    // Determines if the error is about 'Not Found'
-    return (
-      error.stack.includes('404') ||
-      error.message.includes('Not Found') ||
-      error.message.includes('404') ||
-      error.code === 404
-    );
   }
 }
