@@ -239,6 +239,7 @@ npm run mine -- <bee-address> <topic-name>
 ## ⚠️ Limitations
 
 - **Polling Mechanism:** The current version of `swarm-chat-js` relies on polling the aggregator's chat feed to fetch new messages. This approach can be resource-heavy.
+- **User reactions:** Support for replies, threads, emojis.
 
 ---
 
