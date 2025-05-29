@@ -253,5 +253,6 @@ npm run mine -- <bee-address> <topic-name>
 - [What are Feeds? (Official Swarm Documentation)](https://docs.ethswarm.org/docs/develop/tools-and-features/feeds#what-are-feeds)
 - [GSOC Introduction (Official Swarm Documentation)](https://docs.ethswarm.org/docs/develop/tools-and-features/gsoc/#introduction)
 - [Example Aggregator: Solar-Punk-Ltd/swarm-chat-aggregator-js](https://github.com/Solar-Punk-Ltd/swarm-chat-aggregator-js)
+- [Example React client](https://github.com/Solar-Punk-Ltd/swarm-chat-react-example)
 
 ---
