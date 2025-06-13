@@ -89,6 +89,17 @@ export class SwarmChatUtils {
     return messages.sort((a, b) => a.timestamp - b.timestamp);
   }
 
+  public async downloadObjectFromBee(reference: string): Promise<any | null> {
+    try {
+      const { bee } = this.swarmSettings;
+      const data = await bee.downloadData(reference);
+      return data ? data.toJSON() : null;
+    } catch (error) {
+      this.errorHandler.handleError(error, 'Utils.downloadObjectFromBee');
+      return null;
+    }
+  }
+
   public async uploadObjectToBee(jsObject: object): Promise<string | null> {
     const { enveloped, stamp } = this.swarmSettings;
 
