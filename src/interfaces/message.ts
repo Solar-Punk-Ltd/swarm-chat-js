@@ -1,5 +1,12 @@
+export type TextType = 'text';
+export type ThreadType = 'thread';
+export type ReactionType = 'reaction';
+export type MessageType = TextType | ThreadType | ReactionType;
+
 export interface MessageData {
   id: string;
+  targetMessageId?: string;
+  type: MessageType;
   message: string;
   username: string;
   address: string;
@@ -8,4 +15,9 @@ export interface MessageData {
   index: number;
   chatTopic: string;
   userTopic: string;
+}
+
+export interface MessageWithReactions {
+  message: MessageData;
+  reactionState: MessageData[];
 }

@@ -8,6 +8,8 @@ const logger = Logger.getInstance();
 
 const MessageSchema = z.object({
   id: z.string(),
+  targetMessageId: z.string().optional(),
+  type: z.enum(['text', 'thread', 'reaction']),
   message: z.string(),
   username: z.string(),
   address: z.string(),
@@ -18,15 +20,52 @@ const MessageSchema = z.object({
   userTopic: z.string(),
 });
 
+const MessageWithReactionsSchema = z.object({
+  message: MessageSchema,
+  reactionState: z.string(),
+});
+
 export function validateGsocMessage(message: any): boolean {
+  const result = MessageWithReactionsSchema.safeParse(message);
+  if (!result.success) {
+    logger.warn('GSOC message validation failed:', result.error.format());
+    return false;
+  }
+
+  // Validate the main message signature
+  if (!validateUserSignature(message.message)) {
+    logger.warn('Invalid main message signature');
+    return false;
+  }
+
+  return true;
+}
+
+export function validateReactionState(reactionState: any[]): boolean {
+  if (!Array.isArray(reactionState)) {
+    logger.warn('Reaction state must be an array');
+    return false;
+  }
+
+  for (const reaction of reactionState) {
+    if (!validateMessageData(reaction)) {
+      logger.warn('Invalid reaction in reaction state:', reaction.id);
+      return false;
+    }
+  }
+
+  return true;
+}
+
+export function validateMessageData(message: any): boolean {
   const result = MessageSchema.safeParse(message);
   if (!result.success) {
-    logger.warn(result.error.format());
+    logger.warn('Message data validation failed:', result.error.format());
     return false;
   }
 
   if (!validateUserSignature(message)) {
-    console.warn('Invalid messageSender');
+    logger.warn('Invalid message signature');
     return false;
   }
 

@@ -1,7 +1,7 @@
 import { Bee, EthAddress, FeedIndex, PrivateKey, Topic } from '@ethersphere/bee-js';
 import { v4 as uuidv4 } from 'uuid';
 
-import { ChatSettings, ChatSettingsSwarm, ChatSettingsUser, MessageData } from '../interfaces';
+import { ChatSettings, ChatSettingsSwarm, ChatSettingsUser, MessageData, MessageType } from '../interfaces';
 import { makeFeedIdentifier } from '../utils/bee';
 import { remove0x, retryAwaitableAsync } from '../utils/common';
 import { ErrorHandler } from '../utils/error';
@@ -11,12 +11,14 @@ import { validateGsocMessage } from '../utils/validation';
 
 import { EVENTS } from './constants';
 import { SwarmHistory } from './history';
+import { SwarmReaction } from './reaction';
 import { SwarmChatUtils } from './utils';
 
 export class SwarmChat {
   private emitter: EventEmitter;
   private utils: SwarmChatUtils;
   private history: SwarmHistory;
+  private reaction: SwarmReaction;
   private userDetails: ChatSettingsUser;
   private swarmSettings: ChatSettingsSwarm;
 
@@ -71,7 +73,7 @@ export class SwarmChat {
     return this.utils.orderMessages(messages);
   }
 
-  public async sendMessage(message: string, id?: string): Promise<void> {
+  public async sendMessage(message: string, type: MessageType, targetMessageId?: string, id?: string): Promise<void> {
     const nextIndex = this.userDetails.ownIndex === -1 ? 0 : this.userDetails.ownIndex + 1;
     const messageObj = {
       id: id || uuidv4(),
@@ -82,6 +84,8 @@ export class SwarmChat {
       signature: this.getSignature(),
       timestamp: Date.now(),
       index: nextIndex,
+      type,
+      targetMessageId,
       message,
     };
 
@@ -113,7 +117,7 @@ export class SwarmChat {
   }
 
   public async retrySendMessage(message: MessageData) {
-    this.sendMessage(message.message, message.id);
+    this.sendMessage(message.message, message.type, message.targetMessageId, message.id);
   }
 
   public async retryBroadcastUserMessage(message: MessageData) {
@@ -168,7 +172,9 @@ export class SwarmChat {
         return;
       }
 
-      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, parsedMessage);
+      this.reaction.loadReactionState(parsedMessage.reactionState);
+
+      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, parsedMessage.message);
       this.gsocIndex = this.gsocIndex.next();
     } catch (error: any) {
       if (this.utils.isNotFoundError(error)) {
