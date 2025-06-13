@@ -32,7 +32,6 @@ export function validateGsocMessage(message: any): boolean {
     return false;
   }
 
-  // Validate the main message signature
   if (!validateUserSignature(message.message)) {
     logger.warn('Invalid main message signature');
     return false;
