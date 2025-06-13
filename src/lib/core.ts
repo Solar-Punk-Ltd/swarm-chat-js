@@ -63,6 +63,7 @@ export class SwarmChat {
   public stop() {
     this.emitter.cleanAll();
     this.stopMessagesFetchProcess();
+    this.reaction.cleanupReactionState();
   }
 
   public getEmitter() {
