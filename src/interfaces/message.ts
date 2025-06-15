@@ -19,5 +19,10 @@ export interface MessageData {
 
 export interface MessageWithReactions {
   message: MessageData;
-  reactionState: MessageData[];
+  reactionState: ReactionStateRef[] | null;
+}
+
+export interface ReactionStateRef {
+  reference: string;
+  timestamp: number;
 }

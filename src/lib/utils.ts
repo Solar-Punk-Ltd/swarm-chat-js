@@ -1,7 +1,7 @@
 import { Bytes, FeedIndex, Identifier, PrivateKey, Stamper, Topic } from '@ethersphere/bee-js';
 import { Binary, MerkleTree } from 'cafe-utility';
 
-import { ChatSettingsSwarm, ChatSettingsUser, MessageData } from '../interfaces';
+import { ChatSettingsSwarm, ChatSettingsUser, MessageWithReactions } from '../interfaces';
 import { makeContentAddressedChunk, makeFeedIdentifier, makeSingleOwnerChunk } from '../utils/bee';
 import { remove0x } from '../utils/common';
 import { ErrorHandler } from '../utils/error';
@@ -170,13 +170,13 @@ export class SwarmChatUtils {
     }
   }
 
-  public async fetchLatestChatMessage(): Promise<{ message: MessageData; index: FeedIndex }> {
+  public async fetchLatestChatMessage(): Promise<{ message: MessageWithReactions; index: FeedIndex }> {
     const { bee, chatTopic, chatAddress } = this.swarmSettings;
 
     const reader = bee.makeFeedReader(Topic.fromString(chatTopic), remove0x(chatAddress));
     const res = await reader.downloadPayload();
 
-    return { message: res.payload.toJSON() as MessageData, index: res.feedIndex };
+    return { message: res.payload.toJSON() as MessageWithReactions, index: res.feedIndex };
   }
 
   public async fetchChatMessage(index: FeedIndex): Promise<any> {

@@ -10,6 +10,7 @@ export type {
   ReactionType,
   MessageType,
   MessageWithReactions,
+  ReactionStateRef,
 } from './interfaces';
 
 export type { EthAddress } from '@ethersphere/bee-js';
