@@ -11,14 +11,12 @@ import { validateGsocMessage } from '../utils/validation';
 
 import { EVENTS } from './constants';
 import { SwarmHistory } from './history';
-import { SwarmReaction } from './reaction';
 import { SwarmChatUtils } from './utils';
 
 export class SwarmChat {
   private emitter: EventEmitter;
   private utils: SwarmChatUtils;
   private history: SwarmHistory;
-  private reaction: SwarmReaction;
   private userDetails: ChatSettingsUser;
   private swarmSettings: ChatSettingsSwarm;
 
@@ -63,7 +61,7 @@ export class SwarmChat {
   public stop() {
     this.emitter.cleanAll();
     this.stopMessagesFetchProcess();
-    this.reaction.cleanupReactionState();
+    this.history.cleanup();
   }
 
   public getEmitter() {
@@ -172,8 +170,6 @@ export class SwarmChat {
         this.logger.warn('Invalid GSOC message during fetching');
         return;
       }
-
-      this.reaction.loadReactionState(parsedMessage.reactionState);
 
       this.emitter.emit(EVENTS.MESSAGE_RECEIVED, parsedMessage.message);
       this.gsocIndex = this.gsocIndex.next();

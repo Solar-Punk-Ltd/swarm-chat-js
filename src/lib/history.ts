@@ -5,15 +5,19 @@ import { EventEmitter } from '../utils/eventEmitter';
 import { Logger } from '../utils/logger';
 
 import { EVENTS } from './constants';
+import { SwarmReaction } from './reaction';
 import { SwarmChatUtils } from './utils';
 
 export class SwarmHistory {
+  private reaction: SwarmReaction;
   private logger = Logger.getInstance();
   private errorHandler = ErrorHandler.getInstance();
 
   private historyIndex: FeedIndex | null = null;
 
-  constructor(private utils: SwarmChatUtils, private emitter: EventEmitter) {}
+  constructor(private utils: SwarmChatUtils, private emitter: EventEmitter) {
+    this.reaction = new SwarmReaction(this.utils, this.emitter);
+  }
 
   public async init() {
     try {
@@ -21,6 +25,7 @@ export class SwarmHistory {
       this.historyIndex = res.index;
 
       await this.fetchPreviousMessages();
+      await this.reaction.initializeReactions(res.message.reactionState);
 
       return res.index;
     } catch (error) {
@@ -56,5 +61,9 @@ export class SwarmHistory {
     } catch (error) {
       this.errorHandler.handleError(error, 'SwarmHistory.fetchPreviousMessages');
     }
+  }
+
+  public cleanup() {
+    this.reaction.cleanupReactionState();
   }
 }

@@ -1,3 +1,4 @@
+import { ReactionStateRef } from '../interfaces/message';
 import { ErrorHandler } from '../utils/error';
 import { EventEmitter } from '../utils/eventEmitter';
 import { Logger } from '../utils/logger';
@@ -10,67 +11,76 @@ export class SwarmReaction {
   private logger = Logger.getInstance();
   private errorHandler = ErrorHandler.getInstance();
 
-  private currReactionStateRef: string | null = null;
-  private latestPendingRef: string | null = null;
-  private isProcessing: boolean = false;
+  private processedRefs: Set<string> = new Set();
   private refRetryCount: Map<string, number> = new Map();
   private bannedRefs: Set<string> = new Set();
-
   private readonly MAX_RETRIES = 3;
 
   constructor(private utils: SwarmChatUtils, private emitter: EventEmitter) {}
 
-  public async loadReactionState(ref: string) {
-    if (ref === this.currReactionStateRef) {
+  public async initializeReactions(reactionStateRefs: ReactionStateRef[] | null) {
+    if (!reactionStateRefs || reactionStateRefs.length === 0) {
+      this.logger.debug('No reaction state refs to initialize');
       return;
     }
 
-    if (this.bannedRefs.has(ref)) {
+    const latestRef = this.findLatestRef(reactionStateRefs);
+    if (!latestRef) {
+      this.logger.warn('No valid latest reference found');
       return;
     }
 
-    this.latestPendingRef = ref;
-
-    if (this.isProcessing) {
-      return;
-    }
-
-    await this.processLatestRef();
+    this.logger.debug('Initializing reactions with latest ref:', latestRef.reference);
+    await this.processReactionRef(latestRef.reference);
   }
 
-  private async processLatestRef() {
-    while (this.latestPendingRef && this.latestPendingRef !== this.currReactionStateRef) {
-      const refToProcess = this.latestPendingRef;
+  public async fetchPreviousReactions(reactionStateRefs: ReactionStateRef[] | null) {
+    if (!reactionStateRefs || reactionStateRefs.length === 0) {
+      this.logger.debug('No reaction state refs to fetch');
+      return;
+    }
 
-      if (this.bannedRefs.has(refToProcess)) {
-        this.latestPendingRef = null;
-        continue;
-      }
+    const sortedRefs = [...reactionStateRefs].sort((a, b) => a.timestamp - b.timestamp);
 
-      this.isProcessing = true;
-      this.latestPendingRef = null;
-
-      try {
-        const reactionState = await this.utils.downloadObjectFromBee(refToProcess);
-
-        const isValid = validateReactionState(reactionState);
-        if (!isValid) {
-          throw new Error(`Invalid reaction state for ref: ${refToProcess}`);
-        }
-
-        this.refRetryCount.delete(refToProcess);
-        this.currReactionStateRef = refToProcess;
-
-        this.emitter.emit(EVENTS.MESSAGE_REACTION_STATE_RECEIVED, { reactionState });
-      } catch (error) {
-        this.handleRefError(refToProcess, error);
-      } finally {
-        this.isProcessing = false;
+    for (const ref of sortedRefs) {
+      if (!this.processedRefs.has(ref.reference) && !this.bannedRefs.has(ref.reference)) {
+        this.logger.debug('Fetching previous reaction ref:', ref.reference);
+        await this.processReactionRef(ref.reference);
       }
     }
   }
 
-  private handleRefError(ref: string, error: any) {
+  private findLatestRef(refs: ReactionStateRef[]): ReactionStateRef | null {
+    if (refs.length === 0) return null;
+
+    return refs.reduce((latest, current) => (current.timestamp > latest.timestamp ? current : latest));
+  }
+
+  private async processReactionRef(ref: string): Promise<boolean> {
+    if (this.processedRefs.has(ref) || this.bannedRefs.has(ref)) {
+      return false;
+    }
+
+    try {
+      const reactionState = await this.utils.downloadObjectFromBee(ref);
+
+      const isValid = validateReactionState(reactionState);
+      if (!isValid) {
+        throw new Error(`Invalid reaction state for ref: ${ref}`);
+      }
+
+      this.processedRefs.add(ref);
+      this.refRetryCount.delete(ref);
+      this.emitter.emit(EVENTS.MESSAGE_REACTION_STATE_RECEIVED, { reactionState, ref });
+      this.logger.debug('Successfully processed reaction ref:', ref);
+
+      return true;
+    } catch (error) {
+      return this.handleRefError(ref, error);
+    }
+  }
+
+  private handleRefError(ref: string, error: any): boolean {
     const currentRetries = this.refRetryCount.get(ref) || 0;
     const newRetryCount = currentRetries + 1;
 
@@ -80,20 +90,17 @@ export class SwarmReaction {
       this.bannedRefs.add(ref);
       this.refRetryCount.delete(ref);
       this.logger.error(`Ref ${ref} has been banned after ${this.MAX_RETRIES} failed attempts`);
+
+      return false;
     } else {
       this.refRetryCount.set(ref, newRetryCount);
-
-      if (!this.latestPendingRef) {
-        this.latestPendingRef = ref;
-      }
+      this.errorHandler.handleError(error, 'SwarmReaction.processReactionRef');
+      return false;
     }
-
-    this.errorHandler.handleError(error, 'SwarmReaction.loadReactionState');
   }
 
   public cleanupReactionState() {
-    this.isProcessing = false;
-    this.latestPendingRef = null;
+    this.processedRefs.clear();
     this.refRetryCount.clear();
     this.bannedRefs.clear();
   }

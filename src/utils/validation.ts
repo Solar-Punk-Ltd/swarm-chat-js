@@ -20,9 +20,14 @@ const MessageSchema = z.object({
   userTopic: z.string(),
 });
 
+const ReactionStateRefSchema = z.object({
+  reference: z.string(),
+  timestamp: z.number(),
+});
+
 const MessageWithReactionsSchema = z.object({
   message: MessageSchema,
-  reactionState: z.string(),
+  reactionState: z.array(ReactionStateRefSchema).nullable(),
 });
 
 export function validateGsocMessage(message: any): boolean {
