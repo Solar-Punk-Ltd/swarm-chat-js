@@ -1,7 +1,14 @@
 import { Bee, EthAddress, FeedIndex, PrivateKey, Topic } from '@ethersphere/bee-js';
 import { v4 as uuidv4 } from 'uuid';
 
-import { ChatSettings, ChatSettingsSwarm, ChatSettingsUser, MessageData, MessageType } from '../interfaces';
+import {
+  ChatSettings,
+  ChatSettingsSwarm,
+  ChatSettingsUser,
+  MessageData,
+  MessageType,
+  StatefulMessage,
+} from '../interfaces';
 import { makeFeedIdentifier } from '../utils/bee';
 import { remove0x, retryAwaitableAsync } from '../utils/common';
 import { ErrorHandler } from '../utils/error';
@@ -108,7 +115,7 @@ export class SwarmChat {
     try {
       this.emitter.emit(EVENTS.LOADING_PREVIOUS_MESSAGES, true);
 
-      const messages = await this.history.fetchPreviousMessages();
+      const messages = await this.history.fetchPreviousMessageState();
       return messages;
     } finally {
       this.emitter.emit(EVENTS.LOADING_PREVIOUS_MESSAGES, false);
@@ -163,15 +170,15 @@ export class SwarmChat {
       const topic = Topic.fromString(this.swarmSettings.chatTopic);
       const id = makeFeedIdentifier(topic, this.gsocIndex);
 
-      const message = await this.utils.rawSocDownload(this.swarmSettings.chatAddress, id.toString());
-      const parsedMessage = JSON.parse(message);
+      const data = await this.utils.rawSocDownload(this.swarmSettings.chatAddress, id.toString());
+      const parsedData = JSON.parse(data) as StatefulMessage;
 
-      if (!validateGsocMessage(parsedMessage)) {
+      if (!validateGsocMessage(parsedData)) {
         this.logger.warn('Invalid GSOC message during fetching');
         return;
       }
 
-      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, parsedMessage.message);
+      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, parsedData.message);
       this.gsocIndex = this.gsocIndex.next();
     } catch (error: any) {
       if (this.utils.isNotFoundError(error)) {
