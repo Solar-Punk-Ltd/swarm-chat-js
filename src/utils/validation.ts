@@ -1,5 +1,6 @@
 import { Signature } from '@ethersphere/bee-js';
-import { Binary } from 'cafe-utility';
+import { UserComment } from '@solarpunkltd/comment-system';
+import { Binary, Types } from 'cafe-utility';
 import { z } from 'zod';
 
 import { MessageType } from '../interfaces/message';
@@ -104,3 +105,95 @@ export function validateUserSignature(validatedUser: any): boolean {
     return false;
   }
 }
+
+export function assertComment(value: unknown): asserts value is UserComment {
+  if (!Types.isStrictlyObject(value)) {
+    throw new TypeError('UserComment has to be object!');
+  }
+
+  const comment = value as unknown as UserComment;
+
+  if (!Types.isStrictlyObject(comment.message)) {
+    throw new TypeError('UserComment.message has to be object!');
+  }
+
+  if (typeof comment.message.text !== 'string') {
+    throw new TypeError('text property of UserComment.message has to be string!');
+  }
+
+  if (comment.message.messageId !== undefined && typeof comment.message.messageId !== 'string') {
+    throw new TypeError('messageId property of UserComment.message has to be string!');
+  }
+
+  if (comment.message.threadId !== undefined && typeof comment.message.threadId !== 'string') {
+    throw new TypeError('threadId property of UserComment.message has to be string!');
+  }
+
+  if (comment.message.parent !== undefined && typeof comment.message.parent !== 'string') {
+    throw new TypeError('parent property of UserComment.message has to be string!');
+  }
+
+  if (!Types.isStrictlyObject(comment.user)) {
+    throw new TypeError('UserComment.user has to be object!');
+  }
+
+  if (typeof comment.timestamp !== 'number') {
+    throw new TypeError('timestamp property of UserComment has to be number!');
+  }
+
+  if (typeof comment.user.address !== 'string') {
+    throw new TypeError('address property of UserComment.user has to be string!');
+  }
+
+  if (typeof comment.user.username !== 'string') {
+    throw new TypeError('username property of UserComment.user has to be string!');
+  }
+}
+
+export function isEmpty(obj?: object | Array<any>): boolean {
+  if (!obj) {
+    return true;
+  }
+  if (Array.isArray(obj)) {
+    return obj.length === 0;
+  }
+  return Object.keys(obj).length === 0;
+}
+
+// TODO: merge comment and messagedata
+// const CommentSchema = z.object({
+//   id: z.string(),
+//   targetMessageId: z.string().optional(),
+//   type: z.nativeEnum(MessageType),
+//   message: z.string(),
+//   username: z.string(),
+//   address: z.string(),
+//   timestamp: z.number(),
+//   index: z.number(),
+//   topic: z.string(),
+// });
+
+// const CommentStateRefSchema = z.object({
+//   reference: z.string(),
+//   timestamp: z.number(),
+// });
+
+// const UserStateRefSchema = z.object({
+//   username: z.string(),
+//   address: z.string(),
+// });
+
+// const CommentStatefulMessageSchema = z.object({
+//   message: CommentSchema,
+//   messageStateRefs: z.array(CommentStateRefSchema).nullable(),
+// });
+
+// export function validateUserComment(message: any): boolean {
+//   const result = CommentStatefulMessageSchema.safeParse(message);
+//   if (!result.success) {
+//     logger.warn('UserComment message validation failed:', result.error.format());
+//     return false;
+//   }
+
+//   return true;
+// }
