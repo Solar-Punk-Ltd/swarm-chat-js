@@ -20,18 +20,18 @@ const MessageSchema = z.object({
   userTopic: z.string(),
 });
 
-const ReactionStateRefSchema = z.object({
+const StateRefSchema = z.object({
   reference: z.string(),
   timestamp: z.number(),
 });
 
-const MessageWithReactionsSchema = z.object({
+const StatefulMessageSchema = z.object({
   message: MessageSchema,
-  reactionState: z.array(ReactionStateRefSchema).nullable(),
+  messageStateRefs: z.array(StateRefSchema).nullable(),
 });
 
 export function validateGsocMessage(message: any): boolean {
-  const result = MessageWithReactionsSchema.safeParse(message);
+  const result = StatefulMessageSchema.safeParse(message);
   if (!result.success) {
     logger.warn('GSOC message validation failed:', result.error.format());
     return false;
@@ -45,15 +45,15 @@ export function validateGsocMessage(message: any): boolean {
   return true;
 }
 
-export function validateReactionState(reactionState: any[]): boolean {
-  if (!Array.isArray(reactionState)) {
-    logger.warn('Reaction state must be an array');
+export function validateMessageState(messageState: any[]): boolean {
+  if (!Array.isArray(messageState)) {
+    logger.warn('Message state must be an array');
     return false;
   }
 
-  for (const reaction of reactionState) {
-    if (!validateMessageData(reaction)) {
-      logger.warn('Invalid reaction in reaction state:', reaction.id);
+  for (const message of messageState) {
+    if (!validateMessageData(message)) {
+      logger.warn('Invalid message in message state:', message.id);
       return false;
     }
   }

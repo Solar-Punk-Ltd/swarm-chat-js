@@ -2,7 +2,6 @@ export const EVENTS = {
   LOADING_INIT: 'loadingInit',
   LOADING_PREVIOUS_MESSAGES: 'loadingPreviousMessages',
   MESSAGE_RECEIVED: 'messageReceived',
-  MESSAGE_REACTION_STATE_RECEIVED: 'messageReactionStateReceived',
   MESSAGE_REQUEST_INITIATED: 'messageRequestInitiated',
   MESSAGE_REQUEST_UPLOADED: 'messageRequestUploaded',
   MESSAGE_REQUEST_ERROR: 'messageRequestError',

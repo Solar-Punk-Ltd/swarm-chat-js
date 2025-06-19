@@ -9,8 +9,8 @@ export type {
   ThreadType,
   ReactionType,
   MessageType,
-  MessageWithReactions,
-  ReactionStateRef,
+  StatefulMessage,
+  MessageStateRef,
 } from './interfaces';
 
 export type { EthAddress } from '@ethersphere/bee-js';
