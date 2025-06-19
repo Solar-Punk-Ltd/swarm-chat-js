@@ -2,6 +2,8 @@ import { Signature } from '@ethersphere/bee-js';
 import { Binary } from 'cafe-utility';
 import { z } from 'zod';
 
+import { MessageType } from '../interfaces/message';
+
 import { Logger } from './logger';
 
 const logger = Logger.getInstance();
@@ -9,7 +11,7 @@ const logger = Logger.getInstance();
 const MessageSchema = z.object({
   id: z.string(),
   targetMessageId: z.string().optional(),
-  type: z.enum(['text', 'thread', 'reaction']),
+  type: z.nativeEnum(MessageType),
   message: z.string(),
   username: z.string(),
   address: z.string(),

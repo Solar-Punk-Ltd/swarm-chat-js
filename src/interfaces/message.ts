@@ -1,7 +1,8 @@
-export type TextType = 'text';
-export type ThreadType = 'thread';
-export type ReactionType = 'reaction';
-export type MessageType = TextType | ThreadType | ReactionType;
+export enum MessageType {
+  TEXT = 'text',
+  THREAD = 'thread',
+  REACTION = 'reaction',
+}
 
 export interface MessageData {
   id: string;
