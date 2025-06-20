@@ -29,7 +29,7 @@
   },
   "dependencies": {
     "@ethersphere/bee-js": "^9.0.3",
-    "@solarpunkltd/comment-system": "^1.7.6",
+    "@solarpunkltd/comment-system": "^1.7.8",
     "cafe-utility": "^27.12.1",
     "uuid": "^11.0.3",
     "zod": "^3.24.1"

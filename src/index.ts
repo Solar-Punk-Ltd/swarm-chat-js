@@ -1,4 +1,5 @@
 export { SwarmChat } from './lib/core';
+export { SwarmComment } from './lib/commentCore';
 
 export { EVENTS } from './lib/constants';
 
