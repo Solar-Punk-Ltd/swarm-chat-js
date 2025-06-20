@@ -1,6 +1,5 @@
 import { Bee, FeedIndex, PrivateKey, Topic } from '@ethersphere/bee-js';
 import { readCommentsInRange, readSingleComment, UserComment, writeCommentToIndex } from '@solarpunkltd/comment-system';
-import { loadLatestComments, readLatestComment } from 'src/utils/comments';
 import { assertComment, isEmpty } from 'src/utils/validation';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -10,14 +9,12 @@ import { ErrorHandler } from '../utils/error';
 import { EventEmitter } from '../utils/eventEmitter';
 import { Logger } from '../utils/logger';
 
-import { EVENTS } from './constants';
-import { SwarmHistory } from './history';
+import { COMMENTS_TO_READ, EVENTS } from './constants';
 import { SwarmChatUtils } from './utils';
 
 export class SwarmChat {
   private emitter: EventEmitter;
   private utils: SwarmChatUtils;
-  private history: SwarmHistory;
   private userDetails: ChatSettingsUser;
   private swarmSettings: ChatSettingsSwarm;
 
@@ -26,6 +23,8 @@ export class SwarmChat {
 
   private fetchProcessRunning = false;
   private stopFetch = false;
+  private identifier: string;
+  private startFeedIdx: number;
 
   constructor(settings: ChatSettings) {
     const signer = new PrivateKey(remove0x(settings.user.privateKey));
@@ -48,9 +47,10 @@ export class SwarmChat {
       chatAddress: settings.infra.chatAddress,
     };
 
+    this.identifier = Topic.fromString(this.swarmSettings.chatTopic).toString();
+    this.startFeedIdx = -1;
     this.emitter = new EventEmitter();
     this.utils = new SwarmChatUtils(this.userDetails, this.swarmSettings);
-    this.history = new SwarmHistory(this.utils, this.emitter);
   }
 
   public start() {
@@ -61,7 +61,6 @@ export class SwarmChat {
   public stop() {
     this.emitter.cleanAll();
     this.stopMessagesFetchProcess();
-    this.history.cleanup();
   }
 
   public getEmitter() {
@@ -91,16 +90,14 @@ export class SwarmChat {
     try {
       this.emitter.emit(EVENTS.MESSAGE_REQUEST_INITIATED, messageObj);
 
-      // await this.utils.writeOwnFeedDataByIndex(nextIndex, JSON.stringify(messageObj));
-      const identifier = Topic.fromString(this.swarmSettings.chatTopic).toString();
       const comment = await writeCommentToIndex(messageObj, FeedIndex.fromBigInt(BigInt(nextIndex)), {
         stamp: this.swarmSettings.stamp,
-        identifier,
+        identifier: this.identifier,
         // signer, // TODO: maybe export and use getPrivateKeyFromIdentifier(identifier);
         beeApiUrl: this.swarmSettings.beeUrl,
       });
 
-      await this.verifyWriteSuccess(FeedIndex.fromBigInt(BigInt(nextIndex)), identifier, comment);
+      await this.verifyWriteSuccess(FeedIndex.fromBigInt(BigInt(nextIndex)), comment);
 
       this.userDetails.ownIndex = nextIndex;
 
@@ -112,11 +109,29 @@ export class SwarmChat {
   }
 
   public async fetchPreviousMessages() {
+    if (this.startFeedIdx < 0) {
+      return [];
+    }
+
+    const newStartIndex = this.startFeedIdx > COMMENTS_TO_READ ? this.startFeedIdx - COMMENTS_TO_READ : 0;
+
     try {
       this.emitter.emit(EVENTS.LOADING_PREVIOUS_MESSAGES, true);
 
-      const messages = await this.history.fetchPreviousMessageState();
-      return messages;
+      const comments = await readCommentsInRange(
+        FeedIndex.fromBigInt(BigInt(newStartIndex)),
+        FeedIndex.fromBigInt(BigInt(this.startFeedIdx)),
+        {
+          identifier: this.identifier,
+          address: this.swarmSettings.chatAddress,
+          beeApiUrl: this.swarmSettings.beeUrl,
+        },
+      );
+      // todo: debug
+      this.logger.info('Fetching previous messages from: ', newStartIndex, ' to: ', this.startFeedIdx);
+
+      this.startFeedIdx = newStartIndex;
+      return comments;
     } finally {
       this.emitter.emit(EVENTS.LOADING_PREVIOUS_MESSAGES, false);
     }
@@ -126,23 +141,49 @@ export class SwarmChat {
     this.sendMessage(message.message, message.type, message.targetMessageId, message.id);
   }
 
-  // TOOD: load history
+  // TODO: use history
   private async init() {
     try {
       this.emitter.emit(EVENTS.LOADING_INIT, true);
 
-      // const [ownIndexResult, historyInitResult] = await Promise.allSettled([this.initOwnIndex(), this.history.init()]);
-      const [ownIndexResult] = await Promise.allSettled([this.initOwnIndex()]);
+      const [ownIndexResult, historyInitResult] = await Promise.allSettled([
+        this.initOwnIndex(),
+        this.fetchPreviousMessages(),
+      ]);
 
       if (ownIndexResult.status === 'rejected') {
         throw ownIndexResult.reason;
       }
 
-      // if (historyInitResult.status === 'fulfilled') {
-      //   this.gsocIndex = historyInitResult.value;
-      // }
+      let previousComments: UserComment[] = [];
+      if (historyInitResult.status === 'fulfilled') {
+        previousComments = historyInitResult.value;
+      }
 
       this.emitter.emit(EVENTS.LOADING_INIT, false);
+
+      // todo: is ordering needed here?
+      previousComments = this.orderMessages(previousComments);
+
+      const messageState = previousComments.map((c, ix) => {
+        return {
+          id: c.message.messageId || uuidv4() + 'todo', // TODO: require messageId
+          username: c.user.username,
+          address: c.user.address,
+          chatTopic: this.identifier,
+          userTopic: 'bagoy-chat-user-topic', // TODO: resolve message IF
+          signature: 'bagoy-chat-signature', // TODO: resolve message IF
+          timestamp: c.timestamp,
+          index: this.startFeedIdx - ix,
+          type: MessageType.TEXT,
+          targetMessageId: c.message.threadId,
+          message: c.message.text,
+        };
+      });
+
+      for (const message of messageState) {
+        this.emitter.emit(EVENTS.MESSAGE_RECEIVED, message);
+      }
     } catch (error) {
       this.errorHandler.handleError(error, 'Comment.initSelfState');
       this.emitter.emit(EVENTS.CRITICAL_ERROR, error);
@@ -156,34 +197,36 @@ export class SwarmChat {
     const { latestIndex } = await retryAwaitableAsync(() => this.utils.getOwnLatestFeedIndex(), RETRY_COUNT, DELAY);
 
     this.userDetails.ownIndex = latestIndex;
+    this.startFeedIdx = latestIndex;
   }
 
   private async fetchLatestMessage() {
     try {
-      const identifier = Topic.fromString(this.swarmSettings.chatTopic).toString();
-      const latestCommet = await readLatestComment(
-        identifier,
-        this.swarmSettings.chatAddress,
-        this.swarmSettings.beeUrl,
-      );
+      const latestComment = await readSingleComment(undefined, {
+        identifier: this.identifier,
+        address: this.swarmSettings.chatAddress,
+        beeApiUrl: this.swarmSettings.beeUrl,
+      });
 
       // TODO: scheme validation
-      assertComment(latestCommet);
+      assertComment(latestComment);
 
       const parsedData: MessageData = {
-        id: latestCommet.message.messageId || uuidv4() + 'todo', // TODO: require messageId
-        username: latestCommet.user.username,
-        address: latestCommet.user.address,
-        chatTopic: identifier,
+        id: latestComment.message.messageId || uuidv4() + 'todo', // TODO: require messageId
+        username: latestComment.user.username,
+        address: latestComment.user.address,
+        chatTopic: this.identifier,
         userTopic: 'bagoy-chat-user-topic', // TODO: resolve message IF
         signature: 'bagoy-chat-signature', // TODO: resolve message IF
-        timestamp: latestCommet.timestamp,
-        index: latestCommet.nextIndex === undefined ? 0 : Number(new FeedIndex(latestCommet.nextIndex).toBigInt() - 1n),
+        timestamp: latestComment.timestamp,
+        index:
+          latestComment.nextIndex === undefined ? 0 : Number(new FeedIndex(latestComment.nextIndex).toBigInt() - 1n),
         type: MessageType.TEXT,
-        targetMessageId: latestCommet.message.threadId,
-        message: latestCommet.message.text,
+        targetMessageId: latestComment.message.threadId,
+        message: latestComment.message.text,
       };
 
+      // todo: debug
       this.logger.info('Fetched latest message:', parsedData);
       this.emitter.emit(EVENTS.MESSAGE_RECEIVED, parsedData.message);
     } catch (err) {
@@ -191,13 +234,13 @@ export class SwarmChat {
     }
   }
 
-  private async verifyWriteSuccess(index: FeedIndex, identifier: string, comment: UserComment) {
+  private async verifyWriteSuccess(index: FeedIndex, comment: UserComment) {
     if (isEmpty(comment)) {
       throw 'Comment write failed, empty response!';
     }
 
     const commentCheck = await readSingleComment(index, {
-      identifier,
+      identifier: this.identifier,
       address: this.swarmSettings.chatAddress,
       beeApiUrl: this.swarmSettings.beeUrl,
     });

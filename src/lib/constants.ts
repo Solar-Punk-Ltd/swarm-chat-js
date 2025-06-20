@@ -7,3 +7,5 @@ export const EVENTS = {
   MESSAGE_REQUEST_ERROR: 'messageRequestError',
   CRITICAL_ERROR: 'criticalError',
 };
+
+export const COMMENTS_TO_READ = 9;
