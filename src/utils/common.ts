@@ -1,3 +1,5 @@
+import { PrivateKey, Topic } from '@ethersphere/bee-js';
+
 import { ErrorHandler } from './error';
 import { Logger } from './logger';
 
@@ -36,4 +38,12 @@ export async function retryAwaitableAsync<T>(
         }
       });
   });
+}
+// TODO: import from comment-system
+export function getPrivateKeyFromIdentifier(identifier: string): PrivateKey {
+  if (!identifier) {
+    throw new Error('Cannot generate private key from an invalid identifier');
+  }
+
+  return new PrivateKey(Topic.fromString(identifier).toUint8Array());
 }

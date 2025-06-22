@@ -3,37 +3,37 @@ import {
   getReactionFeedId,
   isUserComment,
   Reaction,
-  readCommentsInRange,
   readSingleComment,
   SingleComment,
   UserComment,
   writeCommentToIndex,
   writeReactionsToIndex,
 } from '@solarpunkltd/comment-system';
-import { v4 as uuidv4 } from 'uuid';
 
 import { ChatSettings, ChatSettingsSwarm, ChatSettingsUser, MessageData, MessageType } from '../interfaces';
-import { remove0x, retryAwaitableAsync } from '../utils/common';
+import { getPrivateKeyFromIdentifier, remove0x, retryAwaitableAsync } from '../utils/common';
 import { ErrorHandler } from '../utils/error';
 import { EventEmitter } from '../utils/eventEmitter';
 import { Logger } from '../utils/logger';
 
-import { COMMENTS_TO_READ, EVENTS } from './constants';
+import { EVENTS } from './constants';
+import { SwarmHistory } from './history';
 import { SwarmChatUtils } from './utils';
 
 export class SwarmComment {
   private emitter: EventEmitter;
   private utils: SwarmChatUtils;
+  private history: SwarmHistory;
   private userDetails: ChatSettingsUser;
   private swarmSettings: ChatSettingsSwarm;
 
   private logger = Logger.getInstance();
   private errorHandler = ErrorHandler.getInstance();
 
+  private startIndex: bigint | undefined;
   private fetchProcessRunning = false;
   private stopFetch = false;
-  private identifier: string;
-  private startFeedIdx: number;
+  private chatSigner: PrivateKey;
 
   constructor(settings: ChatSettings) {
     const signer = new PrivateKey(remove0x(settings.user.privateKey));
@@ -45,6 +45,8 @@ export class SwarmComment {
       ownIndex: -1,
     };
 
+    this.chatSigner = getPrivateKeyFromIdentifier(settings.infra.chatTopic);
+
     this.swarmSettings = {
       bee: new Bee(settings.infra.beeUrl),
       beeUrl: settings.infra.beeUrl,
@@ -53,13 +55,20 @@ export class SwarmComment {
       gsocTopic: settings.infra.gsocTopic,
       gsocResourceId: settings.infra.gsocResourceId,
       chatTopic: settings.infra.chatTopic,
-      chatAddress: settings.infra.chatAddress,
+      chatAddress: this.chatSigner.publicKey().address().toString(),
     };
 
-    this.identifier = Topic.fromString(this.swarmSettings.chatTopic).toString();
-    this.startFeedIdx = -1;
+    this.startIndex = -1n;
     this.emitter = new EventEmitter();
-    this.utils = new SwarmChatUtils(this.userDetails, this.swarmSettings);
+    this.utils = new SwarmChatUtils(
+      {
+        ...this.userDetails,
+        privateKey: this.chatSigner.toString(),
+        ownAddress: this.chatSigner.publicKey().address().toString(),
+      },
+      this.swarmSettings,
+    );
+    this.history = new SwarmHistory(this.utils, this.emitter);
   }
 
   public start() {
@@ -70,6 +79,7 @@ export class SwarmComment {
   public stop() {
     this.emitter.cleanAll();
     this.stopMessagesFetchProcess();
+    this.history.cleanup();
   }
 
   public getEmitter() {
@@ -83,7 +93,7 @@ export class SwarmComment {
   // TODO: reaction handling with proper indexing and aggregation
   public async sendMessage(message: string, type: MessageType, targetMessageId?: string, id?: string): Promise<void> {
     const nextIndex = this.userDetails.ownIndex === -1 ? 0 : this.userDetails.ownIndex + 1;
-    const messageObj = this.transformMessage(message, type, targetMessageId, id);
+    const messageObj = this.utils.transformMessage(message, type, targetMessageId, id);
 
     this.logger.info('Sending message:', {
       ...messageObj,
@@ -94,7 +104,7 @@ export class SwarmComment {
       this.emitter.emit(EVENTS.MESSAGE_REQUEST_INITIATED, messageObj);
 
       if (type === MessageType.REACTION) {
-        const reactionFeedId = getReactionFeedId(this.identifier).toString();
+        const reactionFeedId = getReactionFeedId(Topic.fromString(this.swarmSettings.chatTopic).toString()).toString();
         const reactionNextIndex = FeedIndex.fromBigInt(0n);
 
         await writeReactionsToIndex([messageObj as Reaction], reactionNextIndex, {
@@ -105,7 +115,8 @@ export class SwarmComment {
       } else {
         const comment = await writeCommentToIndex(messageObj as UserComment, FeedIndex.fromBigInt(BigInt(nextIndex)), {
           stamp: this.swarmSettings.stamp,
-          identifier: this.identifier,
+          signer: this.chatSigner,
+          identifier: Topic.fromString(this.swarmSettings.chatTopic).toString(),
           beeApiUrl: this.swarmSettings.beeUrl,
         });
 
@@ -122,38 +133,10 @@ export class SwarmComment {
   }
 
   public async fetchPreviousMessages() {
-    if (this.startFeedIdx < 0) {
-      return [];
-    }
-
-    const newStartIndex = this.startFeedIdx > COMMENTS_TO_READ ? this.startFeedIdx - COMMENTS_TO_READ : 0;
-    this.logger.info('fetchPreviousMessages this.startFeedIdx:', this.startFeedIdx);
-    this.logger.info('fetchPreviousMessages newStartIndex:', newStartIndex);
-
     try {
       this.emitter.emit(EVENTS.LOADING_PREVIOUS_MESSAGES, true);
 
-      // todo: debug
-      this.logger.info('Fetching previous messages from: ', newStartIndex, ' to: ', this.startFeedIdx);
-
-      const comments = await readCommentsInRange(
-        FeedIndex.fromBigInt(BigInt(newStartIndex)),
-        FeedIndex.fromBigInt(BigInt(this.startFeedIdx)),
-        {
-          identifier: this.identifier,
-          // address: this.swarmSettings.chatAddress,
-          beeApiUrl: this.swarmSettings.beeUrl,
-        },
-      );
-
-      if (!comments) {
-        return [];
-      }
-
-      isUserComment(comments);
-
-      this.startFeedIdx = newStartIndex;
-      return comments;
+      await this.history.fetchPreviousMessageState(this.startIndex);
     } finally {
       this.emitter.emit(EVENTS.LOADING_PREVIOUS_MESSAGES, false);
     }
@@ -172,31 +155,20 @@ export class SwarmComment {
     try {
       this.emitter.emit(EVENTS.LOADING_INIT, true);
       // TODO: optimize
-      await this.initOwnIndex();
-      const previousComments = await this.fetchPreviousMessages();
+      const [ownIndexResult, historyInitResult] = await Promise.allSettled([
+        this.initOwnIndex(),
+        this.history.init(true),
+      ]);
+
+      if (ownIndexResult.status === 'rejected') {
+        throw ownIndexResult.reason;
+      }
+
+      if (historyInitResult.status === 'fulfilled') {
+        this.startIndex = historyInitResult.value.toBigInt();
+      }
 
       this.emitter.emit(EVENTS.LOADING_INIT, false);
-
-      // todo: is ordering needed here?
-      const messageState = this.orderMessages(previousComments).map((c: UserComment, ix) => {
-        return {
-          id: c.message.messageId || uuidv4() + 'todo', // TODO: require messageId
-          username: c.user.username,
-          address: c.user.address,
-          chatTopic: this.identifier,
-          userTopic: 'bagoy-chat-user-topic', // TODO: resolve message IF
-          signature: 'bagoy-chat-signature', // TODO: resolve message IF
-          timestamp: c.timestamp,
-          index: this.startFeedIdx - ix,
-          type: MessageType.TEXT,
-          targetMessageId: c.message.threadId,
-          message: c.message.text,
-        };
-      });
-
-      for (const message of messageState) {
-        this.emitter.emit(EVENTS.MESSAGE_RECEIVED, message);
-      }
     } catch (error) {
       this.errorHandler.handleError(error, 'Comment.initSelfState');
       this.emitter.emit(EVENTS.CRITICAL_ERROR, error);
@@ -209,37 +181,45 @@ export class SwarmComment {
     const DELAY = 1000;
 
     const result = (await retryAwaitableAsync(
-      () => readSingleComment(undefined, { identifier: this.identifier, beeApiUrl: this.swarmSettings.beeUrl }),
+      () =>
+        readSingleComment(undefined, {
+          identifier: Topic.fromString(this.swarmSettings.chatTopic).toString(),
+          address: this.swarmSettings.chatAddress,
+          beeApiUrl: this.swarmSettings.beeUrl,
+        }),
       RETRY_COUNT,
       DELAY,
     )) as SingleComment | undefined;
 
-    let latestIndex = -1;
+    let latestIndex = -1n;
     if (result && Object.keys(result).length > 0 && result.nextIndex) {
-      latestIndex = Number(new FeedIndex(result.nextIndex).toBigInt() - 1n);
+      latestIndex = new FeedIndex(result.nextIndex).toBigInt() - 1n;
     }
 
     this.logger.info('Own latest feed index:', latestIndex);
-    this.userDetails.ownIndex = latestIndex;
-    this.startFeedIdx = latestIndex;
+    this.userDetails.ownIndex = Number(latestIndex);
+
+    this.logger.info('Own latestIndex:', latestIndex.toString());
   }
 
   private async fetchLatestMessage() {
     try {
       const latestComment = await readSingleComment(undefined, {
-        identifier: this.identifier,
-        // address: this.swarmSettings.chatAddress,
+        identifier: Topic.fromString(this.swarmSettings.chatTopic).toString(),
+        address: this.swarmSettings.chatAddress,
         beeApiUrl: this.swarmSettings.beeUrl,
       });
 
       if (latestComment === undefined) {
         // todo: debug
-        throw new Error(`Failed to read latest comment for identifier: ${this.identifier}`);
+        throw new Error(
+          `Failed to read latest comment for identifier: ${Topic.fromString(this.swarmSettings.chatTopic).toString()}`,
+        );
       }
 
       if (Object.keys(latestComment).length === 0) {
         // todo: debug
-        this.logger.info('No comment found for identifier:', this.identifier);
+        this.logger.info('No comment found for identifier:', Topic.fromString(this.swarmSettings.chatTopic).toString());
         return;
       }
 
@@ -251,24 +231,16 @@ export class SwarmComment {
       // TODO: scheme validation
       isUserComment(latestComment.comment);
 
-      const messageData: MessageData = {
-        id: latestComment.comment.message.messageId || uuidv4() + 'todo', // TODO: require messageId
-        username: latestComment.comment.user.username,
-        address: latestComment.comment.user.address,
-        chatTopic: this.identifier,
-        userTopic: 'bagoy-chat-user-topic', // TODO: resolve message IF
-        signature: 'bagoy-chat-signature', // TODO: resolve message IF
-        timestamp: latestComment.comment.timestamp,
-        index:
-          latestComment.nextIndex === undefined ? 0 : Number(new FeedIndex(latestComment.nextIndex).toBigInt() - 1n),
-        type: MessageType.TEXT,
-        targetMessageId: latestComment.comment.message.threadId,
-        message: latestComment.comment.message.text,
-      };
+      const messageData = this.utils.transformComment(
+        latestComment.comment,
+        latestComment.nextIndex === undefined ? 0 : Number(new FeedIndex(latestComment.nextIndex).toBigInt() - 1n),
+        MessageType.TEXT,
+      );
 
       // todo: debug
       this.logger.info('Fetched latest message:', JSON.stringify(messageData));
       this.userDetails.ownIndex = messageData.index;
+      this.logger.info('Own latest index updated:', this.userDetails.ownIndex);
       this.emitter.emit(EVENTS.MESSAGE_RECEIVED, messageData);
     } catch (err) {
       this.errorHandler.handleError(err, 'Comment.fetchLatestMessage');
@@ -281,8 +253,8 @@ export class SwarmComment {
     }
 
     const commentCheck = await readSingleComment(index, {
-      identifier: this.identifier,
-      // address: this.swarmSettings.chatAddress,
+      identifier: Topic.fromString(this.swarmSettings.chatTopic).toString(),
+      address: this.swarmSettings.chatAddress,
       beeApiUrl: this.swarmSettings.beeUrl,
     });
 
@@ -303,40 +275,6 @@ export class SwarmComment {
     ) {
       throw new Error(`comment check failed, expected "${comment.message.text}", got: "${commentCheck.comment.message.text}".
                 Expected timestamp: ${comment.timestamp}, got: ${commentCheck.comment.timestamp}`);
-    }
-  }
-
-  private transformMessage(
-    message: string,
-    type: MessageType,
-    targetMessageId?: string,
-    id?: string,
-  ): UserComment | Reaction {
-    if (type === MessageType.REACTION) {
-      return {
-        targetMessageId: targetMessageId,
-        user: {
-          username: this.userDetails.nickname,
-          address: this.userDetails.ownAddress,
-        },
-        reactionType: message,
-        timestamp: Date.now(),
-        reactionId: id || uuidv4(),
-      } as Reaction;
-    } else {
-      return {
-        message: {
-          text: message,
-          messageId: id || uuidv4(),
-          threadId: targetMessageId,
-          parent: undefined, // TODO: handle parent messages if needed
-        },
-        timestamp: Date.now(),
-        user: {
-          username: this.userDetails.nickname,
-          address: this.userDetails.ownAddress,
-        },
-      } as UserComment;
     }
   }
 

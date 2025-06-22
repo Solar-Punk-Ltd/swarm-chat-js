@@ -1,13 +1,14 @@
-import { FeedIndex } from '@ethersphere/bee-js';
+import { FeedIndex, Topic } from '@ethersphere/bee-js';
+import { isUserComment, readCommentsInRange } from '@solarpunkltd/comment-system';
 
-import { MessageData, MessageStateRef, StatefulMessage } from '../interfaces/message';
+import { MessageData, MessageStateRef, MessageType, StatefulMessage } from '../interfaces/message';
 import { sleep } from '../utils/common';
 import { ErrorHandler } from '../utils/error';
 import { EventEmitter } from '../utils/eventEmitter';
 import { Logger } from '../utils/logger';
 import { validateGsocMessage, validateMessageState } from '../utils/validation';
 
-import { EVENTS } from './constants';
+import { COMMENTS_TO_READ, EVENTS } from './constants';
 import { SwarmChatUtils } from './utils';
 
 export class SwarmHistory {
@@ -23,12 +24,12 @@ export class SwarmHistory {
 
   constructor(private utils: SwarmChatUtils, private emitter: EventEmitter) {}
 
-  public async init() {
+  public async init(isComment: boolean = false) {
     try {
       const { data, index } = await this.utils.fetchLatestChatMessage();
 
       try {
-        await this.initMessageState(data);
+        await this.initMessageState(data, isComment);
       } catch (error) {
         this.errorHandler.handleError(error, 'SwarmHistory.initMessageState');
       }
@@ -40,8 +41,16 @@ export class SwarmHistory {
     }
   }
 
-  public async initMessageState(statefulMessage: StatefulMessage) {
+  public async initMessageState(statefulMessage: StatefulMessage, isComment: boolean) {
     try {
+      if (isComment) {
+        if (!isUserComment(statefulMessage)) {
+          this.logger.warn('Invalid comment during message state initialization');
+        }
+
+        return;
+      }
+
       if (!validateGsocMessage(statefulMessage)) {
         this.logger.warn('Invalid GSOC message during message state initialization');
         return;
@@ -70,7 +79,57 @@ export class SwarmHistory {
     }
   }
 
-  public async fetchPreviousMessageState() {
+  // todo: refactor startindex usage
+  public async fetchPreviousMessageState(startIndex?: bigint) {
+    if (startIndex !== undefined) {
+      return this.fetchPreviousCommentState(startIndex);
+    }
+
+    return this.fetchPreviousChatState();
+  }
+
+  // TODO: refactor with processMessageRefWithRetry
+  private async fetchPreviousCommentState(startIndex: bigint) {
+    this.logger.info('fetchPreviousCommentState startIndex:', startIndex.toString());
+    if (startIndex <= 0n) {
+      return;
+    }
+
+    const newStartIndex = startIndex > COMMENTS_TO_READ ? startIndex - COMMENTS_TO_READ : 0n;
+    this.logger.info('fetchPreviousCommentState this.startFeedIdx:', startIndex);
+    this.logger.info('fetchPreviousCommentState newStartIndex:', newStartIndex);
+
+    // todo: debug
+    this.logger.info('Fetching previous messages from: ', newStartIndex.toString(), ' to: ', startIndex.toString());
+
+    const comments = await readCommentsInRange(FeedIndex.fromBigInt(newStartIndex), FeedIndex.fromBigInt(startIndex), {
+      identifier: Topic.fromString(this.utils.getSwarmSettings().chatTopic).toString(),
+      address: this.utils.getSwarmSettings().chatAddress,
+      beeApiUrl: this.utils.getSwarmSettings().beeUrl,
+    });
+
+    if (!comments) {
+      return;
+    }
+
+    for (let ix = 0; ix < comments.length; ix++) {
+      const c = comments[ix];
+
+      if (!isUserComment(c)) {
+        // todo: debug
+        this.logger.warn('Invalid user comment detected:', c);
+        continue;
+      }
+
+      const message = this.utils.transformComment(c, Number(startIndex - BigInt(ix)), MessageType.TEXT);
+
+      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, message);
+    }
+
+    return newStartIndex;
+  }
+
+  private async fetchPreviousChatState() {
     const { data: statefulMessage } = await this.utils.fetchLatestChatMessage();
 
     if (!statefulMessage.messageStateRefs || statefulMessage.messageStateRefs.length === 0) {

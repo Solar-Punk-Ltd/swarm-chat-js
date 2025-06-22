@@ -8,4 +8,4 @@ export const EVENTS = {
   CRITICAL_ERROR: 'criticalError',
 };
 
-export const COMMENTS_TO_READ = 9;
+export const COMMENTS_TO_READ = 9n;
