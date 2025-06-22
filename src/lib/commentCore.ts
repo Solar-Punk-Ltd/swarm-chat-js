@@ -1,14 +1,16 @@
-import { Bee, FeedIndex, PrivateKey, Topic } from '@ethersphere/bee-js';
+import { Bee, EthAddress, FeedIndex, PrivateKey, Topic } from '@ethersphere/bee-js';
 import {
   getReactionFeedId,
+  isReaction,
   isUserComment,
-  Reaction,
+  MessageData as CommentMessageData,
   readSingleComment,
   SingleComment,
-  UserComment,
+  updateReactions,
   writeCommentToIndex,
   writeReactionsToIndex,
 } from '@solarpunkltd/comment-system';
+import { v4 as uuidv4 } from 'uuid';
 
 import { ChatSettings, ChatSettingsSwarm, ChatSettingsUser, MessageData, MessageType } from '../interfaces';
 import { getPrivateKeyFromIdentifier, remove0x, retryAwaitableAsync } from '../utils/common';
@@ -31,6 +33,7 @@ export class SwarmComment {
   private errorHandler = ErrorHandler.getInstance();
 
   private startIndex: bigint | undefined;
+  private reactionIndex: bigint | undefined;
   private fetchProcessRunning = false;
   private stopFetch = false;
   private chatSigner: PrivateKey;
@@ -90,9 +93,28 @@ export class SwarmComment {
   }
 
   // TODO: reaction handling with proper indexing and aggregation
-  public async sendMessage(message: string, type: MessageType, targetMessageId?: string, id?: string): Promise<void> {
+  public async sendMessage(
+    message: string,
+    type: MessageType,
+    targetMessageId?: string,
+    id?: string,
+    prevState?: MessageData[],
+  ): Promise<void> {
     const nextIndex = this.userDetails.ownIndex === -1 ? 0 : this.userDetails.ownIndex + 1;
-    const messageObj = this.utils.transformMessage(message, type, targetMessageId, id);
+    // TODO: resolve message IF
+    const messageObj = {
+      id: id || uuidv4(),
+      username: this.userDetails.nickname,
+      address: this.userDetails.ownAddress,
+      chatTopic: Topic.fromString(this.swarmSettings.chatTopic).toString(),
+      userTopic: Topic.fromString(this.swarmSettings.chatTopic).toString(),
+      signature: this.getSignature(),
+      timestamp: Date.now(),
+      index: nextIndex,
+      type,
+      targetMessageId,
+      message,
+    } as MessageData;
 
     this.logger.info('Sending message:', {
       ...messageObj,
@@ -104,15 +126,24 @@ export class SwarmComment {
 
       if (type === MessageType.REACTION) {
         const reactionFeedId = getReactionFeedId(Topic.fromString(this.swarmSettings.chatTopic).toString()).toString();
-        const reactionNextIndex = FeedIndex.fromBigInt(0n);
+        const reactionNextIndex =
+          this.reactionIndex === undefined ? FeedIndex.fromBigInt(0n) : FeedIndex.fromBigInt(this.reactionIndex);
+        // TODO: remove validation after messagedata type is fixed
+        isReaction(messageObj);
 
-        await writeReactionsToIndex([messageObj as Reaction], reactionNextIndex, {
+        const newReactionState = updateReactions(prevState || [], messageObj) || [];
+
+        await writeReactionsToIndex(newReactionState, reactionNextIndex, {
           stamp: this.swarmSettings.stamp,
+          signer: this.chatSigner,
           identifier: reactionFeedId,
           beeApiUrl: this.swarmSettings.beeUrl,
         });
       } else {
-        const comment = await writeCommentToIndex(messageObj as UserComment, FeedIndex.fromBigInt(BigInt(nextIndex)), {
+        // TODO: remove validation after messagedata type is fixed
+        isUserComment(messageObj);
+
+        const comment = await writeCommentToIndex(messageObj, FeedIndex.fromBigInt(BigInt(nextIndex)), {
           stamp: this.swarmSettings.stamp,
           signer: this.chatSigner,
           identifier: Topic.fromString(this.swarmSettings.chatTopic).toString(),
@@ -123,7 +154,6 @@ export class SwarmComment {
       }
 
       this.userDetails.ownIndex = nextIndex;
-
       this.emitter.emit(EVENTS.MESSAGE_REQUEST_UPLOADED, messageObj);
     } catch (error) {
       this.emitter.emit(EVENTS.MESSAGE_REQUEST_ERROR, messageObj);
@@ -152,7 +182,6 @@ export class SwarmComment {
     this.logger.debug('Not implemented: retryBroadcastUserMessage');
   }
 
-  // TODO: use history
   private async init() {
     try {
       this.emitter.emit(EVENTS.LOADING_INIT, true);
@@ -169,6 +198,9 @@ export class SwarmComment {
       if (historyInitResult.status === 'fulfilled') {
         this.startIndex = historyInitResult.value.toBigInt();
       }
+
+      const reactionIndex = await this.history.fetchPreviousReactionState(this.reactionIndex);
+      this.reactionIndex = reactionIndex.toBigInt();
 
       this.emitter.emit(EVENTS.LOADING_INIT, false);
     } catch (error) {
@@ -222,31 +254,34 @@ export class SwarmComment {
         return;
       }
 
-      this.logger.info('fetchLatestMessage comment:', {
-        ...latestComment,
-        nextIndex: latestComment?.nextIndex,
-      });
-
-      // TODO: scheme validation
       isUserComment(latestComment.comment);
 
-      const messageData = this.utils.transformComment(
-        latestComment.comment,
-        latestComment.nextIndex === undefined ? 0 : Number(new FeedIndex(latestComment.nextIndex).toBigInt() - 1n),
-        MessageType.TEXT,
-      );
-
-      // todo: debug
-      this.logger.info('Fetched latest message:', JSON.stringify(messageData));
-      this.userDetails.ownIndex = messageData.index;
-      this.logger.info('Own latest index updated:', this.userDetails.ownIndex);
-      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, messageData);
+      this.userDetails.ownIndex = latestComment.comment.index;
+      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, latestComment.comment);
     } catch (err) {
       this.errorHandler.handleError(err, 'Comment.fetchLatestMessage');
     }
   }
 
-  private async verifyWriteSuccess(index: FeedIndex, comment?: UserComment) {
+  private getSignature() {
+    const { ownAddress: address, privateKey, nickname } = this.userDetails;
+
+    const ownAddress = new EthAddress(address).toString();
+
+    const signer = new PrivateKey(privateKey);
+    const signerAddress = signer.publicKey().address().toString();
+
+    if (signerAddress !== ownAddress) {
+      throw new Error('The provided address does not match the address derived from the private key');
+    }
+
+    const timestamp = Date.now();
+    const signature = signer.sign(JSON.stringify({ username: nickname, address: ownAddress, timestamp }));
+
+    return signature.toHex();
+  }
+
+  private async verifyWriteSuccess(index: FeedIndex, comment?: CommentMessageData) {
     if (!comment) {
       throw new Error('Comment write failed, empty response!');
     }
@@ -261,18 +296,10 @@ export class SwarmComment {
       throw new Error('Comment check failed, empty response!');
     }
 
-    this.logger.info('verifying commentCheck:', {
-      ...commentCheck,
-      index: index.toString(),
-    });
-
     isUserComment(commentCheck.comment);
     // TODO: id check
-    if (
-      commentCheck.comment.message.text !== comment.message.text ||
-      commentCheck.comment.timestamp !== comment.timestamp
-    ) {
-      throw new Error(`comment check failed, expected "${comment.message.text}", got: "${commentCheck.comment.message.text}".
+    if (commentCheck.comment.id !== comment.id || commentCheck.comment.timestamp !== comment.timestamp) {
+      throw new Error(`comment check failed, expected "${comment.message}", got: "${commentCheck.comment.message}".
                 Expected timestamp: ${comment.timestamp}, got: ${commentCheck.comment.timestamp}`);
     }
   }

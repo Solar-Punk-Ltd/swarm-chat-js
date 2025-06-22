@@ -1,5 +1,5 @@
 import { Bytes, FeedIndex, Identifier, PrivateKey, Stamper, Topic } from '@ethersphere/bee-js';
-import { Reaction, UserComment } from '@solarpunkltd/comment-system';
+import { MessageData as CommentMessageData } from '@solarpunkltd/comment-system';
 import { Binary, MerkleTree } from 'cafe-utility';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -222,56 +222,6 @@ export class SwarmChatUtils {
 
   public getSwarmSettings() {
     return this.swarmSettings;
-  }
-
-  public transformMessage(
-    message: string,
-    type: MessageType,
-    targetMessageId?: string,
-    id?: string,
-  ): UserComment | Reaction {
-    if (type === MessageType.REACTION) {
-      return {
-        targetMessageId: targetMessageId,
-        user: {
-          username: this.userDetails.nickname,
-          address: this.userDetails.ownAddress,
-        },
-        reactionType: message,
-        timestamp: Date.now(),
-        reactionId: id || uuidv4(),
-      } as Reaction;
-    } else {
-      return {
-        message: {
-          text: message,
-          messageId: id || uuidv4(),
-          threadId: targetMessageId,
-          parent: undefined, // TODO: handle parent messages if needed
-        },
-        timestamp: Date.now(),
-        user: {
-          username: this.userDetails.nickname,
-          address: this.userDetails.ownAddress,
-        },
-      } as UserComment;
-    }
-  }
-
-  public transformComment(comment: UserComment, index: number, type: MessageType): MessageData {
-    return {
-      id: comment.message.messageId || uuidv4() + 'todo', // TODO: require messageId
-      username: comment.user.username,
-      address: comment.user.address,
-      chatTopic: Topic.fromString(this.swarmSettings.chatTopic).toString(),
-      userTopic: 'bagoy-chat-user-topic', // TODO: resolve message IF
-      signature: 'bagoy-chat-signature', // TODO: resolve message IF
-      timestamp: comment.timestamp,
-      index,
-      type,
-      targetMessageId: comment.message.threadId,
-      message: comment.message.text,
-    } as MessageData;
   }
 
   private async sendMessageToGsocOwn(message: string): Promise<void> {

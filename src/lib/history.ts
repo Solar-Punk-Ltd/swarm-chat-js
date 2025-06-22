@@ -1,7 +1,13 @@
 import { FeedIndex, Topic } from '@ethersphere/bee-js';
-import { isUserComment, readCommentsInRange } from '@solarpunkltd/comment-system';
+import {
+  getReactionFeedId,
+  isReaction,
+  isUserComment,
+  readCommentsInRange,
+  readReactionsWithIndex,
+} from '@solarpunkltd/comment-system';
 
-import { MessageData, MessageStateRef, MessageType, StatefulMessage } from '../interfaces/message';
+import { MessageData, MessageStateRef, StatefulMessage } from '../interfaces/message';
 import { sleep } from '../utils/common';
 import { ErrorHandler } from '../utils/error';
 import { EventEmitter } from '../utils/eventEmitter';
@@ -89,6 +95,35 @@ export class SwarmHistory {
     return this.fetchPreviousChatState();
   }
 
+  public async fetchPreviousReactionState(index?: bigint) {
+    const reactionFeedId = getReactionFeedId(
+      Topic.fromString(this.utils.getSwarmSettings().chatTopic).toString(),
+    ).toString();
+    const reactionState = await readReactionsWithIndex(index === undefined ? undefined : FeedIndex.fromBigInt(index), {
+      identifier: reactionFeedId,
+      address: this.utils.getSwarmSettings().chatAddress,
+      beeApiUrl: this.utils.getSwarmSettings().beeUrl,
+    });
+
+    if (!reactionState || !reactionState.reactions || reactionState.reactions.length === 0) {
+      return FeedIndex.fromBigInt(0n);
+    }
+
+    for (let ix = 0; ix < reactionState.reactions.length; ix++) {
+      const r = reactionState.reactions[ix];
+
+      if (!isReaction(r)) {
+        // todo: debug
+        this.logger.warn('Invalid user reaction detected:', r);
+        continue;
+      }
+
+      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, r as MessageData);
+    }
+
+    return new FeedIndex(reactionState.nextIndex);
+  }
+
   // TODO: refactor with processMessageRefWithRetry
   private async fetchPreviousCommentState(startIndex: bigint) {
     if (startIndex <= 0n) {
@@ -119,9 +154,7 @@ export class SwarmHistory {
         continue;
       }
 
-      const message = this.utils.transformComment(c, Number(startIndex - BigInt(ix)), MessageType.TEXT);
-
-      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, message);
+      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, c as MessageData);
     }
 
     return FeedIndex.fromBigInt(newStartIndex);
