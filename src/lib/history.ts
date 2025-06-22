@@ -28,8 +28,17 @@ export class SwarmHistory {
     try {
       const { data, index } = await this.utils.fetchLatestChatMessage();
 
+      if (isComment) {
+        if (!isUserComment(data)) {
+          this.logger.warn('Invalid comment during message state initialization');
+          return FeedIndex.fromBigInt(0n);
+        }
+
+        return await this.fetchPreviousCommentState(index.toBigInt());
+      }
+
       try {
-        await this.initMessageState(data, isComment);
+        await this.initMessageState(data);
       } catch (error) {
         this.errorHandler.handleError(error, 'SwarmHistory.initMessageState');
       }
@@ -41,16 +50,8 @@ export class SwarmHistory {
     }
   }
 
-  public async initMessageState(statefulMessage: StatefulMessage, isComment: boolean) {
+  public async initMessageState(statefulMessage: StatefulMessage) {
     try {
-      if (isComment) {
-        if (!isUserComment(statefulMessage)) {
-          this.logger.warn('Invalid comment during message state initialization');
-        }
-
-        return;
-      }
-
       if (!validateGsocMessage(statefulMessage)) {
         this.logger.warn('Invalid GSOC message during message state initialization');
         return;
@@ -90,14 +91,11 @@ export class SwarmHistory {
 
   // TODO: refactor with processMessageRefWithRetry
   private async fetchPreviousCommentState(startIndex: bigint) {
-    this.logger.info('fetchPreviousCommentState startIndex:', startIndex.toString());
     if (startIndex <= 0n) {
-      return;
+      return FeedIndex.fromBigInt(0n);
     }
 
     const newStartIndex = startIndex > COMMENTS_TO_READ ? startIndex - COMMENTS_TO_READ : 0n;
-    this.logger.info('fetchPreviousCommentState this.startFeedIdx:', startIndex);
-    this.logger.info('fetchPreviousCommentState newStartIndex:', newStartIndex);
 
     // todo: debug
     this.logger.info('Fetching previous messages from: ', newStartIndex.toString(), ' to: ', startIndex.toString());
@@ -109,7 +107,7 @@ export class SwarmHistory {
     });
 
     if (!comments) {
-      return;
+      return FeedIndex.fromBigInt(0n);
     }
 
     for (let ix = 0; ix < comments.length; ix++) {
@@ -126,7 +124,7 @@ export class SwarmHistory {
       this.emitter.emit(EVENTS.MESSAGE_RECEIVED, message);
     }
 
-    return newStartIndex;
+    return FeedIndex.fromBigInt(newStartIndex);
   }
 
   private async fetchPreviousChatState() {

@@ -58,7 +58,6 @@ export class SwarmComment {
       chatAddress: this.chatSigner.publicKey().address().toString(),
     };
 
-    this.startIndex = -1n;
     this.emitter = new EventEmitter();
     this.utils = new SwarmChatUtils(
       {
@@ -136,7 +135,10 @@ export class SwarmComment {
     try {
       this.emitter.emit(EVENTS.LOADING_PREVIOUS_MESSAGES, true);
 
-      await this.history.fetchPreviousMessageState(this.startIndex);
+      const newStartIndex = await this.history.fetchPreviousMessageState(this.startIndex);
+      if (newStartIndex !== undefined) {
+        this.startIndex = newStartIndex.toBigInt();
+      }
     } finally {
       this.emitter.emit(EVENTS.LOADING_PREVIOUS_MESSAGES, false);
     }
@@ -196,10 +198,7 @@ export class SwarmComment {
       latestIndex = new FeedIndex(result.nextIndex).toBigInt() - 1n;
     }
 
-    this.logger.info('Own latest feed index:', latestIndex);
     this.userDetails.ownIndex = Number(latestIndex);
-
-    this.logger.info('Own latestIndex:', latestIndex.toString());
   }
 
   private async fetchLatestMessage() {
