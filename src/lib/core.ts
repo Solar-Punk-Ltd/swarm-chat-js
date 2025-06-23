@@ -87,7 +87,7 @@ export class SwarmChat {
       address: this.userDetails.ownAddress,
       chatTopic: this.swarmSettings.chatTopic,
       userTopic: this.utils.generateUserOwnedFeedId(this.swarmSettings.chatTopic, this.userDetails.ownAddress),
-      signature: this.getSignature(),
+      signature: this.getSignature(message),
       timestamp: Date.now(),
       index: nextIndex,
       type,
@@ -120,6 +120,10 @@ export class SwarmChat {
     } finally {
       this.emitter.emit(EVENTS.LOADING_PREVIOUS_MESSAGES, false);
     }
+  }
+
+  public hasPreviousMessages(): boolean {
+    return this.history.hasPreviousMessages();
   }
 
   public async retrySendMessage(message: MessageData) {
@@ -197,7 +201,7 @@ export class SwarmChat {
     }
   }
 
-  private getSignature() {
+  private getSignature(message: string) {
     const { ownAddress: address, privateKey, nickname } = this.userDetails;
 
     const ownAddress = new EthAddress(address).toString();
@@ -210,7 +214,7 @@ export class SwarmChat {
     }
 
     const timestamp = Date.now();
-    const signature = signer.sign(JSON.stringify({ username: nickname, address: ownAddress, timestamp }));
+    const signature = signer.sign(JSON.stringify({ username: nickname, address: ownAddress, message, timestamp }));
 
     return signature.toHex();
   }
