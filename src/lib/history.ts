@@ -1,8 +1,11 @@
 import { FeedIndex } from '@ethersphere/bee-js';
 
+import { MessageData, MessageStateRef, StatefulMessage } from '../interfaces/message';
+import { sleep } from '../utils/common';
 import { ErrorHandler } from '../utils/error';
 import { EventEmitter } from '../utils/eventEmitter';
 import { Logger } from '../utils/logger';
+import { validateGsocMessage, validateMessageState } from '../utils/validation';
 
 import { EVENTS } from './constants';
 import { SwarmChatUtils } from './utils';
@@ -11,50 +14,159 @@ export class SwarmHistory {
   private logger = Logger.getInstance();
   private errorHandler = ErrorHandler.getInstance();
 
-  private historyIndex: FeedIndex | null = null;
+  private processedRefs: Set<string> = new Set();
+  private refRetryCount: Map<string, number> = new Map();
+  private bannedRefs: Set<string> = new Set();
+  private latestStatefulMessage: StatefulMessage | null = null;
+
+  private readonly MAX_RETRIES = 3;
+  private readonly RETRY_DELAY = 1000;
 
   constructor(private utils: SwarmChatUtils, private emitter: EventEmitter) {}
 
   public async init() {
     try {
-      const res = await this.utils.fetchLatestChatMessage();
-      this.historyIndex = res.index;
+      const { data, index } = await this.utils.fetchLatestChatMessage();
+      this.latestStatefulMessage = data;
 
-      await this.fetchPreviousMessages();
+      try {
+        await this.initMessageState(data);
+      } catch (error) {
+        this.errorHandler.handleError(error, 'SwarmHistory.initMessageState');
+      }
 
-      return res.index;
+      return index;
     } catch (error) {
       this.errorHandler.handleError(error, 'SwarmHistory.init');
       return FeedIndex.fromBigInt(0n);
     }
   }
 
-  public async fetchPreviousMessages(count = 10) {
+  public async initMessageState(statefulMessage: StatefulMessage) {
     try {
-      if (!this.historyIndex) {
-        this.logger.warn('History index is not set. Cannot fetch previous messages.');
+      if (!validateGsocMessage(statefulMessage)) {
+        this.logger.warn('Invalid GSOC message during message state initialization');
         return;
       }
 
-      if (this.historyIndex.toBigInt() === 0n) {
-        this.logger.warn('No previous messages to fetch.');
+      if (!statefulMessage.messageStateRefs || statefulMessage.messageStateRefs.length === 0) {
+        this.logger.debug('No message state refs to initialize');
         return;
       }
 
-      const current = this.historyIndex.toBigInt();
-      const start = current > BigInt(count) ? current - BigInt(count) : 0n;
-
-      for (let i = current - 1n; i >= start; i--) {
-        const message = await this.utils.fetchChatMessage(FeedIndex.fromBigInt(i));
-        this.emitter.emit(EVENTS.MESSAGE_RECEIVED, message);
-
-        this.historyIndex = FeedIndex.fromBigInt(i);
-
-        // Prevent infinite loop: BigInt has no automatic loop termination like `i >= 0`
-        if (i === 0n) break;
+      const latestRef = this.findLatestRef(statefulMessage.messageStateRefs);
+      if (!latestRef) {
+        this.logger.warn('No valid latest reference found');
+        return;
       }
-    } catch (error) {
-      this.errorHandler.handleError(error, 'SwarmHistory.fetchPreviousMessages');
+
+      this.logger.debug('Initializing message state with latest ref:', latestRef.reference);
+
+      await this.processMessageRefWithRetry(latestRef.reference);
+    } catch (error: any) {
+      if (this.utils.isNotFoundError(error)) {
+        this.logger.debug('No latest GSOC message found for message state initialization');
+        return;
+      }
+      this.errorHandler.handleError(error, 'SwarmHistory.init');
     }
+  }
+
+  public async fetchPreviousMessageState() {
+    let statefulMessage = this.latestStatefulMessage;
+
+    if (!statefulMessage) {
+      const { data } = await this.utils.fetchLatestChatMessage();
+      statefulMessage = data;
+      this.latestStatefulMessage = data;
+    }
+
+    if (!statefulMessage.messageStateRefs || statefulMessage.messageStateRefs.length === 0) {
+      this.logger.debug('No message state refs to fetch');
+      return;
+    }
+
+    const sortedRefs = [...statefulMessage.messageStateRefs].sort((a, b) => a.timestamp - b.timestamp);
+
+    for (const ref of sortedRefs) {
+      if (!this.processedRefs.has(ref.reference) && !this.bannedRefs.has(ref.reference)) {
+        this.logger.debug('Fetching previous message ref:', ref.reference);
+        await this.processMessageRefWithRetry(ref.reference);
+      }
+    }
+  }
+
+  private findLatestRef(refs: MessageStateRef[]): MessageStateRef | null {
+    if (refs.length === 0) return null;
+
+    return refs.reduce((latest, current) => (current.timestamp > latest.timestamp ? current : latest));
+  }
+
+  private async processMessageRefWithRetry(ref: string): Promise<void> {
+    if (this.processedRefs.has(ref) || this.bannedRefs.has(ref)) {
+      return;
+    }
+
+    try {
+      await this.processMessageRef(ref);
+    } catch (error) {
+      await this.handleRefError(ref, error);
+    }
+  }
+
+  private async processMessageRef(ref: string): Promise<void> {
+    const messageState = (await this.utils.downloadObjectFromBee(ref)) as MessageData[];
+
+    const isValid = validateMessageState(messageState);
+    if (!isValid) {
+      throw new Error(`Invalid message state for ref: ${ref}`);
+    }
+
+    this.processedRefs.add(ref);
+    this.refRetryCount.delete(ref);
+
+    for (const message of messageState) {
+      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, message);
+    }
+  }
+
+  private async handleRefError(ref: string, error: any): Promise<void> {
+    const currentRetries = this.refRetryCount.get(ref) || 0;
+    const newRetryCount = currentRetries + 1;
+
+    this.logger.warn(`Error processing ref ${ref} (attempt ${newRetryCount}/${this.MAX_RETRIES}):`, error);
+
+    if (newRetryCount >= this.MAX_RETRIES) {
+      // Ban the ref after max retries
+      this.bannedRefs.add(ref);
+      this.refRetryCount.delete(ref);
+
+      this.logger.error(`Ref ${ref} has been banned after ${this.MAX_RETRIES} failed attempts`);
+      this.errorHandler.handleError(error, 'SwarmHistory.processMessageRef');
+    } else {
+      this.refRetryCount.set(ref, newRetryCount);
+
+      // Calculate exponential backoff delay
+      const delay = this.RETRY_DELAY * Math.pow(2, currentRetries);
+      this.logger.debug(`Retrying ref ${ref} after ${delay}ms delay`);
+
+      await sleep(delay);
+      await this.processMessageRefWithRetry(ref);
+    }
+  }
+
+  public hasPreviousMessages(): boolean {
+    return (
+      !!this.latestStatefulMessage &&
+      !!this.latestStatefulMessage.messageStateRefs &&
+      this.latestStatefulMessage.messageStateRefs.length > 1
+    );
+  }
+
+  public cleanup() {
+    this.processedRefs.clear();
+    this.refRetryCount.clear();
+    this.bannedRefs.clear();
+    this.latestStatefulMessage = null;
   }
 }

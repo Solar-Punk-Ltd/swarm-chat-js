@@ -2,12 +2,16 @@ import { Signature } from '@ethersphere/bee-js';
 import { Binary } from 'cafe-utility';
 import { z } from 'zod';
 
+import { MessageType } from '../interfaces/message';
+
 import { Logger } from './logger';
 
 const logger = Logger.getInstance();
 
 const MessageSchema = z.object({
   id: z.string(),
+  targetMessageId: z.string().optional(),
+  type: z.nativeEnum(MessageType),
   message: z.string(),
   username: z.string(),
   address: z.string(),
@@ -18,15 +22,56 @@ const MessageSchema = z.object({
   userTopic: z.string(),
 });
 
+const StateRefSchema = z.object({
+  reference: z.string(),
+  timestamp: z.number(),
+});
+
+const StatefulMessageSchema = z.object({
+  message: MessageSchema,
+  messageStateRefs: z.array(StateRefSchema).nullable(),
+});
+
 export function validateGsocMessage(message: any): boolean {
+  const result = StatefulMessageSchema.safeParse(message);
+  if (!result.success) {
+    logger.warn('GSOC message validation failed:', result.error.format());
+    return false;
+  }
+
+  if (!validateUserSignature(message.message)) {
+    logger.warn('Invalid main message signature');
+    return false;
+  }
+
+  return true;
+}
+
+export function validateMessageState(messageState: any[]): boolean {
+  if (!Array.isArray(messageState)) {
+    logger.warn('Message state must be an array');
+    return false;
+  }
+
+  for (const message of messageState) {
+    if (!validateMessageData(message)) {
+      logger.warn('Invalid message in message state:', message.id);
+      return false;
+    }
+  }
+
+  return true;
+}
+
+export function validateMessageData(message: any): boolean {
   const result = MessageSchema.safeParse(message);
   if (!result.success) {
-    logger.warn(result.error.format());
+    logger.warn('Message data validation failed:', result.error.format());
     return false;
   }
 
   if (!validateUserSignature(message)) {
-    console.warn('Invalid messageSender');
+    logger.warn('Invalid message signature');
     return false;
   }
 
@@ -39,6 +84,7 @@ export function validateUserSignature(validatedUser: any): boolean {
       username: validatedUser.username,
       address: validatedUser.address,
       timestamp: validatedUser.timestamp,
+      message: validatedUser.message,
     };
 
     const ENCODER = new TextEncoder();
