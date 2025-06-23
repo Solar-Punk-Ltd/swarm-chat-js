@@ -1,7 +1,7 @@
 import { Bytes, FeedIndex, Identifier, PrivateKey, Stamper, Topic } from '@ethersphere/bee-js';
 import { Binary, MerkleTree } from 'cafe-utility';
 
-import { ChatSettingsSwarm, ChatSettingsUser, MessageData } from '../interfaces';
+import { ChatSettingsSwarm, ChatSettingsUser, StatefulMessage } from '../interfaces';
 import { makeContentAddressedChunk, makeFeedIdentifier, makeSingleOwnerChunk } from '../utils/bee';
 import { remove0x } from '../utils/common';
 import { ErrorHandler } from '../utils/error';
@@ -89,6 +89,17 @@ export class SwarmChatUtils {
     return messages.sort((a, b) => a.timestamp - b.timestamp);
   }
 
+  public async downloadObjectFromBee(reference: string): Promise<any | null> {
+    try {
+      const { bee } = this.swarmSettings;
+      const data = await bee.downloadData(reference);
+      return data ? data.toJSON() : null;
+    } catch (error) {
+      this.errorHandler.handleError(error, 'Utils.downloadObjectFromBee');
+      return null;
+    }
+  }
+
   public async uploadObjectToBee(jsObject: object): Promise<string | null> {
     const { enveloped, stamp } = this.swarmSettings;
 
@@ -159,13 +170,13 @@ export class SwarmChatUtils {
     }
   }
 
-  public async fetchLatestChatMessage(): Promise<{ message: MessageData; index: FeedIndex }> {
+  public async fetchLatestChatMessage(): Promise<{ data: StatefulMessage; index: FeedIndex }> {
     const { bee, chatTopic, chatAddress } = this.swarmSettings;
 
     const reader = bee.makeFeedReader(Topic.fromString(chatTopic), remove0x(chatAddress));
     const res = await reader.downloadPayload();
 
-    return { message: res.payload.toJSON() as MessageData, index: res.feedIndex };
+    return { data: res.payload.toJSON() as StatefulMessage, index: res.feedIndex };
   }
 
   public async fetchChatMessage(index: FeedIndex): Promise<any> {
