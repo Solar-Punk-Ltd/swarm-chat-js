@@ -84,6 +84,7 @@ export function validateUserSignature(validatedUser: any): boolean {
       username: validatedUser.username,
       address: validatedUser.address,
       timestamp: validatedUser.timestamp,
+      message: validatedUser.message,
     };
 
     const ENCODER = new TextEncoder();

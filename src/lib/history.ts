@@ -17,6 +17,7 @@ export class SwarmHistory {
   private processedRefs: Set<string> = new Set();
   private refRetryCount: Map<string, number> = new Map();
   private bannedRefs: Set<string> = new Set();
+  private latestStatefulMessage: StatefulMessage | null = null;
 
   private readonly MAX_RETRIES = 3;
   private readonly RETRY_DELAY = 1000;
@@ -26,6 +27,7 @@ export class SwarmHistory {
   public async init() {
     try {
       const { data, index } = await this.utils.fetchLatestChatMessage();
+      this.latestStatefulMessage = data;
 
       try {
         await this.initMessageState(data);
@@ -71,7 +73,13 @@ export class SwarmHistory {
   }
 
   public async fetchPreviousMessageState() {
-    const { data: statefulMessage } = await this.utils.fetchLatestChatMessage();
+    let statefulMessage = this.latestStatefulMessage;
+
+    if (!statefulMessage) {
+      const { data } = await this.utils.fetchLatestChatMessage();
+      statefulMessage = data;
+      this.latestStatefulMessage = data;
+    }
 
     if (!statefulMessage.messageStateRefs || statefulMessage.messageStateRefs.length === 0) {
       this.logger.debug('No message state refs to fetch');
@@ -147,9 +155,18 @@ export class SwarmHistory {
     }
   }
 
+  public hasPreviousMessages(): boolean {
+    return (
+      !!this.latestStatefulMessage &&
+      !!this.latestStatefulMessage.messageStateRefs &&
+      this.latestStatefulMessage.messageStateRefs.length > 1
+    );
+  }
+
   public cleanup() {
     this.processedRefs.clear();
     this.refRetryCount.clear();
     this.bannedRefs.clear();
+    this.latestStatefulMessage = null;
   }
 }
