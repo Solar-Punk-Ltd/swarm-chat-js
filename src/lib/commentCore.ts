@@ -32,8 +32,8 @@ export class SwarmComment {
   private logger = Logger.getInstance();
   private errorHandler = ErrorHandler.getInstance();
 
-  private startIndex: bigint | undefined;
-  private reactionIndex: bigint | undefined;
+  private startIndex: bigint;
+  private reactionIndex: bigint;
   private fetchProcessRunning = false;
   private stopFetch = false;
   private chatSigner: PrivateKey;
@@ -61,6 +61,8 @@ export class SwarmComment {
       chatAddress: this.chatSigner.publicKey().address().toString(),
     };
 
+    this.startIndex = -1n;
+    this.reactionIndex = -1n;
     this.emitter = new EventEmitter();
     this.utils = new SwarmChatUtils(
       {
@@ -101,7 +103,6 @@ export class SwarmComment {
     prevState?: MessageData[],
   ): Promise<void> {
     const nextIndex = this.userDetails.ownIndex === -1 ? 0 : this.userDetails.ownIndex + 1;
-    // TODO: resolve message IF
     const messageObj = {
       id: id || uuidv4(),
       username: this.userDetails.nickname,
@@ -116,20 +117,13 @@ export class SwarmComment {
       message,
     } as MessageData;
 
-    this.logger.info('Sending message:', {
-      ...messageObj,
-      index: nextIndex,
-    });
-
     try {
       this.emitter.emit(EVENTS.MESSAGE_REQUEST_INITIATED, messageObj);
 
       if (type === MessageType.REACTION) {
         const reactionFeedId = getReactionFeedId(Topic.fromString(this.swarmSettings.chatTopic).toString()).toString();
         const reactionNextIndex =
-          this.reactionIndex === undefined ? FeedIndex.fromBigInt(0n) : FeedIndex.fromBigInt(this.reactionIndex);
-        // TODO: remove validation after messagedata type is fixed
-        isReaction(messageObj);
+          this.reactionIndex === -1n ? FeedIndex.fromBigInt(0n) : FeedIndex.fromBigInt(this.reactionIndex + 1n);
 
         const newReactionState = updateReactions(prevState || [], messageObj) || [];
 
@@ -139,10 +133,9 @@ export class SwarmComment {
           identifier: reactionFeedId,
           beeApiUrl: this.swarmSettings.beeUrl,
         });
-      } else {
-        // TODO: remove validation after messagedata type is fixed
-        isUserComment(messageObj);
 
+        this.reactionIndex = reactionNextIndex.toBigInt();
+      } else {
         const comment = await writeCommentToIndex(messageObj, FeedIndex.fromBigInt(BigInt(nextIndex)), {
           stamp: this.swarmSettings.stamp,
           signer: this.chatSigner,
@@ -151,9 +144,10 @@ export class SwarmComment {
         });
 
         await this.verifyWriteSuccess(FeedIndex.fromBigInt(BigInt(nextIndex)), comment);
+
+        this.userDetails.ownIndex = nextIndex;
       }
 
-      this.userDetails.ownIndex = nextIndex;
       this.emitter.emit(EVENTS.MESSAGE_REQUEST_UPLOADED, messageObj);
     } catch (error) {
       this.emitter.emit(EVENTS.MESSAGE_REQUEST_ERROR, messageObj);
@@ -199,8 +193,7 @@ export class SwarmComment {
         this.startIndex = historyInitResult.value.toBigInt();
       }
 
-      const reactionIndex = await this.history.fetchPreviousReactionState(this.reactionIndex);
-      this.reactionIndex = reactionIndex.toBigInt();
+      await this.fetchLatestReactions();
 
       this.emitter.emit(EVENTS.LOADING_INIT, false);
     } catch (error) {
@@ -214,7 +207,7 @@ export class SwarmComment {
     const RETRY_COUNT = 10;
     const DELAY = 1000;
 
-    const result = (await retryAwaitableAsync(
+    const comment = await retryAwaitableAsync(
       () =>
         readSingleComment(undefined, {
           identifier: Topic.fromString(this.swarmSettings.chatTopic).toString(),
@@ -223,43 +216,47 @@ export class SwarmComment {
         }),
       RETRY_COUNT,
       DELAY,
-    )) as SingleComment | undefined;
+    );
 
-    let latestIndex = -1n;
-    if (result && Object.keys(result).length > 0 && result.nextIndex) {
-      latestIndex = new FeedIndex(result.nextIndex).toBigInt() - 1n;
+    if (comment?.comment?.index) {
+      this.userDetails.ownIndex = comment.comment.index;
     }
-
-    this.userDetails.ownIndex = Number(latestIndex);
   }
 
   private async fetchLatestMessage() {
     try {
-      const latestComment = await readSingleComment(undefined, {
+      const latestComment = await readSingleComment(FeedIndex.fromBigInt(BigInt(this.userDetails.ownIndex + 1)), {
         identifier: Topic.fromString(this.swarmSettings.chatTopic).toString(),
         address: this.swarmSettings.chatAddress,
         beeApiUrl: this.swarmSettings.beeUrl,
       });
 
-      if (latestComment === undefined) {
-        // todo: debug
-        throw new Error(
-          `Failed to read latest comment for identifier: ${Topic.fromString(this.swarmSettings.chatTopic).toString()}`,
-        );
-      }
-
-      if (Object.keys(latestComment).length === 0) {
-        // todo: debug
-        this.logger.info('No comment found for identifier:', Topic.fromString(this.swarmSettings.chatTopic).toString());
+      if (!latestComment || Object.keys(latestComment).length === 0) {
+        this.logger.debug(`No comment found at index: ${this.userDetails.ownIndex + 1}`);
         return;
       }
 
-      isUserComment(latestComment.comment);
+      if (!isUserComment(latestComment.comment)) {
+        this.logger.warn('Invalid user comment during fetching');
+        return;
+      }
 
       this.userDetails.ownIndex = latestComment.comment.index;
       this.emitter.emit(EVENTS.MESSAGE_RECEIVED, latestComment.comment);
     } catch (err) {
       this.errorHandler.handleError(err, 'Comment.fetchLatestMessage');
+    }
+  }
+
+  private async fetchLatestReactions(index?: bigint) {
+    try {
+      // TODO: rename to fetchLatestReactionState
+      const reactionNextIndex = (await this.history.fetchLatestReactions(index, this.reactionIndex)).toBigInt();
+      if (reactionNextIndex > this.reactionIndex) {
+        this.reactionIndex = reactionNextIndex - 1n;
+      }
+    } catch (err) {
+      this.errorHandler.handleError(err, 'Comment.fetchLatestReactions');
     }
   }
 
@@ -296,7 +293,11 @@ export class SwarmComment {
       throw new Error('Comment check failed, empty response!');
     }
 
-    isUserComment(commentCheck.comment);
+    if (!isUserComment(commentCheck.comment)) {
+      this.logger.warn('Invalid user comment during write');
+      return;
+    }
+
     // TODO: id check
     if (commentCheck.comment.id !== comment.id || commentCheck.comment.timestamp !== comment.timestamp) {
       throw new Error(`comment check failed, expected "${comment.message}", got: "${commentCheck.comment.message}".
@@ -316,8 +317,8 @@ export class SwarmComment {
         return;
       }
 
-      await this.fetchLatestMessage();
-      setTimeout(poll, 5000); // with 5 sec little delay
+      await Promise.allSettled([this.fetchLatestMessage(), this.fetchLatestReactions(this.reactionIndex + 1n)]);
+      setTimeout(poll, 1000); // with 1 sec little delay
     };
 
     poll();

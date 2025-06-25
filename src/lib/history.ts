@@ -95,7 +95,7 @@ export class SwarmHistory {
     return this.fetchPreviousChatState();
   }
 
-  public async fetchPreviousReactionState(index?: bigint) {
+  public async fetchLatestReactions(index?: bigint, prevIndex?: bigint) {
     const reactionFeedId = getReactionFeedId(
       Topic.fromString(this.utils.getSwarmSettings().chatTopic).toString(),
     ).toString();
@@ -109,16 +109,18 @@ export class SwarmHistory {
       return FeedIndex.fromBigInt(0n);
     }
 
-    for (let ix = 0; ix < reactionState.reactions.length; ix++) {
-      const r = reactionState.reactions[ix];
+    if (prevIndex !== undefined && new FeedIndex(reactionState.nextIndex).toBigInt() > prevIndex) {
+      for (let ix = 0; ix < reactionState.reactions.length; ix++) {
+        const r = reactionState.reactions[ix];
 
-      if (!isReaction(r)) {
-        // todo: debug
-        this.logger.warn('Invalid user reaction detected:', r);
-        continue;
+        if (!isReaction(r)) {
+          // todo: debug
+          this.logger.warn('Invalid user reaction detected:', r);
+          continue;
+        }
+
+        this.emitter.emit(EVENTS.MESSAGE_RECEIVED, r);
       }
-
-      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, r as MessageData);
     }
 
     return new FeedIndex(reactionState.nextIndex);
@@ -149,12 +151,11 @@ export class SwarmHistory {
       const c = comments[ix];
 
       if (!isUserComment(c)) {
-        // todo: debug
         this.logger.warn('Invalid user comment detected:', c);
         continue;
       }
 
-      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, c as MessageData);
+      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, c);
     }
 
     return FeedIndex.fromBigInt(newStartIndex);
