@@ -218,6 +218,10 @@ export class SwarmChatUtils {
     return response.text();
   }
 
+  public getSwarmSettings() {
+    return this.swarmSettings;
+  }
+
   private async sendMessageToGsocOwn(message: string): Promise<void> {
     const { bee, stamp, gsocTopic, gsocResourceId } = this.swarmSettings;
 
