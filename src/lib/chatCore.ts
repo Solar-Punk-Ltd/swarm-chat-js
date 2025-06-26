@@ -35,7 +35,7 @@ export class SwarmChat extends SwarmMessaging {
       address: this.userDetails.ownAddress,
       chatTopic: this.swarmSettings.chatTopic,
       userTopic: this.utils.generateUserOwnedFeedId(this.swarmSettings.chatTopic, this.userDetails.ownAddress),
-      signature: this.getSignature(),
+      signature: this.getSignature(message),
       timestamp: Date.now(),
       index: nextIndex,
       type,

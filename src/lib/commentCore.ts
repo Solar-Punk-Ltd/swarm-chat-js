@@ -61,7 +61,7 @@ export class SwarmComment extends SwarmMessaging {
       address: this.userDetails.ownAddress,
       chatTopic: Topic.fromString(this.swarmSettings.chatTopic).toString(),
       userTopic: Topic.fromString(this.swarmSettings.chatTopic).toString(),
-      signature: this.getSignature(),
+      signature: this.getSignature(message),
       timestamp: Date.now(),
       index: nextIndex,
       type,

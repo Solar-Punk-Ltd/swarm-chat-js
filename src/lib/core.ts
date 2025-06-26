@@ -75,6 +75,10 @@ export abstract class SwarmMessaging {
 
   public abstract fetchPreviousMessages(): Promise<void>;
 
+  public hasPreviousMessages(): boolean {
+    return this.history.hasPreviousMessages();
+  }
+
   public async retrySendMessage(message: MessageData) {
     this.sendMessage(message.message, message.type, message.targetMessageId, message.id);
   }
@@ -83,7 +87,7 @@ export abstract class SwarmMessaging {
 
   protected abstract init(): Promise<void>;
 
-  protected getSignature() {
+  protected getSignature(message: string) {
     const { ownAddress: address, privateKey, nickname } = this.userDetails;
 
     const ownAddress = new EthAddress(address).toString();
@@ -96,7 +100,7 @@ export abstract class SwarmMessaging {
     }
 
     const timestamp = Date.now();
-    const signature = signer.sign(JSON.stringify({ username: nickname, address: ownAddress, timestamp }));
+    const signature = signer.sign(JSON.stringify({ username: nickname, address: ownAddress, message, timestamp }));
 
     return signature.toHex();
   }

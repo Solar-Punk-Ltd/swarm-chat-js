@@ -43,7 +43,7 @@ npm/pnpm install @solarpunkltd/swarm-chat-js
 ### Imports
 
 ```typescript
-import { EVENTS, MessageData, SwarmChat, ChatSettings } from '@solarpunkltd/swarm-chat-js';
+import { EVENTS, MessageData, MessageType, SwarmChat, ChatSettings } from '@solarpunkltd/swarm-chat-js';
 ```
 
 ### `ChatSettings` Interface
@@ -106,10 +106,27 @@ The `SwarmChat` class instance provides the following core methods:
 - `start()`: Initializes and starts the chat service, including setting up listeners and beginning to poll for messages.
 - `stop()`: Stops the chat service, clears intervals, and cleans up resources.
 - `getEmitter()`: Returns an event emitter instance, allowing your application to subscribe to the `EVENTS` listed above.
-- `sendMessage(message: string)`: Initiates the process of sending a new chat message from the current user.
+- `sendMessage(message: string, type: MessageType, targetMessageId?: string, id?: string)`: Initiates the process of sending a new chat message from the current user. Supports different message types including text, threads, and reactions.
 - `fetchPreviousMessages()`: Manually triggers the fetching of older messages from the aggregated chat feed.
+- `hasPreviousMessages()`: Returns a boolean indicating whether there are previous messages available to fetch (determined by checking if more than one message state reference exists).
 - `retrySendMessage(message: MessageData)`: Attempts to resend a message that previously encountered an error during the initial request phase (e.g., failed to write to the user's own feed).
 - `retryBroadcastUserMessage(message: MessageData)`: Attempts to re-broadcast a message update via GSOC if the message was successfully uploaded to the user's feed but the GSOC broadcast might have failed or needs retrying.
+
+### Message Types
+
+The library supports three types of messages through the `MessageType` enum:
+
+- `MessageType.TEXT`: Regular chat messages
+- `MessageType.THREAD`: Reply messages that reference a parent message via `targetMessageId`
+- `MessageType.REACTION`: Emoji reactions to existing messages, also using `targetMessageId` to reference the target message
+
+### Message State Management
+
+The library includes robust message state handling with:
+
+- **Automatic retry logic**: Failed message state references are automatically retried with exponential backoff
+- **Ref banning**: Persistently failing references are banned after maximum retry attempts to prevent infinite loops
+- **Efficient caching**: Message state data is cached to avoid redundant network requests
 
 ---
 
@@ -117,107 +134,41 @@ The `SwarmChat` class instance provides the following core methods:
 
 Here's an example of how `swarm-chat-js` can be integrated into a React application using a custom hook (`useSwarmChat`). This hook encapsulates chat logic, state management, and event handling.
 
+### Complete Implementation
+
+For a full working example, check out our React integration:
+
+**📖 [View Complete useSwarmChat Hook Implementation](https://github.com/Solar-Punk-Ltd/swarm-chat-react-example/blob/master/src/hooks/useSwarmChat.tsx)**
+
+### Basic Usage
+
 ```typescript
-import { useEffect, useRef, useState } from 'react';
-import { EVENTS, MessageData, SwarmChat, ChatSettings } from '@solarpunkltd/swarm-chat-js';
+import { useSwarmChat } from './hooks/useSwarmChat';
+import { MessageType } from '@solarpunkltd/swarm-chat-js';
 
-export interface VisibleMessage extends MessageData {
-  requested?: boolean;
-  uploaded?: boolean;
-  received?: boolean;
-  error?: boolean;
+function ChatComponent() {
+  const { messages, isLoading, sendMessage, hasPreviousMessages, loadPreviousMessages } = useSwarmChat(chatSettings);
+
+  const handleSendMessage = (text: string) => {
+    sendMessage(text, MessageType.TEXT);
+  };
+
+  const handleReaction = (targetMessageId: string, emoji: string) => {
+    sendMessage(emoji, MessageType.REACTION, targetMessageId);
+  };
+
+  const handleReply = (targetMessageId: string, replyText: string) => {
+    sendMessage(replyText, MessageType.THREAD, targetMessageId);
+  };
+
+  return (
+    <div className="chat-container">
+      {/* Your chat UI implementation */}
+      {hasPreviousMessages() && <button onClick={loadPreviousMessages}>Load Previous Messages</button>}
+      {/* Message list, input field, etc. */}
+    </div>
+  );
 }
-
-export const useSwarmChat = ({ user, infra }: ChatSettings) => {
-  const chat = useRef<SwarmChat | null>(null);
-  const messageCache = useRef<VisibleMessage[]>([]);
-  const [allMessages, setAllMessages] = useState<VisibleMessage[]>([]);
-  const [chatLoading, setChatLoading] = useState<boolean>(true);
-  const [messagesLoading, setMessagesLoading] = useState<boolean>(false);
-  const [error, setError] = useState<any | null>(null);
-
-  useEffect(() => {
-    if (!chat.current) {
-      const newChat = new SwarmChat({
-        user,
-        infra,
-      });
-
-      chat.current = newChat;
-
-      const { on } = newChat.getEmitter();
-
-      const updateMessage = (id: string, updates: Partial<VisibleMessage>) => {
-        messageCache.current = messageCache.current.map((msg) => (msg.id === id ? { ...msg, ...updates } : msg));
-        setAllMessages(chat.current?.orderMessages([...messageCache.current]) || []);
-      };
-
-      const handleMessageEvent = (event: string, updates: Partial<VisibleMessage>) => {
-        on(event, (d: MessageData | string) => {
-          const data = typeof d === 'string' ? JSON.parse(d) : d;
-
-          const existingMessage = messageCache.current.find((msg) => msg.id === data.id);
-          if (existingMessage) {
-            updateMessage(data.id, updates);
-          } else {
-            messageCache.current.push({ ...data, ...updates });
-            setAllMessages(chat.current?.orderMessages([...messageCache.current]) || []);
-          }
-        });
-      };
-
-      handleMessageEvent(EVENTS.MESSAGE_REQUEST_INITIATED, {
-        error: false,
-        requested: true,
-      });
-      handleMessageEvent(EVENTS.MESSAGE_REQUEST_UPLOADED, {
-        error: false,
-        uploaded: true,
-      });
-      handleMessageEvent(EVENTS.MESSAGE_RECEIVED, {
-        error: false,
-        received: true,
-      });
-      handleMessageEvent(EVENTS.MESSAGE_REQUEST_ERROR, { error: true });
-
-      on(EVENTS.LOADING_INIT, setChatLoading);
-      on(EVENTS.LOADING_PREVIOUS_MESSAGES, setMessagesLoading);
-      on(EVENTS.CRITICAL_ERROR, setError);
-
-      newChat.start();
-    }
-
-    return () => {
-      if (chat.current) {
-        chat.current.stop();
-        chat.current = null;
-      }
-    };
-  }, [user.privateKey]);
-
-  const sendMessage = (message: string) => chat.current?.sendMessage(message);
-
-  const fetchPreviousMessages = () => chat.current?.fetchPreviousMessages();
-
-  const retrySendMessage = (message: VisibleMessage) => {
-    if (message.requested && message.error) {
-      chat.current?.retrySendMessage(message);
-    }
-    if (message.uploaded && message.error) {
-      chat.current?.retryBroadcastUserMessage(message);
-    }
-  };
-
-  return {
-    chatLoading,
-    messagesLoading,
-    allMessages,
-    sendMessage,
-    fetchPreviousMessages,
-    retrySendMessage,
-    error,
-  };
-};
 ```
 
 ---
@@ -245,7 +196,7 @@ npm run mine -- <bee-address> <topic-name>
 ## 💡 Future Development
 
 - **Push-Based Event System:** We are actively designing a new architecture to transition from the polling mechanism to a more efficient, push-based event system for message delivery. This will significantly reduce node load and improve real-time message propagation.
-- **User reactions:** Support for replies, threads, emojis.
+- **Performance Optimizations:** Further improvements to message state handling and caching mechanisms.
 
 ---
 

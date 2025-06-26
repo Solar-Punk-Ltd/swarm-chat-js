@@ -24,6 +24,7 @@ export class SwarmHistory {
   private processedRefs: Set<string> = new Set();
   private refRetryCount: Map<string, number> = new Map();
   private bannedRefs: Set<string> = new Set();
+  private latestStatefulMessage: StatefulMessage | null = null;
 
   private readonly MAX_RETRIES = 3;
   private readonly RETRY_DELAY = 1000;
@@ -68,7 +69,6 @@ export class SwarmHistory {
     }
   }
 
-  // todo: refactor startindex usage
   public async fetchPreviousMessageState(startIndex?: bigint) {
     if (startIndex !== undefined) {
       return this.fetchPreviousCommentState(startIndex);
@@ -96,8 +96,7 @@ export class SwarmHistory {
         const r = reactionState.messages[ix];
 
         if (!isReaction(r)) {
-          // todo: debug
-          this.logger.warn('Invalid user reaction detected:', r);
+          this.logger.debug('Invalid user reaction detected:', r);
           continue;
         }
 
@@ -146,7 +145,6 @@ export class SwarmHistory {
     }
   }
 
-  // TODO: refactor with processMessageRefWithRetry
   private async fetchPreviousCommentState(startIndex: bigint) {
     if (startIndex <= 0n) {
       return FeedIndex.fromBigInt(0n);
@@ -181,7 +179,13 @@ export class SwarmHistory {
   }
 
   private async fetchPreviousChatState() {
-    const { data: statefulMessage } = await this.utils.fetchLatestChatMessage();
+    let statefulMessage = this.latestStatefulMessage;
+
+    if (!statefulMessage) {
+      const { data } = await this.utils.fetchLatestChatMessage();
+      statefulMessage = data;
+      this.latestStatefulMessage = data;
+    }
 
     if (!statefulMessage.messageStateRefs || statefulMessage.messageStateRefs.length === 0) {
       this.logger.debug('No message state refs to fetch');
@@ -257,9 +261,19 @@ export class SwarmHistory {
     }
   }
 
+  // TODO: implement for comments
+  public hasPreviousMessages(): boolean {
+    return (
+      !!this.latestStatefulMessage &&
+      !!this.latestStatefulMessage.messageStateRefs &&
+      this.latestStatefulMessage.messageStateRefs.length > 1
+    );
+  }
+
   public cleanup() {
     this.processedRefs.clear();
     this.refRetryCount.clear();
     this.bannedRefs.clear();
+    this.latestStatefulMessage = null;
   }
 }
