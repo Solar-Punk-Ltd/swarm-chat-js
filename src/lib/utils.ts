@@ -1,9 +1,7 @@
 import { Bytes, FeedIndex, Identifier, PrivateKey, Stamper, Topic } from '@ethersphere/bee-js';
-import { MessageData as CommentMessageData } from '@solarpunkltd/comment-system';
 import { Binary, MerkleTree } from 'cafe-utility';
-import { v4 as uuidv4 } from 'uuid';
 
-import { ChatSettingsSwarm, ChatSettingsUser, MessageData, MessageType, StatefulMessage } from '../interfaces';
+import { ChatSettingsSwarm, ChatSettingsUser, StatefulMessage } from '../interfaces';
 import { makeContentAddressedChunk, makeFeedIdentifier, makeSingleOwnerChunk } from '../utils/bee';
 import { remove0x } from '../utils/common';
 import { ErrorHandler } from '../utils/error';

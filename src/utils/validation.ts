@@ -1,6 +1,5 @@
 import { Signature } from '@ethersphere/bee-js';
-import { UserComment } from '@solarpunkltd/comment-system';
-import { Binary, Types } from 'cafe-utility';
+import { Binary } from 'cafe-utility';
 import { z } from 'zod';
 
 import { MessageType } from '../interfaces/message';

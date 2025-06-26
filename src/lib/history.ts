@@ -31,29 +31,11 @@ export class SwarmHistory {
   constructor(private utils: SwarmChatUtils, private emitter: EventEmitter) {}
 
   public async init(isComment: boolean = false) {
-    try {
-      const { data, index } = await this.utils.fetchLatestChatMessage();
-
-      if (isComment) {
-        if (!isUserComment(data)) {
-          this.logger.warn('Invalid comment during message state initialization');
-          return FeedIndex.fromBigInt(0n);
-        }
-
-        return await this.fetchPreviousCommentState(index.toBigInt());
-      }
-
-      try {
-        await this.initMessageState(data);
-      } catch (error) {
-        this.errorHandler.handleError(error, 'SwarmHistory.initMessageState');
-      }
-
-      return index;
-    } catch (error) {
-      this.errorHandler.handleError(error, 'SwarmHistory.init');
-      return FeedIndex.fromBigInt(0n);
+    if (isComment) {
+      return this.initComments();
     }
+
+    return this.initChat();
   }
 
   public async initMessageState(statefulMessage: StatefulMessage) {
@@ -105,13 +87,13 @@ export class SwarmHistory {
       beeApiUrl: this.utils.getSwarmSettings().beeUrl,
     });
 
-    if (!reactionState || !reactionState.reactions || reactionState.reactions.length === 0) {
+    if (!reactionState || !reactionState.messages || reactionState.messages.length === 0) {
       return FeedIndex.fromBigInt(0n);
     }
 
     if (prevIndex !== undefined && new FeedIndex(reactionState.nextIndex).toBigInt() > prevIndex) {
-      for (let ix = 0; ix < reactionState.reactions.length; ix++) {
-        const r = reactionState.reactions[ix];
+      for (let ix = 0; ix < reactionState.messages.length; ix++) {
+        const r = reactionState.messages[ix];
 
         if (!isReaction(r)) {
           // todo: debug
@@ -126,6 +108,44 @@ export class SwarmHistory {
     return new FeedIndex(reactionState.nextIndex);
   }
 
+  private async initChat() {
+    try {
+      const { data, index } = await this.utils.fetchLatestChatMessage();
+
+      try {
+        await this.initMessageState(data);
+      } catch (error) {
+        this.errorHandler.handleError(error, 'SwarmHistory.initMessageState');
+      }
+
+      return index;
+    } catch (error) {
+      this.errorHandler.handleError(error, 'SwarmHistory.init');
+      return FeedIndex.fromBigInt(0n);
+    }
+  }
+
+  private async initComments() {
+    try {
+      const { data, index } = await this.utils.fetchLatestChatMessage();
+
+      if (!isUserComment(data)) {
+        this.logger.warn('Invalid comment during message state initialization');
+        return FeedIndex.fromBigInt(0n);
+      }
+
+      return await this.fetchPreviousCommentState(index.toBigInt());
+    } catch (error) {
+      if (this.utils.isNotFoundError(error)) {
+        this.logger.debug('No latest comment found for message state initialization');
+        return FeedIndex.fromBigInt(0n);
+      }
+
+      this.errorHandler.handleError(error, 'SwarmHistory.init');
+      return FeedIndex.fromBigInt(0n);
+    }
+  }
+
   // TODO: refactor with processMessageRefWithRetry
   private async fetchPreviousCommentState(startIndex: bigint) {
     if (startIndex <= 0n) {
@@ -134,8 +154,7 @@ export class SwarmHistory {
 
     const newStartIndex = startIndex > COMMENTS_TO_READ ? startIndex - COMMENTS_TO_READ : 0n;
 
-    // todo: debug
-    this.logger.info('Fetching previous messages from: ', newStartIndex.toString(), ' to: ', startIndex.toString());
+    this.logger.debug('Fetching previous messages from: ', newStartIndex.toString(), ' to: ', startIndex.toString());
 
     const comments = await readCommentsInRange(FeedIndex.fromBigInt(newStartIndex), FeedIndex.fromBigInt(startIndex), {
       identifier: Topic.fromString(this.utils.getSwarmSettings().chatTopic).toString(),

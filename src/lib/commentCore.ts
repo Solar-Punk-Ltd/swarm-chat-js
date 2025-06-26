@@ -1,100 +1,52 @@
-import { Bee, EthAddress, FeedIndex, PrivateKey, Topic } from '@ethersphere/bee-js';
+import { FeedIndex, PrivateKey, Topic } from '@ethersphere/bee-js';
 import {
   getReactionFeedId,
-  isReaction,
   isUserComment,
   MessageData as CommentMessageData,
   readSingleComment,
-  SingleComment,
   updateReactions,
   writeCommentToIndex,
   writeReactionsToIndex,
 } from '@solarpunkltd/comment-system';
 import { v4 as uuidv4 } from 'uuid';
 
-import { ChatSettings, ChatSettingsSwarm, ChatSettingsUser, MessageData, MessageType } from '../interfaces';
-import { getPrivateKeyFromIdentifier, remove0x, retryAwaitableAsync } from '../utils/common';
-import { ErrorHandler } from '../utils/error';
-import { EventEmitter } from '../utils/eventEmitter';
-import { Logger } from '../utils/logger';
+import { ChatSettings, MessageData, MessageType } from '../interfaces';
+import { getPrivateKeyFromIdentifier, retryAwaitableAsync } from '../utils/common';
 
 import { EVENTS } from './constants';
+import { SwarmMessaging } from './core';
 import { SwarmHistory } from './history';
 import { SwarmChatUtils } from './utils';
 
-export class SwarmComment {
-  private emitter: EventEmitter;
-  private utils: SwarmChatUtils;
-  private history: SwarmHistory;
-  private userDetails: ChatSettingsUser;
-  private swarmSettings: ChatSettingsSwarm;
-
-  private logger = Logger.getInstance();
-  private errorHandler = ErrorHandler.getInstance();
-
+export class SwarmComment extends SwarmMessaging {
   private startIndex: bigint;
   private reactionIndex: bigint;
-  private fetchProcessRunning = false;
-  private stopFetch = false;
-  private chatSigner: PrivateKey;
+  private signer: PrivateKey;
 
   constructor(settings: ChatSettings) {
-    const signer = new PrivateKey(remove0x(settings.user.privateKey));
+    super(settings);
 
-    this.userDetails = {
-      privateKey: settings.user.privateKey,
-      ownAddress: signer.publicKey().address().toString(),
-      nickname: settings.user.nickname,
-      ownIndex: -1,
-    };
-
-    this.chatSigner = getPrivateKeyFromIdentifier(settings.infra.chatTopic);
+    this.signer = getPrivateKeyFromIdentifier(settings.infra.chatTopic);
 
     this.swarmSettings = {
-      bee: new Bee(settings.infra.beeUrl),
-      beeUrl: settings.infra.beeUrl,
-      stamp: settings.infra.stamp || '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', // placeholder stamp if smart gateway is used
-      enveloped: settings.infra.enveloped,
-      gsocTopic: settings.infra.gsocTopic,
-      gsocResourceId: settings.infra.gsocResourceId,
-      chatTopic: settings.infra.chatTopic,
-      chatAddress: this.chatSigner.publicKey().address().toString(),
+      ...this.swarmSettings,
+      chatAddress: this.signer.publicKey().address().toString(),
     };
 
     this.startIndex = -1n;
     this.reactionIndex = -1n;
-    this.emitter = new EventEmitter();
+
     this.utils = new SwarmChatUtils(
       {
         ...this.userDetails,
-        privateKey: this.chatSigner.toString(),
-        ownAddress: this.chatSigner.publicKey().address().toString(),
+        privateKey: this.signer.toString(),
+        ownAddress: this.signer.publicKey().address().toString(),
       },
       this.swarmSettings,
     );
     this.history = new SwarmHistory(this.utils, this.emitter);
   }
 
-  public start() {
-    this.init();
-    this.startMessagesFetchProcess();
-  }
-
-  public stop() {
-    this.emitter.cleanAll();
-    this.stopMessagesFetchProcess();
-    this.history.cleanup();
-  }
-
-  public getEmitter() {
-    return this.emitter;
-  }
-
-  public orderMessages(messages: any[]) {
-    return this.utils.orderMessages(messages);
-  }
-
-  // TODO: reaction handling with proper indexing and aggregation
   public async sendMessage(
     message: string,
     type: MessageType,
@@ -129,7 +81,7 @@ export class SwarmComment {
 
         await writeReactionsToIndex(newReactionState, reactionNextIndex, {
           stamp: this.swarmSettings.stamp,
-          signer: this.chatSigner,
+          signer: this.signer,
           identifier: reactionFeedId,
           beeApiUrl: this.swarmSettings.beeUrl,
         });
@@ -138,7 +90,7 @@ export class SwarmComment {
       } else {
         const comment = await writeCommentToIndex(messageObj, FeedIndex.fromBigInt(BigInt(nextIndex)), {
           stamp: this.swarmSettings.stamp,
-          signer: this.chatSigner,
+          signer: this.signer,
           identifier: Topic.fromString(this.swarmSettings.chatTopic).toString(),
           beeApiUrl: this.swarmSettings.beeUrl,
         });
@@ -168,18 +120,14 @@ export class SwarmComment {
     }
   }
 
-  public async retrySendMessage(message: MessageData) {
-    this.sendMessage(message.message, message.type, message.targetMessageId, message.id);
+  public override async retryBroadcastUserMessage(_: MessageData) {
+    this.logger.warn('Not implemented: retryBroadcastUserMessage');
   }
 
-  public async retryBroadcastUserMessage(_: MessageData) {
-    this.logger.debug('Not implemented: retryBroadcastUserMessage');
-  }
-
-  private async init() {
+  protected override async init() {
     try {
       this.emitter.emit(EVENTS.LOADING_INIT, true);
-      // TODO: optimize
+
       const [ownIndexResult, historyInitResult] = await Promise.allSettled([
         this.initOwnIndex(),
         this.history.init(true),
@@ -218,8 +166,8 @@ export class SwarmComment {
       DELAY,
     );
 
-    if (comment?.comment?.index) {
-      this.userDetails.ownIndex = comment.comment.index;
+    if (comment?.message?.index) {
+      this.userDetails.ownIndex = comment.message.index;
     }
   }
 
@@ -236,13 +184,13 @@ export class SwarmComment {
         return;
       }
 
-      if (!isUserComment(latestComment.comment)) {
+      if (!isUserComment(latestComment.message)) {
         this.logger.warn('Invalid user comment during fetching');
         return;
       }
 
-      this.userDetails.ownIndex = latestComment.comment.index;
-      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, latestComment.comment);
+      this.userDetails.ownIndex = latestComment.message.index;
+      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, latestComment.message);
     } catch (err) {
       this.errorHandler.handleError(err, 'Comment.fetchLatestMessage');
     }
@@ -260,24 +208,6 @@ export class SwarmComment {
     }
   }
 
-  private getSignature() {
-    const { ownAddress: address, privateKey, nickname } = this.userDetails;
-
-    const ownAddress = new EthAddress(address).toString();
-
-    const signer = new PrivateKey(privateKey);
-    const signerAddress = signer.publicKey().address().toString();
-
-    if (signerAddress !== ownAddress) {
-      throw new Error('The provided address does not match the address derived from the private key');
-    }
-
-    const timestamp = Date.now();
-    const signature = signer.sign(JSON.stringify({ username: nickname, address: ownAddress, timestamp }));
-
-    return signature.toHex();
-  }
-
   private async verifyWriteSuccess(index: FeedIndex, comment?: CommentMessageData) {
     if (!comment) {
       throw new Error('Comment write failed, empty response!');
@@ -293,19 +223,19 @@ export class SwarmComment {
       throw new Error('Comment check failed, empty response!');
     }
 
-    if (!isUserComment(commentCheck.comment)) {
+    if (!isUserComment(commentCheck.message)) {
       this.logger.warn('Invalid user comment during write');
       return;
     }
 
     // TODO: id check
-    if (commentCheck.comment.id !== comment.id || commentCheck.comment.timestamp !== comment.timestamp) {
-      throw new Error(`comment check failed, expected "${comment.message}", got: "${commentCheck.comment.message}".
-                Expected timestamp: ${comment.timestamp}, got: ${commentCheck.comment.timestamp}`);
+    if (commentCheck.message.id !== comment.id || commentCheck.message.timestamp !== comment.timestamp) {
+      throw new Error(`comment check failed, expected "${comment.message}", got: "${commentCheck.message.message}".
+                Expected timestamp: ${comment.timestamp}, got: ${commentCheck.message.timestamp}`);
     }
   }
 
-  private async startMessagesFetchProcess() {
+  protected override async startMessagesFetchProcess() {
     if (this.fetchProcessRunning) return;
 
     this.fetchProcessRunning = true;
@@ -322,9 +252,5 @@ export class SwarmComment {
     };
 
     poll();
-  }
-
-  private stopMessagesFetchProcess() {
-    this.stopFetch = true;
   }
 }

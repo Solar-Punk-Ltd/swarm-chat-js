@@ -12,8 +12,8 @@ importers:
         specifier: ^9.0.3
         version: 9.4.0
       '@solarpunkltd/comment-system':
-        specifier: ^1.7.9
-        version: 1.7.9
+        specifier: ^1.8.0
+        version: 1.8.0
       cafe-utility:
         specifier: ^27.12.1
         version: 27.18.0
@@ -458,8 +458,8 @@ packages:
   '@rushstack/ts-command-line@5.0.1':
     resolution: {integrity: sha512-bsbUucn41UXrQK7wgM8CNM/jagBytEyJqXw/umtI8d68vFm1Jwxh1OtLrlW7uGZgjCWiiPH6ooUNa1aVsuVr3Q==}
 
-  '@solarpunkltd/comment-system@1.7.9':
-    resolution: {integrity: sha512-DMs/yCAsuNe6SHYzzDuqX5wLOM+egXAPV/X7xjVG3nkgvZTcdOALu9n3gPgoVmXAvHqsCHImPVC2/0qrL5xY9Q==}
+  '@solarpunkltd/comment-system@1.8.0':
+    resolution: {integrity: sha512-ZOlP8ZrTf4Y3mYYCzaWHz/QEQSUkPXqaEX0Q+8fVb1cljbjTjfqGLOQ7Kaqe21UjSpL0IosxYZa9vU8j3tEJhQ==}
 
   '@tybys/wasm-util@0.9.0':
     resolution: {integrity: sha512-6+7nlbMVX/PVDCwaIQ8nTOPveOcFLSt8GcXdx8hD0bt39uWxYT88uXzqTd4fTvqta7oeUJqudepapKNt2DYJFw==}
@@ -2570,7 +2570,7 @@ snapshots:
     transitivePeerDependencies:
       - '@types/node'
 
-  '@solarpunkltd/comment-system@1.7.9':
+  '@solarpunkltd/comment-system@1.8.0':
     dependencies:
       '@ethersphere/bee-js': 9.4.0
       cafe-utility: 30.0.1
