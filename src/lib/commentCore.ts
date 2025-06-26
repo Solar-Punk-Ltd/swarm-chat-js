@@ -1,5 +1,6 @@
 import { FeedIndex, PrivateKey, Topic } from '@ethersphere/bee-js';
 import {
+  getPrivateKeyFromIdentifier,
   getReactionFeedId,
   isUserComment,
   MessageData as CommentMessageData,
@@ -11,7 +12,7 @@ import {
 import { v4 as uuidv4 } from 'uuid';
 
 import { ChatSettings, MessageData, MessageType } from '../interfaces';
-import { getPrivateKeyFromIdentifier, retryAwaitableAsync } from '../utils/common';
+import { retryAwaitableAsync } from '../utils/common';
 
 import { EVENTS } from './constants';
 import { SwarmMessaging } from './core';
@@ -198,8 +199,7 @@ export class SwarmComment extends SwarmMessaging {
 
   private async fetchLatestReactions(index?: bigint) {
     try {
-      // TODO: rename to fetchLatestReactionState
-      const reactionNextIndex = (await this.history.fetchLatestReactions(index, this.reactionIndex)).toBigInt();
+      const reactionNextIndex = (await this.history.fetchLatestReactionState(index, this.reactionIndex)).toBigInt();
       if (reactionNextIndex > this.reactionIndex) {
         this.reactionIndex = reactionNextIndex - 1n;
       }
@@ -228,7 +228,6 @@ export class SwarmComment extends SwarmMessaging {
       return;
     }
 
-    // TODO: id check
     if (commentCheck.message.id !== comment.id || commentCheck.message.timestamp !== comment.timestamp) {
       throw new Error(`comment check failed, expected "${comment.message}", got: "${commentCheck.message.message}".
                 Expected timestamp: ${comment.timestamp}, got: ${commentCheck.message.timestamp}`);

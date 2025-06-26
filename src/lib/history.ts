@@ -77,7 +77,7 @@ export class SwarmHistory {
     return this.fetchPreviousChatState();
   }
 
-  public async fetchLatestReactions(index?: bigint, prevIndex?: bigint) {
+  public async fetchLatestReactionState(index?: bigint, prevIndex?: bigint) {
     const reactionFeedId = getReactionFeedId(
       Topic.fromString(this.utils.getSwarmSettings().chatTopic).toString(),
     ).toString();
