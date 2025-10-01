@@ -24,7 +24,9 @@ Users broadcast their messages via updates to their personal Swarm feeds, with n
 2.  **Aggregator Receives & Processes:** The aggregator server, subscribed to the GSOC address, receives the update.
     - It may perform validation or other processing steps.
 3.  **Aggregator Writes to Chat Feed:** The aggregator writes the processed message to the main, shared "chat feed".
-4.  **Client App Reads:** `swarm-chat-js` in other users' applications polls this main chat feed for new messages and displays them.
+4.  **Client App Reads:** `swarm-chat-js` in other users' applications either:
+    - **Polling mode**: Polls the main chat feed for new messages and displays them
+    - **Waku mode**: Receives real-time message updates via the Waku network
 
 ---
 
@@ -76,6 +78,8 @@ export interface ChatSettings {
     chatTopic: string;
     /** The public address (Swarm feed address) of the aggregated chat feed, written by the aggregator. */
     chatAddress: string;
+    /** Enable real-time messaging via Waku network. When true, messages are received instantly instead of polling. */
+    waku: boolean;
   };
 }
 ```

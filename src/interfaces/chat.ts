@@ -13,6 +13,7 @@ export interface ChatSettings {
     gsocResourceId: string;
     chatTopic: string;
     chatAddress: string;
+    waku: boolean;
   };
 }
 
@@ -32,4 +33,5 @@ export interface ChatSettingsSwarm {
   gsocResourceId: string;
   chatTopic: string;
   chatAddress: string;
+  waku: boolean;
 }
