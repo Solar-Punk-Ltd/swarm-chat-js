@@ -14,6 +14,7 @@ import { remove0x, retryAwaitableAsync } from '../utils/common';
 import { ErrorHandler } from '../utils/error';
 import { EventEmitter } from '../utils/eventEmitter';
 import { Logger } from '../utils/logger';
+import { WakuPush } from '../utils/push';
 import { validateGsocMessage } from '../utils/validation';
 
 import { EVENTS } from './constants';
@@ -21,6 +22,7 @@ import { SwarmHistory } from './history';
 import { SwarmChatUtils } from './utils';
 
 export class SwarmChat {
+  private wakuPush: WakuPush | null = null;
   private emitter: EventEmitter;
   private utils: SwarmChatUtils;
   private history: SwarmHistory;
@@ -53,6 +55,7 @@ export class SwarmChat {
       gsocResourceId: settings.infra.gsocResourceId,
       chatTopic: settings.infra.chatTopic,
       chatAddress: settings.infra.chatAddress,
+      waku: settings.infra.waku,
     };
 
     this.emitter = new EventEmitter();
@@ -60,15 +63,36 @@ export class SwarmChat {
     this.history = new SwarmHistory(this.utils, this.emitter);
   }
 
-  public start() {
-    this.init();
-    this.startMessagesFetchProcess();
+  public async start() {
+    await this.init();
+    if (this.swarmSettings.waku) {
+      await this.startWakuProcess();
+    } else {
+      await this.startMessagesFetchProcess();
+    }
   }
 
   public stop() {
     this.emitter.cleanAll();
     this.stopMessagesFetchProcess();
     this.history.cleanup();
+    if (this.wakuPush) {
+      this.wakuPush.stop();
+    }
+  }
+
+  private async startWakuProcess() {
+    this.logger.info('Waku is enabled');
+    this.wakuPush = new WakuPush(
+      this.swarmSettings.chatTopic,
+        (msg: MessageData) => {
+          this.emitter.emit(EVENTS.MESSAGE_RECEIVED, msg);
+        }
+      );
+      const isReady = await this.wakuPush.isReady();
+      if (!isReady) {
+        throw new Error('Waku node is not reachable');
+      }
   }
 
   public getEmitter() {
@@ -136,6 +160,19 @@ export class SwarmChat {
 
   private async init() {
     try {
+      if(this.swarmSettings.waku) {
+        this.logger.info('Waku is enabled');
+        this.wakuPush = new WakuPush(
+          this.swarmSettings.chatTopic,
+          (msg: MessageData) => {
+            this.emitter.emit(EVENTS.MESSAGE_RECEIVED, msg);
+          }
+        );
+        const isReady = await this.wakuPush.isReady();
+        if (!isReady) {
+          throw new Error('Waku node is not reachable');
+        }
+      }
       this.emitter.emit(EVENTS.LOADING_INIT, true);
 
       const [ownIndexResult, historyInitResult] = await Promise.allSettled([this.initOwnIndex(), this.history.init()]);
