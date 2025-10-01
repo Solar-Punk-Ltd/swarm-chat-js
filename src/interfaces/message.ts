@@ -16,6 +16,7 @@ export interface MessageData {
   index: number;
   chatTopic: string;
   userTopic: string;
+  additionalProps?: AdditionalMessageProperties;
 }
 
 export interface StatefulMessage {
@@ -26,4 +27,8 @@ export interface StatefulMessage {
 export interface MessageStateRef {
   reference: string;
   timestamp: number;
+}
+
+export interface AdditionalMessageProperties {
+  [key: string]: any;
 }

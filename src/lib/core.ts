@@ -2,6 +2,7 @@ import { Bee, EthAddress, FeedIndex, PrivateKey, Topic } from '@ethersphere/bee-
 import { v4 as uuidv4 } from 'uuid';
 
 import {
+  AdditionalMessageProperties,
   ChatSettings,
   ChatSettingsSwarm,
   ChatSettingsUser,
@@ -15,7 +16,7 @@ import { ErrorHandler } from '../utils/error';
 import { EventEmitter } from '../utils/eventEmitter';
 import { Logger } from '../utils/logger';
 import { WakuPush } from '../utils/push';
-import { validateGsocMessage } from '../utils/validation';
+import { validateGsocMessage, validateMessageWithAdditionalProperties } from '../utils/validation';
 
 import { EVENTS } from './constants';
 import { SwarmHistory } from './history';
@@ -103,7 +104,13 @@ export class SwarmChat {
     return this.utils.orderMessages(messages);
   }
 
-  public async sendMessage(message: string, type: MessageType, targetMessageId?: string, id?: string): Promise<void> {
+  public async sendMessage(
+    message: string,
+    type: MessageType,
+    targetMessageId?: string,
+    id?: string,
+    additionalProps?: AdditionalMessageProperties,
+  ): Promise<void> {
     const nextIndex = this.userDetails.ownIndex === -1 ? 0 : this.userDetails.ownIndex + 1;
     const messageObj = {
       id: id || uuidv4(),
@@ -117,7 +124,15 @@ export class SwarmChat {
       type,
       targetMessageId,
       message,
+      additionalProps,
     };
+
+    const validation = validateMessageWithAdditionalProperties(messageObj);
+    if (!validation.isValid) {
+      const errorMessage = `Invalid message: ${validation.errors.join(', ')}`;
+      this.logger.error(errorMessage);
+      throw new Error(errorMessage);
+    }
 
     try {
       this.emitter.emit(EVENTS.MESSAGE_REQUEST_INITIATED, messageObj);
@@ -151,7 +166,7 @@ export class SwarmChat {
   }
 
   public async retrySendMessage(message: MessageData) {
-    this.sendMessage(message.message, message.type, message.targetMessageId, message.id);
+    this.sendMessage(message.message, message.type, message.targetMessageId, message.id, message.additionalProps);
   }
 
   public async retryBroadcastUserMessage(message: MessageData) {
