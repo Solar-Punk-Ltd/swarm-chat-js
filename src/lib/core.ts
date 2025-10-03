@@ -66,23 +66,27 @@ export class SwarmChat {
 
   public async start() {
     await this.init();
+    await this.startMessageFetchProcess();
+  }
+
+  private async startMessageFetchProcess() {
     if (this.swarmSettings.waku) {
-      await this.startWakuProcess();
+      await this.startWakuMessageFetch();
     } else {
-      await this.startMessagesFetchProcess();
+      await this.startPollingMessageFetch();
     }
   }
 
   public stop() {
     this.emitter.cleanAll();
-    this.stopMessagesFetchProcess();
+    this.stopPollingMessageFetch();
     this.history.cleanup();
     if (this.wakuPush) {
       this.wakuPush.stop();
     }
   }
 
-  private async startWakuProcess() {
+  private async startWakuMessageFetch() {
     this.logger.info('Waku is enabled');
     this.wakuPush = new WakuPush(
       this.swarmSettings.chatTopic,
@@ -94,6 +98,7 @@ export class SwarmChat {
       if (!isReady) {
         throw new Error('Waku node is not reachable');
       }
+
   }
 
   public getEmitter() {
@@ -175,19 +180,6 @@ export class SwarmChat {
 
   private async init() {
     try {
-      if(this.swarmSettings.waku) {
-        this.logger.info('Waku is enabled');
-        this.wakuPush = new WakuPush(
-          this.swarmSettings.chatTopic,
-          (msg: MessageData) => {
-            this.emitter.emit(EVENTS.MESSAGE_RECEIVED, msg);
-          }
-        );
-        const isReady = await this.wakuPush.isReady();
-        if (!isReady) {
-          throw new Error('Waku node is not reachable');
-        }
-      }
       this.emitter.emit(EVENTS.LOADING_INIT, true);
 
       const [ownIndexResult, historyInitResult] = await Promise.allSettled([this.initOwnIndex(), this.history.init()]);
@@ -271,7 +263,7 @@ export class SwarmChat {
     return signature.toHex();
   }
 
-  private async startMessagesFetchProcess() {
+  private async startPollingMessageFetch() {
     if (this.fetchProcessRunning) return;
 
     this.fetchProcessRunning = true;
@@ -290,7 +282,7 @@ export class SwarmChat {
     poll();
   }
 
-  private stopMessagesFetchProcess() {
+  private stopPollingMessageFetch() {
     this.stopFetch = true;
   }
 }
