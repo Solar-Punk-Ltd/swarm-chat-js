@@ -13,7 +13,7 @@ let messagePayloadType: Type | null = null;
 
 async function initializeProtobuf(): Promise<void> {
   if (!protoRoot) {
-    protoRoot = await load(path.join(__dirname, '../waku/message.proto'));
+    protoRoot = await load(path.join(__dirname, './message.proto'));
     protoRoot.resolveAll();
     messagePayloadType = protoRoot.lookupType('MessagePayload');
   }
