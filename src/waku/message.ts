@@ -1,3 +1,5 @@
+// Const for Browser based builds
+export const protoSchema = `
 syntax = "proto3";
 
 enum MessageType {
@@ -30,4 +32,4 @@ message MessagePayload {
   MessageData message = 1;
   repeated MessageStateRef messageStateRefs = 2;
 }
-
+`;
