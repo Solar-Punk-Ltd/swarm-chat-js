@@ -1,4 +1,5 @@
 import { Bee } from '@ethersphere/bee-js';
+import type { LightNode } from '@waku/sdk';
 
 export interface ChatSettings {
   user: {
@@ -13,7 +14,7 @@ export interface ChatSettings {
     gsocResourceId: string;
     chatTopic: string;
     chatAddress: string;
-    waku: boolean;
+    waku?: WakuOptions;
   };
 }
 
@@ -33,5 +34,10 @@ export interface ChatSettingsSwarm {
   gsocResourceId: string;
   chatTopic: string;
   chatAddress: string;
-  waku: boolean;
+  waku?: WakuOptions;
+}
+
+export interface WakuOptions {
+  enabled: boolean;
+  node?: LightNode;
 }

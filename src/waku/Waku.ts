@@ -3,25 +3,25 @@ import { createHash } from 'crypto';
 
 import { MessageData } from '../interfaces/message.js';
 import { WAKU_CLUSTER_ID } from '../lib/constants.js';
-import { decodeMessagePayload } from '../proto/ProtoMessage.js';
+import { Logger } from '../utils/logger.js';
+import { decodeMessagePayload } from '../waku/ProtoMessage.js';
 
-import { Logger } from './logger.js';
-
-export class WakuPush {
+export class Waku {
   private readonly logger = Logger.getInstance();
   private wakuNode: LightNode | null = null;
   private readonly chatTopic: string;
   private readonly onMessage: (msg: MessageData) => void;
   private initPromise: Promise<void>;
 
-  constructor(chatTopic: string, onMessage: (msg: MessageData) => void) {
+  constructor(chatTopic: string, onMessage: (msg: MessageData) => void, node?: LightNode) {
     this.chatTopic = chatTopic;
     this.onMessage = onMessage;
+    this.wakuNode = node || null;
     this.initPromise = this.init();
   }
 
   private async init(): Promise<void> {
-    this.wakuNode = await this.createWakuLightNode();
+    this.wakuNode = this.wakuNode ?? (await this.createWakuLightNode());
     if (!(await this.subscribeToTopic())) throw new Error('Failed to subscribe to Waku topic');
     this.logger.info(`Subscribed to Waku topic: ${this.chatTopic}`);
   }
@@ -31,20 +31,20 @@ export class WakuPush {
       defaultBootstrap: true,
       networkConfig: { clusterId: WAKU_CLUSTER_ID },
     });
-    
+
     await node.start();
     await node.waitForPeers([Protocols.LightPush, Protocols.Filter], 30000);
     this.logger.info(`Waku node ready: ${node.libp2p.peerId.toString()}`);
-    
+
     return node;
   }
 
   private createWakuDecoder(topicName: string): Decoder {
     if (!topicName?.trim()) throw new Error('Topic name must be a non-empty string');
-    
+
     const hash = createHash('sha256').update(topicName).digest('hex');
     const shardId = Number(BigInt('0x' + hash) % 8n);
-    
+
     return createDecoder(`solarpunk-msrs/1/${topicName}/proto`, {
       clusterId: WAKU_CLUSTER_ID,
       shardId,
@@ -64,7 +64,6 @@ export class WakuPush {
       const { message } = await decodeMessagePayload(payload);
       if (!message?.id) return this.logger.warn('Received invalid message structure via Waku');
 
-      this.logger.debug(`Received Waku message: ${message.id} | Delay: ${Date.now() - Number(message.timestamp)}ms`);
       this.onMessage(message);
     } catch (error) {
       this.logger.error('Failed to decode Waku message:', error);

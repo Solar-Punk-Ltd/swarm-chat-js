@@ -1,4 +1,5 @@
 import { Bee, EthAddress, FeedIndex, PrivateKey, Topic } from '@ethersphere/bee-js';
+import type { LightNode } from '@waku/sdk';
 import { v4 as uuidv4 } from 'uuid';
 
 import {
@@ -15,15 +16,17 @@ import { remove0x, retryAwaitableAsync } from '../utils/common';
 import { ErrorHandler } from '../utils/error';
 import { EventEmitter } from '../utils/eventEmitter';
 import { Logger } from '../utils/logger';
-import { WakuPush } from '../utils/push';
 import { validateGsocMessage, validateMessageWithAdditionalProperties } from '../utils/validation';
+import { Waku } from '../waku/Waku';
 
 import { EVENTS } from './constants';
 import { SwarmHistory } from './history';
 import { SwarmChatUtils } from './utils';
 
 export class SwarmChat {
-  private wakuPush: WakuPush | null = null;
+  private waku: Waku | null = null;
+  private isExternalWakuNode = false;
+
   private emitter: EventEmitter;
   private utils: SwarmChatUtils;
   private history: SwarmHistory;
@@ -70,8 +73,10 @@ export class SwarmChat {
   }
 
   private async startMessageFetchProcess() {
-    if (this.swarmSettings.waku) {
-      await this.startWakuMessageFetch();
+    const { waku } = this.swarmSettings;
+
+    if (waku?.enabled) {
+      await this.startWakuMessageFetch(waku.node);
     } else {
       await this.startPollingMessageFetch();
     }
@@ -81,24 +86,36 @@ export class SwarmChat {
     this.emitter.cleanAll();
     this.stopPollingMessageFetch();
     this.history.cleanup();
-    if (this.wakuPush) {
-      this.wakuPush.stop();
+
+    // Only stop Waku if we created it
+    if (this.waku && !this.isExternalWakuNode) {
+      this.waku.stop();
     }
+    this.waku = null;
   }
 
-  private async startWakuMessageFetch() {
+  private async startWakuMessageFetch(node?: LightNode) {
     this.logger.info('Waku is enabled');
-    this.wakuPush = new WakuPush(
-      this.swarmSettings.chatTopic,
-        (msg: MessageData) => {
-          this.emitter.emit(EVENTS.MESSAGE_RECEIVED, msg);
-        }
-      );
-      const isReady = await this.wakuPush.isReady();
-      if (!isReady) {
-        throw new Error('Waku node is not reachable');
-      }
 
+    if (node) {
+      this.isExternalWakuNode = true;
+      this.logger.info('Using external Waku node instance');
+    }
+
+    const wakuTopic = this.swarmSettings.chatTopic;
+
+    this.waku = new Waku(
+      wakuTopic,
+      (msg: MessageData) => {
+        this.emitter.emit(EVENTS.MESSAGE_RECEIVED, msg);
+      },
+      node,
+    );
+
+    const isReady = await this.waku.isReady();
+    if (!isReady) {
+      throw new Error('Waku node is not reachable');
+    }
   }
 
   public getEmitter() {

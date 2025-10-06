@@ -20,7 +20,8 @@
   },
   "author": "levente.kiss@solarpunk.buzz",
   "scripts": {
-    "build": "tsc && vite build",
+    "build": "rimraf dist && tsc && npm run copy-proto",
+    "copy-proto": "mkdir -p dist/waku && cp src/waku/message.proto dist/waku/",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "lint:fix": "npm run lint -- --fix",
     "prepare": "npm run build",
@@ -48,6 +49,7 @@
     "eslint-plugin-react-refresh": "^0.4.5",
     "eslint-plugin-simple-import-sort": "^10.0.0",
     "prettier": "^2.8.8",
+    "rimraf": "^6.0.1",
     "typescript": "^5.2.2",
     "vite": "^5.0.8",
     "vite-plugin-dts": "^4.2.4",
