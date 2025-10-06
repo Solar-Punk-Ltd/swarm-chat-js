@@ -1,4 +1,5 @@
 import { Bee, EthAddress, FeedIndex, PrivateKey, Topic } from '@ethersphere/bee-js';
+import type { LightNode } from '@waku/sdk';
 import { v4 as uuidv4 } from 'uuid';
 
 import {
@@ -16,12 +17,16 @@ import { ErrorHandler } from '../utils/error';
 import { EventEmitter } from '../utils/eventEmitter';
 import { Logger } from '../utils/logger';
 import { validateGsocMessage, validateMessageWithAdditionalProperties } from '../utils/validation';
+import { Waku } from '../waku/Waku';
 
 import { EVENTS } from './constants';
 import { SwarmHistory } from './history';
 import { SwarmChatUtils } from './utils';
 
 export class SwarmChat {
+  private waku: Waku | null = null;
+  private isExternalWakuNode = false;
+
   private emitter: EventEmitter;
   private utils: SwarmChatUtils;
   private history: SwarmHistory;
@@ -54,6 +59,7 @@ export class SwarmChat {
       gsocResourceId: settings.infra.gsocResourceId,
       chatTopic: settings.infra.chatTopic,
       chatAddress: settings.infra.chatAddress,
+      waku: settings.infra.waku,
     };
 
     this.emitter = new EventEmitter();
@@ -61,15 +67,55 @@ export class SwarmChat {
     this.history = new SwarmHistory(this.utils, this.emitter);
   }
 
-  public start() {
-    this.init();
-    this.startMessagesFetchProcess();
+  public async start() {
+    await this.init();
+    await this.startMessageFetchProcess();
+  }
+
+  private async startMessageFetchProcess() {
+    const { waku } = this.swarmSettings;
+
+    if (waku?.enabled) {
+      await this.startWakuMessageFetch(waku.node);
+    } else {
+      await this.startPollingMessageFetch();
+    }
   }
 
   public stop() {
     this.emitter.cleanAll();
-    this.stopMessagesFetchProcess();
+    this.stopPollingMessageFetch();
     this.history.cleanup();
+
+    // Only stop Waku if we created it
+    if (this.waku && !this.isExternalWakuNode) {
+      this.waku.stop();
+    }
+    this.waku = null;
+  }
+
+  private async startWakuMessageFetch(node?: LightNode) {
+    this.logger.info('Waku is enabled');
+
+    if (node) {
+      this.isExternalWakuNode = true;
+      this.logger.info('Using external Waku node instance');
+    }
+
+    const wakuTopic = this.swarmSettings.chatTopic;
+
+    this.waku = new Waku(
+      wakuTopic,
+      (msg: MessageData) => {
+        this.emitter.emit(EVENTS.MESSAGE_RECEIVED, msg);
+      },
+      node,
+    );
+
+    const isReady = await this.waku.isReady();
+    if (!isReady) {
+      throw new Error('Waku node is not reachable');
+    }
   }
 
   public getEmitter() {
@@ -234,7 +280,7 @@ export class SwarmChat {
     return signature.toHex();
   }
 
-  private async startMessagesFetchProcess() {
+  private async startPollingMessageFetch() {
     if (this.fetchProcessRunning) return;
 
     this.fetchProcessRunning = true;
@@ -253,7 +299,7 @@ export class SwarmChat {
     poll();
   }
 
-  private stopMessagesFetchProcess() {
+  private stopPollingMessageFetch() {
     this.stopFetch = true;
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@solarpunkltd/swarm-chat-js",
-  "version": "5.1.0",
+  "version": "6.0.4",
   "description": "JS library for chatting on Swarm",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
@@ -20,7 +20,7 @@
   },
   "author": "levente.kiss@solarpunk.buzz",
   "scripts": {
-    "build": "tsc && vite build",
+    "build": "rimraf dist && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "lint:fix": "npm run lint -- --fix",
     "prepare": "npm run build",
@@ -31,7 +31,9 @@
     "@ethersphere/bee-js": "^9.0.3",
     "cafe-utility": "^27.12.1",
     "uuid": "^11.0.3",
-    "zod": "^3.24.1"
+    "zod": "^3.24.1",
+    "@waku/sdk": "^0.0.35",
+    "protobufjs": "^7.5.4"
   },
   "devDependencies": {
     "@types/node": "^22.7.5",
@@ -46,6 +48,7 @@
     "eslint-plugin-react-refresh": "^0.4.5",
     "eslint-plugin-simple-import-sort": "^10.0.0",
     "prettier": "^2.8.8",
+    "rimraf": "^6.0.1",
     "typescript": "^5.2.2",
     "vite": "^5.0.8",
     "vite-plugin-dts": "^4.2.4",
