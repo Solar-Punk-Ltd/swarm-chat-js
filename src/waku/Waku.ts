@@ -3,14 +3,17 @@ import { createHash } from 'crypto';
 
 import { MessageData } from '../interfaces/message.js';
 import { WAKU_CLUSTER_ID } from '../lib/constants.js';
+import { ErrorHandler } from '../utils/error.js';
 import { Logger } from '../utils/logger.js';
 import { decodeMessagePayload } from '../waku/ProtoMessage.js';
 
 export class Waku {
   private readonly logger = Logger.getInstance();
+  private readonly errorHandler = ErrorHandler.getInstance();
   private wakuNode: LightNode | null = null;
-  private readonly chatTopic: string;
+
   private readonly onMessage: (msg: MessageData) => void;
+  private readonly chatTopic: string;
   private initPromise: Promise<void>;
 
   constructor(chatTopic: string, onMessage: (msg: MessageData) => void, node?: LightNode) {
@@ -66,7 +69,7 @@ export class Waku {
 
       this.onMessage(message);
     } catch (error) {
-      this.logger.error('Failed to decode Waku message:', error);
+      this.errorHandler.handleError(error, 'Waku.handleWakuMessage');
     }
   };
 
@@ -96,7 +99,7 @@ export class Waku {
         this.logger.info('Waku node stopped successfully');
       }
     } catch (error) {
-      this.logger.error('Error stopping Waku node:', error);
+      this.errorHandler.handleError(error, 'Waku.stop');
       throw error;
     }
   }
