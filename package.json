@@ -1,6 +1,6 @@
 {
   "name": "@solarpunkltd/swarm-chat-js",
-  "version": "5.1.0",
+  "version": "6.0.2",
   "description": "JS library for chatting on Swarm",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
@@ -20,7 +20,7 @@
   },
   "author": "levente.kiss@solarpunk.buzz",
   "scripts": {
-    "build": "rimraf dist && tsc && npm run copy-proto",
+    "build": "rimraf dist && vite build && npm run copy-proto",
     "copy-proto": "mkdir -p dist/waku && cp src/waku/message.proto dist/waku/",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "lint:fix": "npm run lint -- --fix",
