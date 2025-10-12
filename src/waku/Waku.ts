@@ -1,5 +1,5 @@
 import { createDecoder, createLightNode, Decoder, IDecodedMessage, type LightNode, Protocols } from '@waku/sdk';
-import { createHash } from 'crypto';
+import { createRoutingInfo } from '@waku/utils';
 
 import { MessageData } from '../interfaces/message.js';
 import { WAKU_CLUSTER_ID } from '../lib/constants.js';
@@ -42,17 +42,17 @@ export class Waku {
     return node;
   }
 
-  private createWakuDecoder(topicName: string): Decoder {
-    if (!topicName?.trim()) throw new Error('Topic name must be a non-empty string');
+  private createWakuDecoder(contentTopic: string): Decoder {
+    if (!contentTopic?.trim()) throw new Error('Topic name must be a non-empty string');
 
-    const hash = createHash('sha256').update(topicName).digest('hex');
-    const shardId = Number(BigInt('0x' + hash) % 8n);
-
-    return createDecoder(`solarpunk-msrs/1/${topicName}/proto`, {
+    const networkConfig = {
       clusterId: WAKU_CLUSTER_ID,
-      shardId,
-      pubsubTopic: `/waku/2/rs/${WAKU_CLUSTER_ID}/${shardId}`,
-    });
+      numShardsInCluster: 8,
+    };
+
+    const routingInfo = createRoutingInfo(networkConfig, { contentTopic });
+
+    return createDecoder(contentTopic, routingInfo);
   }
 
   private async subscribeToTopic(): Promise<boolean> {
@@ -73,10 +73,6 @@ export class Waku {
     }
   };
 
-  /**
-   * Checks if the Waku node is ready and connected
-   * @returns Promise that resolves to true if ready
-   */
   public async isReady(): Promise<boolean> {
     try {
       await this.initPromise;
@@ -86,10 +82,6 @@ export class Waku {
     }
   }
 
-  /**
-   * Stops the Waku node and cleans up resources
-   * @returns Promise that resolves when cleanup is complete
-   */
   public async stop(): Promise<void> {
     try {
       await this.initPromise;
