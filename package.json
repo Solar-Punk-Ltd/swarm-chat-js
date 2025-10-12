@@ -34,9 +34,7 @@
     "cafe-utility": "^27.12.1",
     "protobufjs": "^7.5.4",
     "uuid": "^11.0.3",
-    "zod": "^3.24.1",
-    "@waku/sdk": "^0.0.35",
-    "protobufjs": "^7.5.4"
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/node": "^22.7.5",
