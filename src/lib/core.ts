@@ -111,11 +111,6 @@ export class SwarmChat {
       },
       node,
     );
-
-    const isReady = await this.waku.isReady();
-    if (!isReady) {
-      throw new Error('Waku node is not reachable');
-    }
   }
 
   public getEmitter() {
