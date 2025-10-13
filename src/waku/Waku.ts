@@ -42,14 +42,15 @@ export class Waku {
     return node;
   }
 
-  private createWakuDecoder(contentTopic: string): Decoder {
-    if (!contentTopic?.trim()) throw new Error('Topic name must be a non-empty string');
+  private createWakuDecoder(topicName: string): Decoder {
+    if (!topicName?.trim()) throw new Error('Topic name must be a non-empty string');
 
     const networkConfig = {
       clusterId: WAKU_CLUSTER_ID,
       numShardsInCluster: 8,
     };
 
+    const contentTopic = `/solarpunk-msrs/1/${topicName}/proto`;
     const routingInfo = createRoutingInfo(networkConfig, { contentTopic });
 
     return createDecoder(contentTopic, routingInfo);
