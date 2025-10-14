@@ -23,8 +23,6 @@ export async function decodeMessagePayload(
   await initializeProtobuf();
   if (!messagePayloadType) throw new Error('MessagePayload type not initialized');
 
-  const reverseTypeMap = { 0: 'text', 1: 'thread', 2: 'reaction' };
-
   try {
     const decoded = messagePayloadType.decode(buffer);
     const decodedObject = messagePayloadType.toObject(decoded, {
@@ -48,7 +46,6 @@ export async function decodeMessagePayload(
 
     const messageData: MessageData = {
       ...decodedObject.message,
-      type: reverseTypeMap[decodedObject.message.type as keyof typeof reverseTypeMap] ?? 'text',
       timestamp: Number(decodedObject.message.timestamp),
       additionalProps,
     };
