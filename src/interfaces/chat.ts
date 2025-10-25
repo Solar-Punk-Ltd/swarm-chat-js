@@ -14,7 +14,7 @@ export interface ChatSettings {
     gsocResourceId: string;
     chatTopic: string;
     chatAddress: string;
-    waku?: WakuOptions;
+    wakuNode?: LightNode;
   };
 }
 
@@ -34,10 +34,5 @@ export interface ChatSettingsSwarm {
   gsocResourceId: string;
   chatTopic: string;
   chatAddress: string;
-  waku?: WakuOptions;
-}
-
-export interface WakuOptions {
-  enabled: boolean;
-  node?: LightNode;
+  wakuNode?: LightNode;
 }
