@@ -7,4 +7,3 @@ export const EVENTS = {
   MESSAGE_REQUEST_ERROR: 'messageRequestError',
   CRITICAL_ERROR: 'criticalError',
 };
-export const WAKU_CLUSTER_ID = 1;
