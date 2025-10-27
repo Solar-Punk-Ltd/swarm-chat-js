@@ -1,5 +1,4 @@
 import { Bee, EthAddress, FeedIndex, PrivateKey, Topic } from '@ethersphere/bee-js';
-import type { LightNode } from '@waku/sdk';
 import { v4 as uuidv4 } from 'uuid';
 
 import {
@@ -11,6 +10,8 @@ import {
   MessageType,
   StatefulMessage,
 } from '../interfaces';
+import { MessageTransport } from '../transports/MessageTransport';
+import { PollingTransport } from '../transports/PollingTransport';
 import { makeFeedIdentifier } from '../utils/bee';
 import { remove0x, retryAwaitableAsync } from '../utils/common';
 import { ErrorHandler } from '../utils/error';
@@ -21,10 +22,9 @@ import { validateGsocMessage, validateMessageWithAdditionalProperties } from '..
 import { EVENTS } from './constants';
 import { SwarmHistory } from './history';
 import { SwarmChatUtils } from './utils';
-import { Waku } from './waku';
 
 export class SwarmChat {
-  private waku: Waku | null = null;
+  private transport: MessageTransport;
 
   private emitter: EventEmitter;
   private utils: SwarmChatUtils;
@@ -36,10 +36,8 @@ export class SwarmChat {
   private errorHandler = ErrorHandler.getInstance();
 
   private gsocIndex: FeedIndex | null = null;
-  private fetchProcessRunning = false;
-  private stopFetch = false;
 
-  constructor(settings: ChatSettings) {
+  constructor(settings: ChatSettings, transport?: MessageTransport) {
     const signer = new PrivateKey(remove0x(settings.user.privateKey));
 
     this.userDetails = {
@@ -58,49 +56,60 @@ export class SwarmChat {
       gsocResourceId: settings.infra.gsocResourceId,
       chatTopic: settings.infra.chatTopic,
       chatAddress: settings.infra.chatAddress,
-      wakuNode: settings.infra.wakuNode,
     };
 
     this.emitter = new EventEmitter();
     this.utils = new SwarmChatUtils(this.userDetails, this.swarmSettings);
     this.history = new SwarmHistory(this.utils, this.emitter);
+
+    this.transport = transport || this.createDefaultPollingTransport();
+
+    this.transport.onMessage((msg: MessageData) => {
+      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, msg);
+    });
+  }
+
+  private createDefaultPollingTransport(): MessageTransport {
+    return new PollingTransport({
+      fetchMessage: async () => {
+        try {
+          if (!this.gsocIndex) {
+            return null;
+          }
+
+          const topic = Topic.fromString(this.swarmSettings.chatTopic);
+          const id = makeFeedIdentifier(topic, this.gsocIndex);
+
+          const data = await this.utils.rawSocDownload(this.swarmSettings.chatAddress, id.toString());
+          const parsedData = JSON.parse(data) as StatefulMessage;
+
+          if (!validateGsocMessage(parsedData)) {
+            this.logger.warn('Invalid GSOC message during fetching');
+            return null;
+          }
+
+          this.gsocIndex = this.gsocIndex.next();
+          return parsedData.message;
+        } catch (error: any) {
+          if (this.utils.isNotFoundError(error)) {
+            return null;
+          }
+          throw error;
+        }
+      },
+      pollingInterval: 1000,
+    });
   }
 
   public async start() {
     await this.init();
-    await this.startMessageFetchProcess();
+    await this.transport.start();
   }
 
-  private async startMessageFetchProcess() {
-    const { wakuNode } = this.swarmSettings;
-
-    if (wakuNode) {
-      await this.startWakuMessageFetch(wakuNode);
-    } else {
-      await this.startPollingMessageFetch();
-    }
-  }
-
-  public stop() {
+  public async stop() {
     this.emitter.cleanAll();
-    this.stopPollingMessageFetch();
     this.history.cleanup();
-
-    if (this.waku) {
-      this.waku.stop();
-      this.waku = null;
-    }
-  }
-
-  private async startWakuMessageFetch(node: LightNode) {
-    this.logger.info('Waku is enabled');
-
-    const wakuTopic = this.swarmSettings.chatTopic;
-
-    this.waku = new Waku(node, wakuTopic, (msg: MessageData) => {
-      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, msg);
-    });
-    await this.waku.start();
+    await this.transport.stop();
   }
 
   public getEmitter() {
@@ -210,35 +219,6 @@ export class SwarmChat {
     this.userDetails.ownIndex = latestIndex;
   }
 
-  // TODO - batch requests
-  private async fetchLatestMessage() {
-    try {
-      if (!this.gsocIndex) {
-        return;
-      }
-
-      const topic = Topic.fromString(this.swarmSettings.chatTopic);
-      const id = makeFeedIdentifier(topic, this.gsocIndex);
-
-      const data = await this.utils.rawSocDownload(this.swarmSettings.chatAddress, id.toString());
-      const parsedData = JSON.parse(data) as StatefulMessage;
-
-      if (!validateGsocMessage(parsedData)) {
-        this.logger.warn('Invalid GSOC message during fetching');
-        return;
-      }
-
-      this.emitter.emit(EVENTS.MESSAGE_RECEIVED, parsedData.message);
-      this.gsocIndex = this.gsocIndex.next();
-    } catch (error: any) {
-      if (this.utils.isNotFoundError(error)) {
-        return;
-      }
-
-      this.errorHandler.handleError(error, 'Chat.fetchLatestMessage');
-    }
-  }
-
   private async broadcastUserMessage(message: MessageData) {
     try {
       return retryAwaitableAsync(() => this.utils.sendMessageToGsoc(JSON.stringify(message)));
@@ -263,28 +243,5 @@ export class SwarmChat {
     const signature = signer.sign(JSON.stringify({ username: nickname, address: ownAddress, message, timestamp }));
 
     return signature.toHex();
-  }
-
-  private async startPollingMessageFetch() {
-    if (this.fetchProcessRunning) return;
-
-    this.fetchProcessRunning = true;
-    this.stopFetch = false;
-
-    const poll = async () => {
-      if (this.stopFetch) {
-        this.fetchProcessRunning = false;
-        return;
-      }
-
-      await this.fetchLatestMessage();
-      setTimeout(poll, 200); // with a little delay
-    };
-
-    poll();
-  }
-
-  private stopPollingMessageFetch() {
-    this.stopFetch = true;
   }
 }
