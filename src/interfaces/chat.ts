@@ -13,6 +13,8 @@ export interface ChatSettings {
     gsocResourceId: string;
     chatTopic: string;
     chatAddress: string;
+    enableFallbackPolling?: boolean;
+    fallbackPollingInterval?: number;
   };
 }
 

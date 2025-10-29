@@ -25,3 +25,5 @@ yalc.lock
 *.njsproj
 *.sln
 *.sw?
+
+CLAUDE.md
