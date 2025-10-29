@@ -25,6 +25,7 @@ import { SwarmChatUtils } from './utils';
 
 export class SwarmChat {
   private transport: MessageTransport;
+  private fallbackTransport: MessageTransport | null = null;
 
   private emitter: EventEmitter;
   private utils: SwarmChatUtils;
@@ -62,14 +63,28 @@ export class SwarmChat {
     this.utils = new SwarmChatUtils(this.userDetails, this.swarmSettings);
     this.history = new SwarmHistory(this.utils, this.emitter);
 
-    this.transport = transport || this.createDefaultPollingTransport();
+    if (transport) {
+      this.transport = transport;
+
+      if (settings.infra.enableFallbackPolling) {
+        const fallbackInterval = settings.infra.fallbackPollingInterval || 4000;
+        this.logger.info(`Fallback polling enabled with interval: ${fallbackInterval}ms`);
+        this.fallbackTransport = this.createDefaultPollingTransport(fallbackInterval);
+
+        this.fallbackTransport.onMessage((msg: MessageData) => {
+          this.emitter.emit(EVENTS.MESSAGE_RECEIVED, msg);
+        });
+      }
+    } else {
+      this.transport = this.createDefaultPollingTransport();
+    }
 
     this.transport.onMessage((msg: MessageData) => {
       this.emitter.emit(EVENTS.MESSAGE_RECEIVED, msg);
     });
   }
 
-  private createDefaultPollingTransport(): MessageTransport {
+  private createDefaultPollingTransport(intervalMs?: number): MessageTransport {
     return new PollingTransport({
       fetchMessage: async () => {
         try {
@@ -97,19 +112,27 @@ export class SwarmChat {
           throw error;
         }
       },
-      pollingInterval: 1000,
+      pollingInterval: intervalMs || 1000,
     });
   }
 
   public async start() {
     await this.init();
     await this.transport.start();
+
+    if (this.fallbackTransport) {
+      await this.fallbackTransport.start();
+    }
   }
 
   public async stop() {
     this.emitter.cleanAll();
     this.history.cleanup();
     await this.transport.stop();
+
+    if (this.fallbackTransport) {
+      await this.fallbackTransport.stop();
+    }
   }
 
   public getEmitter() {
