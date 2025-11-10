@@ -63,20 +63,21 @@ export class SwarmChat {
     this.utils = new SwarmChatUtils(this.userDetails, this.swarmSettings);
     this.history = new SwarmHistory(this.utils, this.emitter);
 
+    const pollingInterval = settings.infra.pollingInterval || 1000;
+
     if (transport) {
       this.transport = transport;
 
       if (settings.infra.enableFallbackPolling) {
-        const fallbackInterval = settings.infra.fallbackPollingInterval || 4000;
-        this.logger.info(`Fallback polling enabled with interval: ${fallbackInterval}ms`);
-        this.fallbackTransport = this.createDefaultPollingTransport(fallbackInterval);
+        this.logger.info(`Fallback polling enabled with interval: ${pollingInterval}ms`);
+        this.fallbackTransport = this.createDefaultPollingTransport(pollingInterval);
 
         this.fallbackTransport.onMessage((msg: MessageData) => {
           this.emitter.emit(EVENTS.MESSAGE_RECEIVED, msg);
         });
       }
     } else {
-      this.transport = this.createDefaultPollingTransport();
+      this.transport = this.createDefaultPollingTransport(pollingInterval);
     }
 
     this.transport.onMessage((msg: MessageData) => {
