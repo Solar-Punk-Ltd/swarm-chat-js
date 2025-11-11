@@ -13,7 +13,7 @@ import {
 import { MessageTransport } from '../transports/MessageTransport';
 import { PollingTransport } from '../transports/PollingTransport';
 import { makeFeedIdentifier } from '../utils/bee';
-import { remove0x, retryAwaitableAsync } from '../utils/common';
+import { remove0x, retryAwaitableAsync, withTimeout } from '../utils/common';
 import { ErrorHandler } from '../utils/error';
 import { EventEmitter } from '../utils/eventEmitter';
 import { Logger } from '../utils/logger';
@@ -220,7 +220,14 @@ export class SwarmChat {
     try {
       this.emitter.emit(EVENTS.LOADING_INIT, true);
 
-      const [ownIndexResult, historyInitResult] = await Promise.allSettled([this.initOwnIndex(), this.history.init()]);
+      const JITTER = 1000;
+      const INIT_TIMEOUT = this.swarmSettings.feedReadTimeout - JITTER;
+
+      const [ownIndexResult, historyInitResult] = await withTimeout(
+        Promise.allSettled([this.initOwnIndex(), this.history.init()]),
+        INIT_TIMEOUT,
+        'Initialization timed out',
+      );
 
       if (ownIndexResult.status === 'rejected') {
         throw ownIndexResult.reason;
@@ -229,11 +236,16 @@ export class SwarmChat {
       if (historyInitResult.status === 'fulfilled') {
         this.gsocIndex = historyInitResult.value;
       }
-
-      this.emitter.emit(EVENTS.LOADING_INIT, false);
-    } catch (error) {
+    } catch (error: any) {
       this.errorHandler.handleError(error, 'Chat.initSelfState');
-      this.emitter.emit(EVENTS.CRITICAL_ERROR, error);
+
+      if (error.message?.includes('timed out')) {
+        if (this.userDetails.ownIndex === undefined) this.userDetails.ownIndex = -1;
+      } else {
+        this.emitter.emit(EVENTS.CRITICAL_ERROR, error);
+      }
+    } finally {
+      this.emitter.emit(EVENTS.LOADING_INIT, false);
     }
   }
 
