@@ -169,11 +169,9 @@ export class SwarmChatUtils {
   }
 
   public async fetchLatestChatMessage(): Promise<{ data: StatefulMessage; index: FeedIndex }> {
-    const { bee, chatTopic, chatAddress, feedReadTimeout } = this.swarmSettings;
+    const { bee, chatTopic, chatAddress } = this.swarmSettings;
 
-    const reader = bee.makeFeedReader(Topic.fromString(chatTopic), remove0x(chatAddress), {
-      timeout: feedReadTimeout,
-    });
+    const reader = bee.makeFeedReader(Topic.fromString(chatTopic), remove0x(chatAddress));
     const res = await reader.downloadPayload();
 
     return { data: res.payload.toJSON() as StatefulMessage, index: res.feedIndex };
