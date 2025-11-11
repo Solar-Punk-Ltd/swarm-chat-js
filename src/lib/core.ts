@@ -239,7 +239,7 @@ export class SwarmChat {
     } catch (error: any) {
       this.errorHandler.handleError(error, 'Chat.initSelfState');
 
-      if (error.message?.includes('timed out')) {
+      if (error.message?.includes('timed out') || error.message?.includes('timeout')) {
         if (this.userDetails.ownIndex === undefined) this.userDetails.ownIndex = -1;
       } else {
         this.emitter.emit(EVENTS.CRITICAL_ERROR, error);
