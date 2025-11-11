@@ -173,7 +173,9 @@ export class SwarmChatUtils {
   public async fetchLatestChatMessage(): Promise<{ data: StatefulMessage; index: FeedIndex }> {
     const { bee, chatTopic, chatAddress } = this.swarmSettings;
 
-    const reader = bee.makeFeedReader(Topic.fromString(chatTopic), remove0x(chatAddress));
+    const reader = bee.makeFeedReader(Topic.fromString(chatTopic), remove0x(chatAddress), {
+      timeout: 12000,
+    });
     const res = await reader.downloadPayload();
 
     return { data: res.payload.toJSON() as StatefulMessage, index: res.feedIndex };
@@ -203,19 +205,32 @@ export class SwarmChatUtils {
   public async rawSocDownload(owner: string, id: string): Promise<any> {
     const { beeUrl } = this.swarmSettings;
 
-    const response = await fetch(`${beeUrl}/soc/${owner}/${id}`, {
-      headers: {
-        'swarm-chunk-retrieval-timeout': '2000ms',
-      },
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-    if (!response.ok) {
-      const error = new Error(`Failed to fetch: ${owner}/${id} [${response.status}]`);
-      (error as any).status = response.status;
+    try {
+      const response = await fetch(`${beeUrl}/soc/${owner}/${id}`, {
+        headers: {
+          'swarm-chunk-retrieval-timeout': '2000ms',
+        },
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const error = new Error(`Failed to fetch: ${owner}/${id} [${response.status}]`);
+        (error as any).status = response.status;
+        throw error;
+      }
+
+      return await response.text();
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        throw new Error(`Request timeout: ${owner}/${id}`);
+      }
       throw error;
+    } finally {
+      clearTimeout(timeoutId);
     }
-
-    return response.text();
   }
 
   private async sendMessageToGsocOwn(message: string): Promise<void> {
