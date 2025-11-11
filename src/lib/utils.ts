@@ -146,15 +146,13 @@ export class SwarmChatUtils {
 
   public async getOwnLatestFeedIndex() {
     try {
-      const { bee, chatTopic, feedReadTimeout } = this.swarmSettings;
+      const { bee, chatTopic } = this.swarmSettings;
       const { ownAddress } = this.userDetails;
 
       const feedID = this.generateUserOwnedFeedId(chatTopic, ownAddress);
       const topic = Topic.fromString(feedID);
 
-      const feedReader = bee.makeFeedReader(topic, ownAddress, {
-        timeout: feedReadTimeout,
-      });
+      const feedReader = bee.makeFeedReader(topic, ownAddress);
       const feedEntry = await feedReader.downloadPayload();
 
       const latestIndex = Number(feedEntry.feedIndex.toBigInt());
