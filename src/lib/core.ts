@@ -57,6 +57,9 @@ export class SwarmChat {
       gsocResourceId: settings.infra.gsocResourceId,
       chatTopic: settings.infra.chatTopic,
       chatAddress: settings.infra.chatAddress,
+      feedReadTimeout: settings.infra.feedReadTimeout || 12000,
+      gsocWriteTimeout: settings.infra.gsocWriteTimeout || 2000,
+      socReadTimeout: settings.infra.socReadTimeout || 5000,
     };
 
     this.emitter = new EventEmitter();

@@ -15,6 +15,9 @@ export interface ChatSettings {
     chatAddress: string;
     pollingInterval?: number;
     enableFallbackPolling?: boolean;
+    feedReadTimeout?: number;
+    gsocWriteTimeout?: number;
+    socReadTimeout?: number;
   };
 }
 
@@ -34,4 +37,7 @@ export interface ChatSettingsSwarm {
   gsocResourceId: string;
   chatTopic: string;
   chatAddress: string;
+  feedReadTimeout: number;
+  gsocWriteTimeout: number;
+  socReadTimeout: number;
 }
