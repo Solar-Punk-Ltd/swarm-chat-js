@@ -154,7 +154,9 @@ export class SwarmChatUtils {
       const feedID = this.generateUserOwnedFeedId(chatTopic, ownAddress);
       const topic = Topic.fromString(feedID);
 
-      const feedReader = bee.makeFeedReader(topic, ownAddress);
+      const feedReader = bee.makeFeedReader(topic, ownAddress, {
+        timeout: 12000,
+      });
       const feedEntry = await feedReader.downloadPayload();
 
       const latestIndex = Number(feedEntry.feedIndex.toBigInt());
@@ -179,15 +181,6 @@ export class SwarmChatUtils {
     const res = await reader.downloadPayload();
 
     return { data: res.payload.toJSON() as StatefulMessage, index: res.feedIndex };
-  }
-
-  public async fetchChatMessage(index: FeedIndex): Promise<any> {
-    const { bee, chatTopic, chatAddress } = this.swarmSettings;
-
-    const reader = bee.makeFeedReader(Topic.fromString(chatTopic), remove0x(chatAddress));
-    const res = await reader.downloadPayload({ index });
-
-    return res.payload.toJSON();
   }
 
   public async sendMessageToGsoc(message: string): Promise<void> {
