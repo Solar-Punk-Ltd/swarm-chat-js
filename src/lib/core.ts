@@ -235,12 +235,18 @@ export class SwarmChat {
 
       if (historyInitResult.status === 'fulfilled') {
         this.gsocIndex = historyInitResult.value;
+      } else {
+        this.gsocIndex = FeedIndex.fromBigInt(0n);
       }
     } catch (error: any) {
       this.errorHandler.handleError(error, 'Chat.initSelfState');
 
       if (error.message?.includes('timed out') || error.message?.includes('timeout')) {
         if (this.userDetails.ownIndex === undefined) this.userDetails.ownIndex = -1;
+        // Ensure gsocIndex is set even on timeout so polling can function
+        if (!this.gsocIndex) {
+          this.gsocIndex = FeedIndex.fromBigInt(0n);
+        }
       } else {
         this.emitter.emit(EVENTS.CRITICAL_ERROR, error);
       }
