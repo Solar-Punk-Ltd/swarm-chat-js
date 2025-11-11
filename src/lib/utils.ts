@@ -11,8 +11,6 @@ export class SwarmChatUtils {
   private depth = 26;
   private errorHandler = ErrorHandler.getInstance();
 
-  private UPLOAD_GSOC_TIMEOUT = 2000;
-
   constructor(private userDetails: ChatSettingsUser, private swarmSettings: ChatSettingsSwarm) {}
 
   public generateUserOwnedFeedId(topic: string, userAddress: string) {
@@ -148,14 +146,14 @@ export class SwarmChatUtils {
 
   public async getOwnLatestFeedIndex() {
     try {
-      const { bee, chatTopic } = this.swarmSettings;
+      const { bee, chatTopic, feedReadTimeout } = this.swarmSettings;
       const { ownAddress } = this.userDetails;
 
       const feedID = this.generateUserOwnedFeedId(chatTopic, ownAddress);
       const topic = Topic.fromString(feedID);
 
       const feedReader = bee.makeFeedReader(topic, ownAddress, {
-        timeout: 12000,
+        timeout: feedReadTimeout,
       });
       const feedEntry = await feedReader.downloadPayload();
 
@@ -173,10 +171,10 @@ export class SwarmChatUtils {
   }
 
   public async fetchLatestChatMessage(): Promise<{ data: StatefulMessage; index: FeedIndex }> {
-    const { bee, chatTopic, chatAddress } = this.swarmSettings;
+    const { bee, chatTopic, chatAddress, feedReadTimeout } = this.swarmSettings;
 
     const reader = bee.makeFeedReader(Topic.fromString(chatTopic), remove0x(chatAddress), {
-      timeout: 12000,
+      timeout: feedReadTimeout,
     });
     const res = await reader.downloadPayload();
 
@@ -196,10 +194,10 @@ export class SwarmChatUtils {
   }
 
   public async rawSocDownload(owner: string, id: string): Promise<any> {
-    const { beeUrl } = this.swarmSettings;
+    const { beeUrl, socReadTimeout } = this.swarmSettings;
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const timeoutId = setTimeout(() => controller.abort(), socReadTimeout);
 
     try {
       const response = await fetch(`${beeUrl}/soc/${owner}/${id}`, {
@@ -227,7 +225,7 @@ export class SwarmChatUtils {
   }
 
   private async sendMessageToGsocOwn(message: string): Promise<void> {
-    const { bee, stamp, gsocTopic, gsocResourceId } = this.swarmSettings;
+    const { bee, stamp, gsocTopic, gsocResourceId, gsocWriteTimeout } = this.swarmSettings;
 
     const signer = new PrivateKey(gsocResourceId);
     const identifier = Identifier.fromString(gsocTopic);
@@ -235,14 +233,14 @@ export class SwarmChatUtils {
     const data = Bytes.fromUtf8(message);
 
     const { upload } = bee.makeSOCWriter(signer, {
-      timeout: this.UPLOAD_GSOC_TIMEOUT,
+      timeout: gsocWriteTimeout,
     });
 
     await upload(stamp, identifier, data.toUint8Array());
   }
 
   private async sendMessageToGsocEnvelope(message: string): Promise<void> {
-    const { bee, stamp, gsocTopic, gsocResourceId } = this.swarmSettings;
+    const { bee, stamp, gsocTopic, gsocResourceId, gsocWriteTimeout } = this.swarmSettings;
     const { privateKey } = this.userDetails;
 
     const stamper = Stamper.fromBlank(privateKey, stamp, this.depth);
@@ -262,7 +260,7 @@ export class SwarmChatUtils {
     const envelope = stamper.stamp(stampReadyChunk as any) as any;
 
     const { upload } = bee.makeSOCWriter(signer, {
-      timeout: this.UPLOAD_GSOC_TIMEOUT,
+      timeout: gsocWriteTimeout,
     });
 
     await upload(envelope, identifier, data.toUint8Array());
