@@ -197,9 +197,6 @@ export class SwarmChatUtils {
 
     try {
       const response = await fetch(`${beeUrl}/soc/${owner}/${id}`, {
-        headers: {
-          'swarm-chunk-retrieval-timeout': '2000ms',
-        },
         signal: controller.signal,
       });
 
