@@ -134,10 +134,10 @@ describe.each(VECTORS)('vector $message.type', ({ message, signed }) => {
     ['sig', { sig: flipLastHex(message.sig.slice(0, 128)) + message.sig.slice(128) }],
   ];
   // A text message's type and target cannot change without breaking its shape, which the next block covers.
-  if (message.type !== MessageType.Text) {
+  if (message.type !== MessageType.TEXT) {
     signatureTampers.push(
       ['target', { target: 'e5'.repeat(16) }],
-      ['type', { type: message.type === MessageType.Thread ? MessageType.Reaction : MessageType.Thread }],
+      ['type', { type: message.type === MessageType.THREAD ? MessageType.REACTION : MessageType.THREAD }],
     );
   }
 
@@ -192,7 +192,7 @@ describe('the shape', () => {
   it('accepts a text and a name at exactly their caps, counted in code points', () => {
     const { message } = createChatMessage(TEST_KEY, {
       topic: 't'.repeat(128),
-      type: MessageType.Text,
+      type: MessageType.TEXT,
       text: '😀'.repeat(250) + 'x'.repeat(250),
       name: '😀'.repeat(20),
     });
@@ -254,7 +254,7 @@ describe('createChatMessage', () => {
     const before = Date.now();
     const { message } = createChatMessage(TEST_KEY, {
       topic: 'chat-x',
-      type: MessageType.Text,
+      type: MessageType.TEXT,
       text: 'hi',
       name: 'me',
     });
@@ -267,13 +267,13 @@ describe('createChatMessage', () => {
 
   it('refuses a field outside its cap before signing', () => {
     expect(() =>
-      createChatMessage(TEST_KEY, { topic: 'chat-x', type: MessageType.Text, text: 'x'.repeat(501), name: 'me' }),
+      createChatMessage(TEST_KEY, { topic: 'chat-x', type: MessageType.TEXT, text: 'x'.repeat(501), name: 'me' }),
     ).toThrow(ChatMessageError);
   });
 
   it('refuses a reaction with no target', () => {
     try {
-      createChatMessage(TEST_KEY, { topic: 'chat-x', type: MessageType.Reaction, text: '👍', name: 'me' });
+      createChatMessage(TEST_KEY, { topic: 'chat-x', type: MessageType.REACTION, text: '👍', name: 'me' });
       expect.unreachable();
     } catch (error) {
       expect(error).toBeInstanceOf(ChatMessageError);
@@ -286,7 +286,7 @@ describe('createChatMessage', () => {
     try {
       createChatMessage(TEST_KEY, {
         topic: 't'.repeat(128),
-        type: MessageType.Text,
+        type: MessageType.TEXT,
         text: '😀'.repeat(500),
         name: 'me',
       });
@@ -301,7 +301,7 @@ describe('createChatMessage', () => {
     // A control character is one character, one byte of UTF-8 and six bytes once JSON escapes it as \u0001.
     const controls = '\u0001'.repeat(500);
     try {
-      createChatMessage(TEST_KEY, { topic: 'chat-x', type: MessageType.Text, text: controls, name: 'me' });
+      createChatMessage(TEST_KEY, { topic: 'chat-x', type: MessageType.TEXT, text: controls, name: 'me' });
     } catch (error) {
       expect((error as ChatMessageError).reason).toBe('too-large');
       return;
