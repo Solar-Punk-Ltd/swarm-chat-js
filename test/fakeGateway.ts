@@ -33,6 +33,8 @@ export class FakeGateway implements ChatSource {
   readonly hidden = new Set<number>();
   /** Slots served with a chunk that fails its own check. */
   readonly corrupt = new Set<number>();
+  /** Every slot answered 200 with something that is not a chunk, as a proxy serving the web app for unknown paths. */
+  servesPages = false;
   /** What the head lookup answers, when it should not be the newest slot. */
   head: { index: number } | 'not-found' | 'fail' | null = null;
   down = false;
@@ -63,7 +65,7 @@ export class FakeGateway implements ChatSource {
       if (this.down) {
         throw new BeeResponseError('GET', `/chunks/${index}`, 'fetch failed');
       }
-      if (this.corrupt.has(index)) {
+      if (this.servesPages || this.corrupt.has(index)) {
         throw new Error('invalid signature');
       }
       const payload = this.hidden.has(index) ? undefined : this.slots.get(index);
