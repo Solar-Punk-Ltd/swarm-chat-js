@@ -9,10 +9,21 @@ export interface ChatSource {
    * served that fails its own check, and with anything else when the gateway failed.
    */
   readSlot(index: number): Promise<Uint8Array | null>;
-  /** Bee's head lookup: the newest index it found and its payload, or null when it answered 404. */
+  /**
+   * Bee's head lookup: the newest index it found and its payload, or null when it answered that nothing is there.
+   * Rejects with a HeadLookupTimeoutError when it ran out of time, and with anything else when the gateway failed.
+   */
   readHead(): Promise<{ index: number; payload: Uint8Array } | null>;
   /** A history file's bytes. Rejects when it cannot be read. */
   readFile(reference: string): Promise<Uint8Array>;
+}
+
+/** Bee's head lookup did not answer within its timeout, which on a long chat or a busy gateway is ordinary. */
+export class HeadLookupTimeoutError extends Error {
+  constructor(options: { cause: unknown }) {
+    super('the feed head lookup did not answer in time', options);
+    this.name = 'HeadLookupTimeoutError';
+  }
 }
 
 /**
@@ -84,12 +95,17 @@ export function beeChatSource(bee: Bee, owner: string, chatTopic: string, timeou
         (await reader(timeouts.slotReadMs).downloadPayload({ index })).payload.toUint8Array(),
       ),
     async readHead() {
+      const options = within(timeouts.feedReadMs);
       try {
-        const { payload, feedIndex } = await reader(timeouts.feedReadMs).downloadPayload();
+        const { payload, feedIndex } = await bee.feed.makeReader(topic, owner, options).downloadPayload();
         return { index: Number(feedIndex.toBigInt()), payload: payload.toUint8Array() };
       } catch (error) {
         if (isAbsent(error)) {
           return null;
+        }
+        // bee-js's error for an abort carries no status, so the signal is what says the lookup ran out of time.
+        if (options.signal?.aborted) {
+          throw new HeadLookupTimeoutError({ cause: error });
         }
         throw error;
       }

@@ -67,7 +67,15 @@ describe('ChatHistory.open', () => {
     expect(await history.open()).toEqual({ startAt: 0, rows: [] });
   });
 
-  it('rejects when the head lookup fails, so the caller tries again', async () => {
+  it('reads from slot 0 when the head lookup outlives its timeout, and reports it', async () => {
+    const gateway = twoFileChat();
+    gateway.head = 'timeout';
+    const { history, errors } = open(gateway);
+    expect(await history.open()).toEqual({ startAt: 0, rows: [] });
+    expect(errors).toHaveLength(1);
+  });
+
+  it('rejects when the head lookup fails quickly, so the caller tries again', async () => {
     const gateway = twoFileChat();
     gateway.head = 'fail';
     const { history } = open(gateway);

@@ -4,7 +4,13 @@ import type { AddressInfo } from 'node:net';
 import { Bee, PrivateKey, Topic } from '@ethersphere/bee-js';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { beeChatSource, beeGsocWrite, GATEWAY_STAMPS_ITSELF, UnreadableSlotError } from '../src/swarm';
+import {
+  beeChatSource,
+  beeGsocWrite,
+  GATEWAY_STAMPS_ITSELF,
+  HeadLookupTimeoutError,
+  UnreadableSlotError,
+} from '../src/swarm';
 
 // Test only: the owner and the GSOC key are never used against a real node.
 const OWNER = '19e7e376e7c213b7e7e7e46cc70a5dd086daff2a';
@@ -144,10 +150,23 @@ describe('beeChatSource.readHead', () => {
     await expect(source.readHead()).resolves.toBeNull();
   });
 
+  it('names a head lookup that outlives its timeout, apart from a quick failure', async () => {
+    const slow = createServer(() => {});
+    await new Promise<void>((resolve) => slow.listen(0, '127.0.0.1', resolve));
+    try {
+      const url = `http://127.0.0.1:${(slow.address() as AddressInfo).port}`;
+      const source = beeChatSource(new Bee(url), OWNER, 'chat-test', { ...TIMEOUTS, feedReadMs: 200 });
+      await expect(source.readHead()).rejects.toBeInstanceOf(HeadLookupTimeoutError);
+    } finally {
+      slow.closeAllConnections();
+      await new Promise<void>((resolve) => slow.close(() => resolve()));
+    }
+  });
+
   it.each([502, 503, 504])('rejects for a %i from the head lookup', async (status) => {
     answer = () => ({ status });
     const source = beeChatSource(new Bee(base), OWNER, 'chat-test', TIMEOUTS);
-    await expect(source.readHead()).rejects.toThrow();
+    await expect(source.readHead()).rejects.not.toBeInstanceOf(HeadLookupTimeoutError);
   });
 });
 

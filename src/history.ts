@@ -1,5 +1,5 @@
 import { parseFeedEntry, parseHistoryFile, type HistoryLink, type HistoryRow } from './message/index.js';
-import { UnreadableSlotError, type ChatSource } from './swarm.js';
+import { HeadLookupTimeoutError, UnreadableSlotError, type ChatSource } from './swarm.js';
 
 /** Where a chat's reading starts, and what it shows before the first poll. */
 export interface Opening {
@@ -41,7 +41,7 @@ export class ChatHistory {
   /** Rejects when the gateway fails before anything was learned, so the caller can try again. */
   async open(): Promise<Opening> {
     this.older = null;
-    const head = await this.source.readHead();
+    const head = await this.readHead();
     if (head === null) {
       // Empty or a failed lookup, the walk starts at slot 0 either way, and its first poll reads slot 0, which is
       // the confirmation the contract asks for. An empty chat's first message lands there.
@@ -54,6 +54,24 @@ export class ChatHistory {
     }
     const rows = await this.readFile(link);
     return { startAt: link.toSeq + 1, rows: rows ?? [] };
+  }
+
+  /**
+   * The head, or null for a lookup that found nothing or ran out of time. Bee's head lookup has a floor of about a
+   * second that grows with the feed, and was measured at 30 to 48 seconds on a loaded gateway, so a lookup that
+   * outlives its timeout is read as nothing known and the chat is read from slot 0, which a chat of an event's size
+   * affords. Waiting on it instead left a late joiner's chat unopened. A quick failure still rejects, so it is retried.
+   */
+  private async readHead(): Promise<{ index: number; payload: Uint8Array } | null> {
+    try {
+      return await this.source.readHead();
+    } catch (error) {
+      if (error instanceof HeadLookupTimeoutError) {
+        this.events.error(error);
+        return null;
+      }
+      throw error;
+    }
   }
 
   /** Whether a click on "load older" has something to load. */

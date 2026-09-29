@@ -148,6 +148,19 @@ describe('start', () => {
     expect(events[EVENTS.STATUS]).toEqual([FeedStatus.RECONNECTING, FeedStatus.LIVE]);
   });
 
+  it('opens at once from slot 0 when the head lookup times out, with no critical error', async () => {
+    const gateway = new FakeGateway();
+    gateway.write(entryAt(0)).write(entryAt(1));
+    gateway.head = 'timeout';
+    const { chat, events, received } = harness(gateway);
+    await chat.start();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(events[EVENTS.LOADING_INIT]).toEqual([true, false]);
+    expect(events[EVENTS.CRITICAL_ERROR]).toHaveLength(0);
+    expect(events[EVENTS.ERROR]).toHaveLength(1);
+    expect(received().map((message) => message.index)).toEqual([0, 1]);
+  });
+
   it('opens once however often start is called', async () => {
     const { chat, gateway } = harness();
     await Promise.all([chat.start(), chat.start()]);

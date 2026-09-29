@@ -1,7 +1,7 @@
 import { createChatMessage, MessageType, type ChatMessage, type FeedEntry, type HistoryLink } from '../src/message';
 import { BeeResponseError } from '@ethersphere/bee-js';
 
-import { readSlotThrough, type ChatSource } from '../src/swarm';
+import { HeadLookupTimeoutError, readSlotThrough, type ChatSource } from '../src/swarm';
 
 // Test only.
 export const TEST_KEY = '11'.repeat(32);
@@ -36,7 +36,7 @@ export class FakeGateway implements ChatSource {
   /** Every slot answered 200 with something that is not a chunk, as a proxy serving the web app for unknown paths. */
   servesPages = false;
   /** What the head lookup answers, when it should not be the newest slot. */
-  head: { index: number } | 'not-found' | 'fail' | null = null;
+  head: { index: number } | 'not-found' | 'fail' | 'timeout' | null = null;
   down = false;
   readonly slotReads: number[] = [];
   headReads = 0;
@@ -84,6 +84,9 @@ export class FakeGateway implements ChatSource {
     }
     if (this.head === 'not-found') {
       return null;
+    }
+    if (this.head === 'timeout') {
+      throw new HeadLookupTimeoutError({ cause: new Error('aborted') });
     }
     const index = this.head?.index ?? Math.max(-1, ...this.slots.keys());
     const payload = this.slots.get(index);

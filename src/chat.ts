@@ -29,7 +29,11 @@ export interface ChatSettings {
     chatAddress: string;
     /** How often the reader polls at the live edge, 1,000 ms by default. */
     pollingInterval?: number;
-    /** The head lookup and a history file download, 12,000 ms by default. */
+    /**
+     * The head lookup and a history file download, 15,000 ms by default. An idle Bee answers the head lookup of a
+     * 1,000 message chat in about five seconds, so this is three times that. A lookup slower than this is a loaded
+     * gateway, and the chat is then read from slot 0 rather than waiting on it.
+     */
     feedReadTimeout?: number;
     /** One inbox write, 10,000 ms by default. */
     gsocWriteTimeout?: number;
@@ -89,7 +93,7 @@ export class SwarmChat {
 
     const timeouts: SwarmTimeouts = {
       slotReadMs: infra.socReadTimeout ?? 5_000,
-      feedReadMs: infra.feedReadTimeout ?? 12_000,
+      feedReadMs: infra.feedReadTimeout ?? 15_000,
       writeMs: infra.gsocWriteTimeout ?? 10_000,
     };
     const needsBee = !parts.source || !parts.write;
