@@ -1,214 +1,187 @@
-# Swarm Chat JS Library 🐝💬
+# Swarm Chat JS
 
-The core client-side library for building decentralized chat applications over [Swarm](https://www.ethswarm.org/). This library provides the essential logic for sending, receiving, and managing chat messages within a Swarm ecosystem.
+A client library for chat over [Swarm](https://www.ethswarm.org/). A browser signs each message and sends it as one
+GSOC write to a shared inbox. A chat server verifies it and publishes it to the chat's feed, and every reader follows
+that feed. The browser talks only to a Bee node or gateway, never to a web server of its own.
 
-**Important Note:** `swarm-chat-js` is designed to work in conjunction with a companion aggregator server. It is **not functional as a standalone library** for a complete chat system. The aggregator is responsible for collecting messages broadcast by users and consolidating them into a shared chat feed.
+The library needs its server,
+[Solar-Punk-Ltd/swarm-chat-aggregator-js](https://github.com/Solar-Punk-Ltd/swarm-chat-aggregator-js), which listens on
+the inbox and writes the feed. Version 7 of the library reads and writes the v7 message format only.
 
-The current reference implementation works with the [Solar-Punk-Ltd/swarm-chat-aggregator-js](https://github.com/Solar-Punk-Ltd/swarm-chat-aggregator-js).
+## How it works
 
----
+1. **Sending.** The sender builds the message, signs it with the user's key, and writes it once to the inbox, a GSOC
+   address every chat shares. The message stays pending until the chat feed shows it. If it does not, the identical
+   bytes are written again every ten seconds, up to five times, and then it is failed with a manual retry.
+2. **Publishing.** The server checks each message's shape and signature and writes it to the chat's feed as the next
+   entry, at index 0, 1, 2 and on. After a message is published it saves a history file of the chat, and every entry
+   links to the newest file saved.
+3. **Opening.** A reader asks Bee for the feed's head once, shows the history file the head entry links to, and reads
+   the entries after it.
+4. **Following.** A reader polls explicit feed slots after the last one it saw, several in one poll. A slot not
+   written yet is the ordinary live state and is simply asked again. A slot that fails its checks is skipped and never
+   stops the chat. A slot no peer gives out while later slots exist is stepped past and read again on later polls, so a
+   message skipped arrives late rather than never. Gateway failures back off with jitter up to eight seconds.
+5. **Older messages.** Loading older messages is a click, which reads the history file before the oldest one shown.
 
-## ⚙️ How It Works
-
-`swarm-chat-js` enables decentralized communication by leveraging Swarm's features like Feeds and GSOC.
-
-**Conceptual Overview:**
-
-Users broadcast their messages via updates to their personal Swarm feeds, with notifications sent to a pre-defined GSOC address. A dedicated **aggregator server** listens to this GSOC message. When new message notifications arrive, the aggregator fetches the message content, processes it, and then writes it to a common, persistent, protected Swarm feed (the "chat feed"). Client applications polling this aggregated chat feed to display messages to users (built into `swarm-chat-js`).
-
-**Message Flow:**
-
-1.  **User Sends Message:** A user types and sends a message using an application built with `swarm-chat-js`.
-    - The message is written to the user's own Swarm feed.
-    - An update is broadcast to a designated GSOC address.
-2.  **Aggregator Receives & Processes:** The aggregator server, subscribed to the GSOC address, receives the update.
-    - It may perform validation or other processing steps.
-3.  **Aggregator Writes to Chat Feed:** The aggregator writes the processed message to the main, shared "chat feed".
-4.  **Client App Reads:** `swarm-chat-js` in other users' applications either:
-    - **Polling mode**: Polls the main chat feed for new messages and displays them
-    - **Waku mode**: Receives real-time message updates via the Waku network
-
----
-
-## 📦 Installation
-
-You can install the library using npm or pnpm:
+## Installation
 
 ```bash
-npm/pnpm install @solarpunkltd/swarm-chat-js
+pnpm add @solarpunkltd/swarm-chat-js @ethersphere/bee-js
 ```
 
----
+bee-js 13 is a peer dependency. The package runs in browsers and in Node 24 or later, as ESM or CommonJS.
 
-## 🛠️ Core Concepts & API
+## Usage
 
-### Imports
+```ts
+import { EVENTS, MessageType, SwarmChat, type MessageData } from '@solarpunkltd/swarm-chat-js';
 
-```typescript
-import { EVENTS, MessageData, MessageType, SwarmChat, ChatSettings } from '@solarpunkltd/swarm-chat-js';
-```
-
-### `ChatSettings` Interface
-
-This configuration object is crucial for initializing the `SwarmChat` instance.
-
-```typescript
-export interface ChatSettings {
-  user: {
-    /** Private key of the chat user, used for signing updates to their own Swarm feed. */
-    privateKey: string;
-    /** Display name or nickname of the current user. */
-    nickname: string;
-  };
+const chat = new SwarmChat({
+  user: { privateKey: userKey, nickname: 'alice' },
   infra: {
-    /** URL of the Bee node used by the client to write to their own feed and to poll the aggregated chat feed. */
-    beeUrl: string;
-    /**
-     * If true, a postage stamp (`stamp` property) must be provided for uploading messages.
-     * The stamp does not necessarily need to be tied to the `beeUrl` node; it can be an independent stamp. (Enveloped stamp)
-     */
-    enveloped: boolean;
-    /** Optional: Postage stamp ID. Required if `enveloped` is true, unless `beeUrl` points to a gateway with auto-stamping capabilities. */
-    stamp?: string;
-    /** The mined GSOC topic string where users broadcast updates about their new messages. */
-    gsocTopic: string;
-    /** The mined GSOC resource ID (address) associated with the `gsocTopic`. */
-    gsocResourceId: string;
-    /** The topic of the aggregated chat feed, written by the aggregator server. */
-    chatTopic: string;
-    /** The public address (Swarm feed address) of the aggregated chat feed, written by the aggregator. */
-    chatAddress: string;
-    /** Enable real-time messaging via Waku network. When true, messages are received instantly instead of polling. */
-    waku: boolean;
-  };
-}
+    beeUrl: 'https://gateway.example.com',
+    gsocTopic: inboxIdentifier,
+    gsocResourceId: minedInboxKey,
+    chatTopic: 'chat-my-stream',
+    chatAddress: serverFeedOwner,
+    pollingInterval: 500,
+  },
+});
+
+const { on } = chat.getEmitter();
+on(EVENTS.MESSAGE_RECEIVED, (message: MessageData) => show(message));
+on(EVENTS.MESSAGE_REQUEST_ERROR, (message: MessageData) => offerRetry(message));
+on(EVENTS.STATUS, (status) => showConnection(status));
+
+await chat.start();
+await chat.sendMessage('hello', MessageType.TEXT);
+await chat.sendMessage('👍', MessageType.REACTION, someMessageId);
+
+// Later, and in any order, as often as needed.
+await chat.stop();
 ```
 
-### Events (`EVENTS`)
+## Settings
 
-The library emits several events that your application can subscribe to for reacting to different stages of the chat lifecycle. Use `SwarmChat.getEmitter().on(EVENT_NAME, callback)` to subscribe.
+| Setting                  | Meaning                                                                                        |
+| ------------------------ | ---------------------------------------------------------------------------------------------- |
+| `user.privateKey`        | Signs every message. A viewer that only reads may pass any key.                                |
+| `user.nickname`          | The name on every message, 1 to 20 characters. Nothing can be sent without one.                |
+| `infra.beeUrl`           | The Bee node or gateway every read and write goes through.                                     |
+| `infra.stamp`            | The batch the inbox writes are stamped with. Left out for a gateway that stamps writes itself. |
+| `infra.gsocTopic`        | The inbox's identifier string, the same for every chat.                                        |
+| `infra.gsocResourceId`   | The mined key every sender signs inbox writes with. The server's operator mines it.            |
+| `infra.chatTopic`        | The chat's topic, which every message carries and the feed is named by.                        |
+| `infra.chatAddress`      | The server's feed owner address.                                                               |
+| `infra.pollingInterval`  | How often a reader polls at the live edge, 1,000 ms by default.                                |
+| `infra.socReadTimeout`   | One feed slot read, 5,000 ms by default.                                                       |
+| `infra.feedReadTimeout`  | The head lookup and a history file download, 12,000 ms by default.                             |
+| `infra.gsocWriteTimeout` | One inbox write, 10,000 ms by default.                                                         |
 
-- `EVENTS.LOADING_INIT`: ('loadingInit')
-  Fired when the chat library begins its initialization process.
-- `EVENTS.LOADING_PREVIOUS_MESSAGES`: ('loadingPreviousMessages')
-  Fired when the library is actively loading previous messages from the chat feed.
-- `EVENTS.MESSAGE_RECEIVED`: ('messageReceived')
-  A new message has been successfully received from the aggregated chat feed and processed by the client.
-- `EVENTS.MESSAGE_REQUEST_INITIATED`: ('messageRequestInitiated')
-  The current user has initiated the process of sending a new message.
-- `EVENTS.MESSAGE_REQUEST_UPLOADED`: ('messageRequestUploaded')
-  The current user's message has been successfully uploaded to their own feed. (Note: The broadcast to the GSOC for aggregator pickup can still be pending or fail after this event).
-- `EVENTS.MESSAGE_REQUEST_ERROR`: ('messageRequestError')
-  An error occurred during the message sending process (either uploading to the user's feed or broadcasting via GSOC).
-- `EVENTS.CRITICAL_ERROR`: ('criticalError')
-  The library has encountered a critical, potentially unrecoverable error.
+## Methods
 
-### Main `SwarmChat` Methods
+| Method                                      | What it does                                                                                                                                                                                                                                                                       |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start()`                                   | Opens the chat and follows it. Resolves once it is open, or once `stop` is called. Opening is retried for as long as the chat runs.                                                                                                                                                |
+| `stop()`                                    | Stops every poll, resend and retry. Listeners stay, so a later `start` reports to them again.                                                                                                                                                                                      |
+| `getEmitter()`                              | The events below, with `on` and `off`.                                                                                                                                                                                                                                             |
+| `sendMessage(text, type, targetMessageId?)` | Sends a text or a thread reply and resolves to the pending message. A reaction resolves to `null`: taps on one reaction inside a second cancel in pairs, and only an odd count is sent. Rejects with a `ChatMessageError`, sending nothing, for a message the server would refuse. |
+| `retrySendMessage(message)`                 | Writes a failed or pending message again with its identical bytes.                                                                                                                                                                                                                 |
+| `fetchPreviousMessages()`                   | Shows the history file before the oldest one shown, and resolves to its messages.                                                                                                                                                                                                  |
+| `hasPreviousMessages()`                     | Whether there is an older file to load.                                                                                                                                                                                                                                            |
+| `orderMessages(messages)`                   | Published messages in chat order, then pending ones by time.                                                                                                                                                                                                                       |
+| `getStatus()`                               | `live`, `reconnecting`, `stalled`, or `null` before the first read.                                                                                                                                                                                                                |
+| `getAddress()`                              | The address of the key, which is every sent message's `address`.                                                                                                                                                                                                                   |
 
-The `SwarmChat` class instance provides the following core methods:
+## Events
 
-- `start()`: Initializes and starts the chat service, including setting up listeners and beginning to poll for messages.
-- `stop()`: Stops the chat service, clears intervals, and cleans up resources.
-- `getEmitter()`: Returns an event emitter instance, allowing your application to subscribe to the `EVENTS` listed above.
-- `sendMessage(message: string, type: MessageType, targetMessageId?: string, id?: string)`: Initiates the process of sending a new chat message from the current user. Supports different message types including text, threads, and reactions.
-- `fetchPreviousMessages()`: Manually triggers the fetching of older messages from the aggregated chat feed.
-- `hasPreviousMessages()`: Returns a boolean indicating whether there are previous messages available to fetch (determined by checking if more than one message state reference exists).
-- `retrySendMessage(message: MessageData)`: Attempts to resend a message that previously encountered an error during the initial request phase (e.g., failed to write to the user's own feed).
-- `retryBroadcastUserMessage(message: MessageData)`: Attempts to re-broadcast a message update via GSOC if the message was successfully uploaded to the user's feed but the GSOC broadcast might have failed or needs retrying.
+| Event                       | Carries          | When                                                                                                                            |
+| --------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `LOADING_INIT`              | `boolean`        | `true` when opening starts, `false` once the chat is open.                                                                      |
+| `LOADING_PREVIOUS_MESSAGES` | `boolean`        | Around a load of older messages.                                                                                                |
+| `MESSAGE_RECEIVED`          | `MessageData`    | A message the feed or a history file shows. For a sender, this is what "sent" means.                                            |
+| `MESSAGE_REQUEST_INITIATED` | `MessageData`    | A message signed and about to be written, with `index` -1.                                                                      |
+| `MESSAGE_REQUEST_UPLOADED`  | `MessageData`    | Its first write the node accepted. It is still pending.                                                                         |
+| `MESSAGE_REQUEST_ERROR`     | `MessageData`    | Its resends ran out unseen.                                                                                                     |
+| `STATUS`                    | `FeedStatus`     | `live`: the gateway answers. `reconnecting`: it does not. `stalled`: a message known to exist has not loaded for eight seconds. |
+| `MESSAGE_SKIPPED`           | `SkippedMessage` | A feed slot or history row not shown, and why.                                                                                  |
+| `ERROR`                     | `unknown`        | A failure the chat recovers from on its own.                                                                                    |
+| `CRITICAL_ERROR`            | `unknown`        | Opening failed three times in a row. It keeps trying.                                                                           |
 
-### Message Types
+A `MessageData` has `id`, `type`, `message` (the text or emoji), `username`, `address`, `timestamp` (the server's
+receive time, or the sender's clock while pending), `targetMessageId` for a reply or reaction, `chatTopic`,
+`signature`, `index` (the feed index, -1 while pending) and `sentAt` (the sender's clock, which nothing checks).
 
-The library supports three types of messages through the `MessageType` enum:
+## The message, for servers and tools
 
-- `MessageType.TEXT`: Regular chat messages
-- `MessageType.THREAD`: Reply messages that reference a parent message via `targetMessageId`
-- `MessageType.REACTION`: Emoji reactions to existing messages, also using `targetMessageId` to reference the target message
+`@solarpunkltd/swarm-chat-js/message` is the one place the message is built, signed and checked, and the server imports
+it rather than keeping a copy. It loads none of the reader.
 
-### Message State Management
+```ts
+import { parseChatMessage, MAX_MESSAGE_BYTES } from '@solarpunkltd/swarm-chat-js/message';
 
-The library includes robust message state handling with:
-
-- **Automatic retry logic**: Failed message state references are automatically retried with exponential backoff
-- **Ref banning**: Persistently failing references are banned after maximum retry attempts to prevent infinite loops
-- **Efficient caching**: Message state data is cached to avoid redundant network requests
-
----
-
-## 🚀 Usage Example (React)
-
-Here's an example of how `swarm-chat-js` can be integrated into a React application using a custom hook (`useSwarmChat`). This hook encapsulates chat logic, state management, and event handling.
-
-### Complete Implementation
-
-For a full working example, check out our React integration:
-
-**📖 [View Complete useSwarmChat Hook Implementation](https://github.com/Solar-Punk-Ltd/swarm-chat-react-example/blob/master/src/hooks/useSwarmChat.tsx)**
-
-### Basic Usage
-
-```typescript
-import { useSwarmChat } from './hooks/useSwarmChat';
-import { MessageType } from '@solarpunkltd/swarm-chat-js';
-
-function ChatComponent() {
-  const { messages, isLoading, sendMessage, hasPreviousMessages, loadPreviousMessages } = useSwarmChat(chatSettings);
-
-  const handleSendMessage = (text: string) => {
-    sendMessage(text, MessageType.TEXT);
-  };
-
-  const handleReaction = (targetMessageId: string, emoji: string) => {
-    sendMessage(emoji, MessageType.REACTION, targetMessageId);
-  };
-
-  const handleReply = (targetMessageId: string, replyText: string) => {
-    sendMessage(replyText, MessageType.THREAD, targetMessageId);
-  };
-
-  return (
-    <div className="chat-container">
-      {/* Your chat UI implementation */}
-      {hasPreviousMessages() && <button onClick={loadPreviousMessages}>Load Previous Messages</button>}
-      {/* Message list, input field, etc. */}
-    </div>
-  );
-}
+const check = parseChatMessage(payload);
+if (check.ok) publish(check.message);
+else count(check.reason);
 ```
 
----
+A message is a JSON object of at most 2,048 bytes of UTF-8:
 
-## ⛏️ Helper Scripts
+| Field    | Meaning                                                                                                      |
+| -------- | ------------------------------------------------------------------------------------------------------------ |
+| `v`      | `7`                                                                                                          |
+| `topic`  | The chat's topic, 1 to 128 characters                                                                        |
+| `id`     | A random id, 32 lowercase hex characters                                                                     |
+| `type`   | `text`, `thread` (a reply, `target` is the parent) or `reaction` (`target` is the message, `text` the emoji) |
+| `target` | The id it refers to, or `""` for a text                                                                      |
+| `text`   | 1 to 500 characters                                                                                          |
+| `name`   | 1 to 20 characters                                                                                           |
+| `addr`   | The sender's address, 40 lowercase hex characters without `0x`                                               |
+| `ts`     | The sender's clock in milliseconds                                                                           |
+| `sig`    | 130 hex characters                                                                                           |
 
-### Mine GSOC Address
+Characters are counted as Unicode code points, so an emoji counts once, and `countCharacters` counts the same way for
+a composer. The signed bytes are the UTF-8 of `JSON.stringify([7, topic, id, type, target, text, name, addr, ts])`,
+signed with bee-js's `PrivateKey.sign` and checked with `Signature.recoverPublicKey`, both over the raw bytes.
 
-The library provides a helper script to mine a GSOC address and topic. This is typically used when setting up your aggregator server.
+| Export                                                                       | Use                                                                                         |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `parseChatMessage(bytes)`                                                    | The server's check of a raw payload: byte cap, UTF-8, JSON, shape, signature. Never throws. |
+| `checkChatMessage(value)`                                                    | The same for a parsed object.                                                               |
+| `createChatMessage(key, draft)`                                              | Builds and signs, throwing a `ChatMessageError` for anything the check would refuse.        |
+| `chatMessageSchema`, `hasValidSignature`, `signedBytes`, `encodeChatMessage` | The parts.                                                                                  |
+| `feedEntrySchema`, `parseFeedEntry`                                          | The feed entry, `{v, seq, at, msg, history}`.                                               |
+| `historyFileSchema`, `parseHistoryFile`                                      | The history file, `{v, topic, fromSeq, toSeq, messages, prev}`.                             |
 
-**Usage:**
+## Changes from 6.x
+
+- Messages are signed over every field and verified by the server. 6.x signed four fields with a double prefix, and its
+  check passed forged messages.
+- One inbox write per message. The write to the sender's own feed is gone, and so are `userTopic`, `additionalProps`,
+  and the `enveloped` setting.
+- A bad message or history row is skipped, never a freeze. A slot no peer gives out is stepped past and read again.
+- No signature check per message on the read path, which cost 6.x about 36 ms of main thread per message on every open.
+- `sendMessage` takes three arguments, and a reaction resolves to `null`. `retrySendMessage` covers what
+  `retryBroadcastUserMessage` did.
+- `stop` keeps listeners. New events: `STATUS`, `MESSAGE_SKIPPED` and `ERROR`. `CRITICAL_ERROR` means three failed
+  openings in a row, and opening keeps trying.
+- `MessageData.index` is the feed index, `timestamp` is the server's receive time, and `sentAt` is new.
+- The GSOC mining script moved to the server repository, whose operator mines the inbox key.
+- The package is ESM first with a CommonJS build. The UMD bundle and the Node polyfills are gone.
+
+## Development
+
+Node 24 and pnpm 12, through `packageManager`.
 
 ```bash
-npm run mine -- <bee-address> <topic-name>
+pnpm install
+pnpm test
 ```
 
----
+`lint` (oxlint, type-aware), `format` and `format:check` (oxfmt), `typecheck`, `test` (vitest) and `build` (vite, with
+types from `tsc`) are the scripts CI runs. `pnpm pack` builds before it packs.
 
-## ⚠️ Limitations
+## License
 
-- **Polling Mechanism:** The current version of `swarm-chat-js` relies on polling the aggregator's chat feed to fetch new messages. This approach can be resource-heavy.
-
----
-
-## 💡 Future Development
-
-- **Push-Based Event System:** We are actively designing a new architecture to transition from the polling mechanism to a more efficient, push-based event system for message delivery. This will significantly reduce node load and improve real-time message propagation.
-- **Performance Optimizations:** Further improvements to message state handling and caching mechanisms.
-
----
-
-## 📚 Further Reading & Resources
-
-- [What are Feeds? (Official Swarm Documentation)](https://docs.ethswarm.org/docs/develop/tools-and-features/feeds#what-are-feeds)
-- [GSOC Introduction (Official Swarm Documentation)](https://docs.ethswarm.org/docs/develop/tools-and-features/gsoc/#introduction)
-- [Example Aggregator: Solar-Punk-Ltd/swarm-chat-aggregator-js](https://github.com/Solar-Punk-Ltd/swarm-chat-aggregator-js)
-- [Example React client](https://github.com/Solar-Punk-Ltd/swarm-chat-react-example)
-
----
+Apache-2.0
