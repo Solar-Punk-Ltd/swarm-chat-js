@@ -21,6 +21,8 @@ export interface FollowerSettings {
   maxSlotsPerPoll: number;
   /** Polls the next slot may be refused before asking whether anything lies behind it. */
   unservedPollsBeforeProbe: number;
+  /** The longest gap between probes of a refused live edge, however long the chat has been quiet. */
+  probeIntervalCapMs: number;
   /** How far past a refused slot to look, stopping at the first that answers. */
   probeDistances: readonly number[];
   /** Polls in a row whose next slot came back unreadable, with nothing readable behind it, before the gateway is failing. */
@@ -43,6 +45,7 @@ export const DEFAULT_FOLLOWER_SETTINGS: FollowerSettings = {
   maxSlotsPerPoll: 16,
   unservedPollsBeforeProbe: 3,
   unreadablePollsBeforeFailure: 3,
+  probeIntervalCapMs: 60_000,
   probeDistances: [1, 2, 4, 8],
   missedLimit: 32,
   missedReadsPerPoll: 4,
@@ -78,6 +81,7 @@ export interface FollowerEvents {
 export class FeedFollower {
   private next = 0;
   private unservedPolls = 0;
+  private nextProbeAt = 0;
   private unreadablePolls = 0;
   private gatewayFailures = 0;
   private readonly missed = new Map<number, number>();
@@ -109,7 +113,7 @@ export class FeedFollower {
   start(fromIndex: number): void {
     this.stop();
     this.next = fromIndex;
-    this.unservedPolls = 0;
+    this.resetRefusals();
     this.unreadablePolls = 0;
     this.gatewayFailures = 0;
     this.missed.clear();
@@ -203,7 +207,7 @@ export class FeedFollower {
         }
         return consumed;
       }
-      this.unservedPolls = 0;
+      this.resetRefusals();
       this.unreadablePolls = 0;
       this.next = index + 1;
       this.accept(index, payload);
@@ -212,17 +216,24 @@ export class FeedFollower {
   }
 
   /**
-   * Probes at the threshold and then at doubling intervals, three, six, twelve polls and on. A quiet chat stays
-   * refused for minutes, and probing each of those polls would cost four reads a poll to find nothing, while never
-   * probing again would leave a hole that opened during the quiet undetected until a reload.
+   * Probes at the threshold and then at doubling intervals, three, six, twelve polls and on, until the gap reaches
+   * `probeIntervalCapMs`, and at that interval after. A quiet chat stays refused for minutes, and probing each of
+   * those polls would cost four reads a poll to find nothing. Doubling without a cap left a hole that opened thirteen
+   * minutes into a quiet unfound for up to thirteen more.
    */
   private shouldProbe(): boolean {
-    const threshold = this.settings.unservedPollsBeforeProbe;
-    if (this.unservedPolls < threshold || this.unservedPolls % threshold !== 0) {
+    if (this.unservedPolls !== this.nextProbeAt) {
       return false;
     }
-    const multiple = this.unservedPolls / threshold;
-    return (multiple & (multiple - 1)) === 0;
+    const { probeIntervalCapMs, pollIntervalMs } = this.settings;
+    const capPolls = Math.max(1, Math.ceil(probeIntervalCapMs / pollIntervalMs));
+    this.nextProbeAt += Math.min(this.nextProbeAt, capPolls);
+    return true;
+  }
+
+  private resetRefusals(): void {
+    this.unservedPolls = 0;
+    this.nextProbeAt = this.settings.unservedPollsBeforeProbe;
   }
 
   /**
@@ -242,7 +253,7 @@ export class FeedFollower {
         refused.add(found);
         continue;
       }
-      this.unservedPolls = 0;
+      this.resetRefusals();
       this.remember(missing);
       for (let gap = missing + 1; gap < found; gap++) {
         const between = refused.has(gap) ? null : await this.read(gap);
