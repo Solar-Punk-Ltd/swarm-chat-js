@@ -29,6 +29,8 @@ export interface FollowerSettings {
   missedLimit: number;
   /** Stepped-past slots read again in one poll. */
   missedReadsPerPoll: number;
+  /** How long a stepped-past slot is read again before it is let go and reported unreachable. */
+  missedExpiryMs: number;
   backoffCapMs: number;
   /** How long a stepped-past slot may stay unread before the chat is called stalled. */
   stallAfterMs: number;
@@ -44,6 +46,7 @@ export const DEFAULT_FOLLOWER_SETTINGS: FollowerSettings = {
   probeDistances: [1, 2, 4, 8],
   missedLimit: 32,
   missedReadsPerPoll: 4,
+  missedExpiryMs: 5 * 60_000,
   backoffCapMs: 8_000,
   stallAfterMs: 8_000,
   random: Math.random,
@@ -270,16 +273,31 @@ export class FeedFollower {
     this.missed.set(index, this.settings.now());
   }
 
+  /**
+   * Reads the stepped-past slots tried least recently, and lets go of any unread for `missedExpiryMs`. The map keeps
+   * its entries in the order they were last tried, so a slot that never loads moves to the back and cannot keep the
+   * ones behind it from being read.
+   */
   private async readMissed(generation: number): Promise<void> {
+    const now = this.settings.now();
+    for (const [index, since] of this.missed) {
+      if (now - since >= this.settings.missedExpiryMs) {
+        this.missed.delete(index);
+        this.events.skipped(index, 'unreachable', 'not served within the time a stepped-past slot is kept');
+      }
+    }
     const due = [...this.missed.keys()].slice(0, this.settings.missedReadsPerPoll);
     for (const index of due) {
       const payload = await this.read(index);
       if (generation !== this.generation) {
         return;
       }
+      const since = this.missed.get(index);
+      this.missed.delete(index);
       if (payload !== null && payload !== 'unreadable') {
-        this.missed.delete(index);
         this.accept(index, payload);
+      } else if (since !== undefined) {
+        this.missed.set(index, since);
       }
     }
   }

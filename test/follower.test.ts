@@ -207,6 +207,41 @@ describe.each([404, 500] as const)('with Bee answering %i for a slot not there',
       expect(seqs()).toContain(5);
     });
 
+    it('reads the retry list least recently tried first, so an entry behind four that never load is still read', async () => {
+      const gateway = feedOf(12);
+      for (let index = 2; index <= 7; index++) {
+        gateway.hidden.add(index);
+      }
+      const { follower, seqs } = run(gateway);
+      follower.start(0);
+      await vi.advanceTimersByTimeAsync(POLL_MS * 3);
+      expect(new Set(follower.missedIndices)).toEqual(new Set([2, 3, 4, 5, 6, 7]));
+
+      gateway.hidden.delete(7);
+      await vi.advanceTimersByTimeAsync(POLL_MS * 2);
+      expect(seqs()).toContain(7);
+      expect(new Set(follower.missedIndices)).toEqual(new Set([2, 3, 4, 5, 6]));
+    });
+
+    it('lets go of a slot after five minutes unread, reports it, and is live again', async () => {
+      const gateway = feedOf(6);
+      gateway.hidden.add(3);
+      const { follower, skipped, statuses } = run(gateway);
+      follower.start(0);
+      await vi.advanceTimersByTimeAsync(POLL_MS * 3);
+      expect(follower.missedIndices).toEqual([3]);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(statuses.at(-1)).toBe(FeedStatus.STALLED);
+
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      expect(follower.missedIndices).toEqual([]);
+      expect(skipped).toEqual([{ index: 3, reason: 'unreachable' }]);
+      expect(statuses.at(-1)).toBe(FeedStatus.LIVE);
+      const readsOfThree = gateway.slotReads.filter((index) => index === 3).length;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(gateway.slotReads.filter((index) => index === 3)).toHaveLength(readsOfThree);
+    });
+
     it('probes a quiet live edge at three, six, twelve and twenty-four refused polls, and no more often', async () => {
       const { follower, gateway } = run(feedOf(1));
       follower.start(0);
