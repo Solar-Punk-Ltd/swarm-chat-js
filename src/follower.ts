@@ -23,6 +23,8 @@ export interface FollowerSettings {
   unservedPollsBeforeProbe: number;
   /** How far past a refused slot to look, stopping at the first that answers. */
   probeDistances: readonly number[];
+  /** Polls in a row whose next slot came back unreadable, with nothing readable behind it, before the gateway is failing. */
+  unreadablePollsBeforeFailure: number;
   /** Stepped-past slots kept for reading again on later polls. */
   missedLimit: number;
   /** Stepped-past slots read again in one poll. */
@@ -38,6 +40,7 @@ export const DEFAULT_FOLLOWER_SETTINGS: FollowerSettings = {
   pollIntervalMs: 1_000,
   maxSlotsPerPoll: 16,
   unservedPollsBeforeProbe: 3,
+  unreadablePollsBeforeFailure: 3,
   probeDistances: [1, 2, 4, 8],
   missedLimit: 32,
   missedReadsPerPoll: 4,
@@ -46,6 +49,14 @@ export const DEFAULT_FOLLOWER_SETTINGS: FollowerSettings = {
   random: Math.random,
   now: Date.now,
 };
+
+/** The gateway answers the next slot, poll after poll, with something that is not a chunk. */
+export class UnreadableGatewayError extends Error {
+  constructor(readonly index: number) {
+    super(`the gateway keeps answering feed slot ${index} with something that is not a chunk`);
+    this.name = 'UnreadableGatewayError';
+  }
+}
 
 export interface FollowerEvents {
   entry(entry: FeedEntry): void;
@@ -64,6 +75,7 @@ export interface FollowerEvents {
 export class FeedFollower {
   private next = 0;
   private unservedPolls = 0;
+  private unreadablePolls = 0;
   private gatewayFailures = 0;
   private readonly missed = new Map<number, number>();
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -95,6 +107,7 @@ export class FeedFollower {
     this.stop();
     this.next = fromIndex;
     this.unservedPolls = 0;
+    this.unreadablePolls = 0;
     this.gatewayFailures = 0;
     this.missed.clear();
     this.status = null;
@@ -156,6 +169,15 @@ export class FeedFollower {
     }
   }
 
+  /**
+   * Reads forward from the next slot. Returns how many slots it showed. Throws when the gateway fails, and when the
+   * next slot has come back unreadable on several polls in a row with nothing behind it, which is the gateway answering
+   * with something that is not a chunk rather than one bad slot.
+   *
+   * An unreadable next slot is paced like a refused one: it ends the poll, is counted, and is stepped past only
+   * through the probe once a later slot answers. Stepping past it at once let a gateway that answers every path with a
+   * web page walk the reader past the head, sixteen slots a poll with no wait between polls.
+   */
   private async walk(generation: number): Promise<number> {
     for (let consumed = 0; consumed < this.settings.maxSlotsPerPoll; consumed++) {
       const index = this.next;
@@ -163,23 +185,23 @@ export class FeedFollower {
       if (generation !== this.generation) {
         return consumed;
       }
-      if (payload === 'unreadable') {
-        this.unservedPolls = 0;
-        this.next = index + 1;
-        this.remember(index);
-        continue;
-      }
-      if (payload === null) {
+      if (payload === null || payload === 'unreadable') {
         // Counted only when this poll read nothing: a poll that read four slots and then met the live edge advanced.
         if (consumed === 0) {
           this.unservedPolls++;
+          this.unreadablePolls = payload === 'unreadable' ? this.unreadablePolls + 1 : 0;
           if (this.shouldProbe() && (await this.probePast(index, generation))) {
+            this.unreadablePolls = 0;
             continue;
+          }
+          if (this.unreadablePolls >= this.settings.unreadablePollsBeforeFailure) {
+            throw new UnreadableGatewayError(index);
           }
         }
         return consumed;
       }
       this.unservedPolls = 0;
+      this.unreadablePolls = 0;
       this.next = index + 1;
       this.accept(index, payload);
     }

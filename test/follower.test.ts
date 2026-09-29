@@ -218,12 +218,16 @@ describe.each([404, 500] as const)('with Bee answering %i for a slot not there',
   });
 
   describe('a slot served with a chunk that fails its own check', () => {
-    it('is stepped past at once, kept for later, and never backs the reader off', async () => {
+    it('is stepped past through the probe, like a refused slot, kept for later, and the chat stays live', async () => {
       const gateway = feedOf(4);
       gateway.corrupt.add(1);
       const { follower, seqs, statuses } = run(gateway);
       follower.start(0);
       await vi.advanceTimersByTimeAsync(0);
+      expect(seqs()).toEqual([0]);
+      expect(follower.nextIndex).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(POLL_MS * 3);
       expect(seqs()).toEqual([0, 2, 3]);
       expect(follower.missedIndices).toEqual([1]);
       expect(statuses).toEqual([FeedStatus.LIVE]);
@@ -231,6 +235,25 @@ describe.each([404, 500] as const)('with Bee answering %i for a slot not there',
       gateway.corrupt.delete(1);
       await vi.advanceTimersByTimeAsync(POLL_MS);
       expect(seqs()).toEqual([0, 2, 3, 1]);
+    });
+  });
+
+  describe('a gateway that answers every slot with a page that is not a chunk', () => {
+    it('neither runs away nor climbs past the head, and says reconnecting after a few polls', async () => {
+      const gateway = feedOf(4);
+      gateway.servesPages = true;
+      const { follower, statuses } = run(gateway);
+      follower.start(0);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(gateway.slotReads.length).toBeLessThan(40);
+      expect(follower.nextIndex).toBe(0);
+      expect(follower.missedIndices).toEqual([]);
+      expect(statuses.at(-1)).toBe(FeedStatus.RECONNECTING);
+
+      gateway.servesPages = false;
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(follower.nextIndex).toBe(4);
+      expect(statuses.at(-1)).toBe(FeedStatus.LIVE);
     });
   });
 
