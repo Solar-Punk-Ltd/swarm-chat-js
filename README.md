@@ -64,20 +64,20 @@ await chat.stop();
 
 ## Settings
 
-| Setting                  | Meaning                                                                                        |
-| ------------------------ | ---------------------------------------------------------------------------------------------- |
-| `user.privateKey`        | Signs every message. A viewer that only reads may pass any key.                                |
-| `user.nickname`          | The name on every message, 1 to 20 characters. Nothing can be sent without one.                |
-| `infra.beeUrl`           | The Bee node or gateway every read and write goes through.                                     |
-| `infra.stamp`            | The batch the inbox writes are stamped with. Left out for a gateway that stamps writes itself. |
-| `infra.gsocTopic`        | The inbox's identifier string, the same for every chat.                                        |
-| `infra.gsocResourceId`   | The mined key every sender signs inbox writes with. The server's operator mines it.            |
-| `infra.chatTopic`        | The chat's topic, which every message carries and the feed is named by.                        |
-| `infra.chatAddress`      | The server's feed owner address.                                                               |
-| `infra.pollingInterval`  | How often a reader polls at the live edge, 1,000 ms by default.                                |
-| `infra.socReadTimeout`   | One feed slot read, 5,000 ms by default.                                                       |
-| `infra.feedReadTimeout`  | The head lookup and a history file download, 12,000 ms by default.                             |
-| `infra.gsocWriteTimeout` | One inbox write, 10,000 ms by default.                                                         |
+| Setting                  | Meaning                                                                                                                            |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `user.privateKey`        | Signs every message. A viewer that only reads may pass any key.                                                                    |
+| `user.nickname`          | The name on every message, 1 to 20 characters. Nothing can be sent without one.                                                    |
+| `infra.beeUrl`           | The Bee node or gateway every read and write goes through.                                                                         |
+| `infra.stamp`            | The batch the inbox writes are stamped with. Left out for a gateway that stamps writes itself.                                     |
+| `infra.gsocTopic`        | The inbox's identifier string, the same for every chat.                                                                            |
+| `infra.gsocResourceId`   | The mined key every sender signs inbox writes with. The server's operator mines it.                                                |
+| `infra.chatTopic`        | The chat's topic, which every message carries and the feed is named by.                                                            |
+| `infra.chatAddress`      | The server's feed owner address.                                                                                                   |
+| `infra.pollingInterval`  | How often a reader polls at the live edge, 1,000 ms by default.                                                                    |
+| `infra.socReadTimeout`   | One feed slot read, 5,000 ms by default.                                                                                           |
+| `infra.feedReadTimeout`  | The head lookup and a history file download, 15,000 ms by default. A head lookup that runs out of time reads the chat from slot 0. |
+| `infra.gsocWriteTimeout` | One inbox write, 10,000 ms by default.                                                                                             |
 
 ## Methods
 
