@@ -1,0 +1,86 @@
+import { createChatMessage, MessageType, type ChatMessage, type FeedEntry, type HistoryLink } from '../src/message';
+import { UnreadableSlotError, type ChatSource } from '../src/swarm';
+
+// Test only.
+export const TEST_KEY = '11'.repeat(32);
+export const TOPIC = 'chat-test';
+
+const encoder = new TextEncoder();
+
+export function bytes(value: unknown): Uint8Array {
+  return encoder.encode(JSON.stringify(value));
+}
+
+export function testMessage(text: string, topic = TOPIC): ChatMessage {
+  return createChatMessage(TEST_KEY, { topic, type: MessageType.TEXT, text, name: 'tester', ts: 1759140000000 })
+    .message;
+}
+
+export function entryAt(seq: number, history: HistoryLink | null = null, text = `message ${seq}`): FeedEntry {
+  return { v: 7, seq, at: 1759140000000 + seq, msg: testMessage(text), history };
+}
+
+/**
+ * A chat feed and its history files in memory, served the way Bee answers: a slot not written, or one no peer gave in
+ * time, is null (Bee's 404), and `down` makes every read reject as a gateway that does not answer.
+ */
+export class FakeGateway implements ChatSource {
+  readonly slots = new Map<number, Uint8Array>();
+  readonly files = new Map<string, Uint8Array>();
+  /** Slots that exist but are refused, as a slot no peer gives out. */
+  readonly hidden = new Set<number>();
+  /** Slots served with a chunk that fails its own check. */
+  readonly corrupt = new Set<number>();
+  /** What the head lookup answers, when it should not be the newest slot. */
+  head: { index: number } | 'not-found' | 'fail' | null = null;
+  down = false;
+  readonly slotReads: number[] = [];
+  headReads = 0;
+  fileReads: string[] = [];
+
+  write(entry: FeedEntry): this {
+    this.slots.set(entry.seq, bytes(entry));
+    return this;
+  }
+
+  writeRaw(index: number, payload: Uint8Array): this {
+    this.slots.set(index, payload);
+    return this;
+  }
+
+  async readSlot(index: number): Promise<Uint8Array | null> {
+    this.slotReads.push(index);
+    if (this.down) {
+      throw new Error('gateway down');
+    }
+    if (this.hidden.has(index)) {
+      return null;
+    }
+    if (this.corrupt.has(index)) {
+      throw new UnreadableSlotError(index, { cause: new Error('invalid signature') });
+    }
+    return this.slots.get(index) ?? null;
+  }
+
+  async readHead(): Promise<{ index: number; payload: Uint8Array } | null> {
+    this.headReads++;
+    if (this.down || this.head === 'fail') {
+      throw new Error('gateway down');
+    }
+    if (this.head === 'not-found') {
+      return null;
+    }
+    const index = this.head?.index ?? Math.max(-1, ...this.slots.keys());
+    const payload = this.slots.get(index);
+    return payload ? { index, payload } : null;
+  }
+
+  async readFile(reference: string): Promise<Uint8Array> {
+    this.fileReads.push(reference);
+    const file = this.files.get(reference);
+    if (this.down || !file) {
+      throw new Error(`cannot read ${reference}`);
+    }
+    return file;
+  }
+}
