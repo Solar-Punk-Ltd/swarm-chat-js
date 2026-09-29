@@ -111,6 +111,18 @@ describe('ChatHistory.open', () => {
     expect((await history.loadOlder()).map((row) => row.seq)).toEqual([3, 4, 5]);
   });
 
+  it.each<[string, (gateway: FakeGateway) => void]>([
+    ['not the one its link names', (gateway) => gateway.files.set(FILE_B, bytes(file(3, 4, null)))],
+    ['not a history file', (gateway) => gateway.files.set(FILE_B, bytes({ hello: 'world' }))],
+  ])('reads from slot 0 when the newest file is %s, and reports it', async (_case, damage) => {
+    const gateway = twoFileChat();
+    damage(gateway);
+    const { history, errors } = open(gateway);
+    expect(await history.open()).toEqual({ startAt: 0, rows: [] });
+    expect(errors).toHaveLength(1);
+    expect(history.hasOlder()).toBe(false);
+  });
+
   it('leaves out and reports the bad rows of a file', async () => {
     const gateway = twoFileChat();
     const damaged = file(3, 5, { ref: FILE_A, toSeq: 2 });
