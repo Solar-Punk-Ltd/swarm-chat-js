@@ -11,6 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ### Build & Development
+
 ```bash
 pnpm build              # Build library (ES, CJS, UMD formats) - outputs to dist/
 pnpm lint               # Run ESLint
@@ -18,6 +19,7 @@ pnpm lint:fix           # Auto-fix linting issues
 ```
 
 ### Mining Helper Script
+
 ```bash
 pnpm run mine -- <bee-address> <topic-name>   # Mine GSOC resource ID for a topic
 ```
@@ -62,15 +64,16 @@ const settings: ChatSettings = {
   // ... other settings
   infra: {
     // ... other infra settings
-    enableFallbackPolling: true,           // Enable backup polling
-    fallbackPollingInterval: 4000,         // Poll every 4s (default: 4000ms)
-  }
+    enableFallbackPolling: true, // Enable backup polling
+    fallbackPollingInterval: 4000, // Poll every 4s (default: 4000ms)
+  },
 };
 
 const chat = new SwarmChat(settings, customWakuTransport);
 ```
 
 **How it works:**
+
 - Both transports run simultaneously
 - Primary transport (e.g., Waku) delivers messages in real-time when working
 - Fallback polling runs at slower interval (4s) as backup
@@ -84,17 +87,20 @@ const chat = new SwarmChat(settings, customWakuTransport);
 The library supports two distinct modes for uploading data to Swarm, controlled by the `enveloped` setting:
 
 **Owned Mode (`enveloped: false`):**
+
 - Uses the Bee node's postage stamp for uploads
 - Simpler integration - the Bee node handles stamping
 - Requires `stamp` parameter to be a valid postage batch on the connected Bee node
 
 **Enveloped Mode (`enveloped: true`):**
+
 - Client-side stamping using user's private key
 - Stamp can be from any source (not tied to specific Bee node)
 - Enables use of gateway nodes without local stamps
 - Implemented via `Stamper.fromBlank()` pattern
 
 Key implementation locations:
+
 - `SwarmChatUtils.writeOwnFeedDataByIndex()` - src/lib/utils.ts:34
 - `SwarmChatUtils.uploadObjectToBee()` - src/lib/utils.ts:103
 - `SwarmChatUtils.sendMessageToGsoc()` - src/lib/utils.ts:191
@@ -102,12 +108,14 @@ Key implementation locations:
 ### Message State Management
 
 **History System** (`src/lib/history.ts`):
+
 - Manages message state references (`messageStateRefs`) from aggregator
 - Implements retry logic with exponential backoff (3 max retries)
 - Bans persistently failing references to prevent infinite loops
 - Caches processed refs to avoid duplicate processing
 
 **Feed Indexing:**
+
 - User feeds use sequential indices (0, 1, 2...)
 - Chat feed index tracks latest aggregated message
 - `ownIndex` in `ChatSettingsUser` tracks user's current position
@@ -137,6 +145,7 @@ Three message types (`src/interfaces/message.ts`):
 - **`MessageType.REACTION`**: Emoji reactions to messages via `targetMessageId`
 
 All messages include:
+
 - Cryptographic signature (signed with user's private key)
 - Timestamp
 - Sequential index in user's feed
@@ -145,24 +154,29 @@ All messages include:
 ## Key Technical Details
 
 ### GSOC (Generic Swarm Offchain Communication)
+
 - Pub/sub layer for message notifications
 - Requires mined resource ID matching specific difficulty
 - Used for broadcasting message updates to aggregator
 - Topic and resource ID must be pre-mined using mine script
 
 ### Feed Structure
+
 - **User Feed Topic**: `{chatTopic}_EthercastChat_{userAddress}` (generated in `src/lib/utils.ts:18`)
 - **Chat Feed**: Owned by aggregator at `chatAddress` with `chatTopic`
 - Feeds use SOC (Single Owner Chunks) for updates
 
 ### Validation Layer
+
 Located in `src/utils/validation.ts`:
+
 - Schema validation using Zod
 - Validates GSOC messages (`StatefulMessage` format)
 - Validates user messages with additional properties
 - Ensures message state integrity
 
 ### Error Handling
+
 - Centralized via `ErrorHandler` singleton (`src/utils/error.ts`)
 - Logger singleton for consistent logging (`src/utils/logger.ts`)
 - Special handling for "not found" errors (404s indicate feed doesn't exist yet)
@@ -170,12 +184,14 @@ Located in `src/utils/validation.ts`:
 ## Build System
 
 **Vite Configuration** (`vite.config.js`):
+
 - Builds three output formats: ES modules, CJS, and UMD
 - Generates TypeScript declarations via `vite-plugin-dts`
 - Node polyfills for browser compatibility
 - Externalizes `@ethersphere/bee-js` as peer dependency
 
 **Entry Point**: `src/index.ts` exports public API:
+
 - `SwarmChat` class (main interface)
 - `EVENTS` constants
 - Type exports: `MessageData`, `ChatSettings`, `MessageType`, etc.
@@ -213,6 +229,7 @@ src/
 ### Adding New Message Properties
 
 To extend messages with custom data:
+
 1. Add to `AdditionalMessageProperties` in message data
 2. Validation happens via `validateMessageWithAdditionalProperties()`
 3. No schema changes needed - uses flexible object type
@@ -220,6 +237,7 @@ To extend messages with custom data:
 ### Implementing Custom Transport
 
 Example pattern from codebase:
+
 ```typescript
 class CustomTransport implements MessageTransport {
   private callback: ((msg: MessageData) => void) | null = null;
@@ -246,8 +264,8 @@ const settingsWithFallback: ChatSettings = {
   infra: {
     ...settings.infra,
     enableFallbackPolling: true,
-    fallbackPollingInterval: 4000,  // 4s backup polling
-  }
+    fallbackPollingInterval: 4000, // 4s backup polling
+  },
 };
 const chat = new SwarmChat(settingsWithFallback, new CustomTransport());
 ```
@@ -257,6 +275,7 @@ const chat = new SwarmChat(settingsWithFallback, new CustomTransport());
 ### Working with Feeds
 
 The library uses bee-js feed readers/writers:
+
 - **Read**: `bee.makeFeedReader(topic, owner).downloadPayload()`
 - **Write**: `bee.makeFeedWriter(topic, signer).uploadPayload(stamp, data, { index })`
 
@@ -265,11 +284,13 @@ See `SwarmChatUtils` for reference implementations.
 ## Dependencies
 
 **Core:**
+
 - `@ethersphere/bee-js` ^9.0.3 - Swarm network client
 - `cafe-utility` ^27.12.1 - Merkle trees, binary utilities
 - `zod` ^3.24.1 - Runtime validation
 
 **Development:**
+
 - TypeScript 5.2.2
 - Vite 5.0.8 - Build tool
 - ESLint with TypeScript parser
