@@ -38,8 +38,10 @@ The package has two entries: the root, and `./message`, which the server uses an
   fixed vectors in `test/message.test.ts` must keep passing unchanged. A change to them is a change to the server too.
 - **Sign and verify the raw bytes.** bee-js's `PrivateKey.sign` and `Signature.recoverPublicKey` hash and prefix
   inside, although the second names its parameter `digest`. Hashing first is how 6.2.8 came to prefix twice.
-- **A 404 is never the end of the chat.** On a slot it means the chunk was not found in time, which at the live edge is
-  ordinary. On the head lookup it means an empty feed or a failed lookup, so the reader starts at slot 0.
+- **A 404 or a 500 is never the end of the chat.** On a slot it means the chunk is not there or was not found in time,
+  which at the live edge is ordinary. Bee 2.8 answers 404 and a Bee 2.6 cluster answers 500 for a slot never written.
+  On the head lookup it means an empty feed or a failed lookup, so the reader starts at slot 0. A timeout, an abort
+  and a 502, 503 or 504 are the gateway failing.
 - **One bad slot never stops the reader.** A slot that fails its checks is skipped and counted. A served chunk that
   fails its own check is an `UnreadableSlotError`, kept for later, and never treated as the gateway failing.
 - **Never send an inbox write deferred or tagged**, so each write is pushed at once and messages never collide.

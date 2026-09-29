@@ -1,5 +1,7 @@
 import { createChatMessage, MessageType, type ChatMessage, type FeedEntry, type HistoryLink } from '../src/message';
-import { UnreadableSlotError, type ChatSource } from '../src/swarm';
+import { BeeResponseError } from '@ethersphere/bee-js';
+
+import { readSlotThrough, type ChatSource } from '../src/swarm';
 
 // Test only.
 export const TEST_KEY = '11'.repeat(32);
@@ -48,18 +50,29 @@ export class FakeGateway implements ChatSource {
     return this;
   }
 
-  async readSlot(index: number): Promise<Uint8Array | null> {
+  /**
+   * What Bee answers for a slot that is not there. Bee 2.8 answers 404 on `GET /chunks`, and a Bee 2.6 cluster
+   * answers 500, measured on the bed, so the follower's tests run under both.
+   */
+  static absentStatus: 404 | 500 = 404;
+
+  /** Answers the way bee-js does, and sorts the answer through the same function the Bee reader uses. */
+  readSlot(index: number): Promise<Uint8Array | null> {
     this.slotReads.push(index);
-    if (this.down) {
-      throw new Error('gateway down');
-    }
-    if (this.hidden.has(index)) {
-      return null;
-    }
-    if (this.corrupt.has(index)) {
-      throw new UnreadableSlotError(index, { cause: new Error('invalid signature') });
-    }
-    return this.slots.get(index) ?? null;
+    return readSlotThrough(index, async () => {
+      if (this.down) {
+        throw new BeeResponseError('GET', `/chunks/${index}`, 'fetch failed');
+      }
+      if (this.corrupt.has(index)) {
+        throw new Error('invalid signature');
+      }
+      const payload = this.hidden.has(index) ? undefined : this.slots.get(index);
+      if (!payload) {
+        const status = FakeGateway.absentStatus;
+        throw new BeeResponseError('GET', `/chunks/${index}`, 'Not Found', undefined, status, String(status));
+      }
+      return payload;
+    });
   }
 
   async readHead(): Promise<{ index: number; payload: Uint8Array } | null> {
