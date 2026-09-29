@@ -53,6 +53,11 @@ export class ChatHistory {
       return { startAt: 0, rows: [] };
     }
     const rows = await this.readFile(link);
+    if (rows === 'refused') {
+      // A file that is not what its link names hides everything before it and every file behind its prev, so the
+      // chat is read from slot 0 instead, the walk a failed head lookup takes.
+      return { startAt: 0, rows: [] };
+    }
     return { startAt: link.toSeq + 1, rows: rows ?? [] };
   }
 
@@ -131,13 +136,13 @@ export class ChatHistory {
     return null;
   }
 
-  /** The rows of the file `link` names, or null when it could not be read now. */
-  private async readFile(link: HistoryLink): Promise<HistoryRow[] | null> {
+  /** The rows of the file `link` names, null when it could not be read now, or 'refused' when it fails its checks. */
+  private async readFile(link: HistoryLink): Promise<HistoryRow[] | null | 'refused'> {
     try {
       const check = parseHistoryFile(await this.source.readFile(link.ref), this.topic, link);
       if (!check.ok) {
         this.events.error(new Error(`history file ${link.ref} refused (${check.reason}): ${check.detail}`));
-        return null;
+        return 'refused';
       }
       this.report(check.value.skipped);
       this.older = check.value.prev;
