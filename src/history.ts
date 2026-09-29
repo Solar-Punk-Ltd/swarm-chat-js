@@ -1,0 +1,140 @@
+import { parseFeedEntry, parseHistoryFile, type HistoryLink, type HistoryRow } from './message/index.js';
+import { UnreadableSlotError, type ChatSource } from './swarm.js';
+
+/** Where a chat's reading starts, and what it shows before the first poll. */
+export interface Opening {
+  /** The first feed index the follower reads. */
+  startAt: number;
+  /** Messages of the newest history file, oldest first. */
+  rows: HistoryRow[];
+}
+
+export interface HistoryEvents {
+  /** Rows of a history file left out because they failed their checks. */
+  skipped(count: number): void;
+  /** A history file that could not be read. Opening goes on without it, and loading older messages offers it again. */
+  error(error: unknown): void;
+}
+
+/**
+ * Slots read back from Bee's head when the head entry itself cannot be read, looking for one that names the newest
+ * history file. Past this the chat is opened from its first slot, which a chat of an event's size affords.
+ */
+const HEAD_SEARCH_DEPTH = 16;
+
+/**
+ * Opens a chat from the newest history file and the feed entries after it, and hands out older files one click at a
+ * time. Opening asks Bee's head lookup once. A 404 there is not taken on its own, because Bee answers 404 for a
+ * lookup that failed as well as for a feed with no update, so the chat is then read from slot 0, which is missing only
+ * when the chat is empty.
+ */
+export class ChatHistory {
+  private older: HistoryLink | null = null;
+  private loading: Promise<HistoryRow[]> | null = null;
+
+  constructor(
+    private readonly source: ChatSource,
+    private readonly topic: string,
+    private readonly events: HistoryEvents,
+  ) {}
+
+  /** Rejects when the gateway fails before anything was learned, so the caller can try again. */
+  async open(): Promise<Opening> {
+    this.older = null;
+    const head = await this.source.readHead();
+    if (head === null) {
+      // Empty or a failed lookup, the walk starts at slot 0 either way, and its first poll reads slot 0, which is
+      // the confirmation the contract asks for. An empty chat's first message lands there.
+      return { startAt: 0, rows: [] };
+    }
+
+    const link = await this.newestLink(head.index, head.payload);
+    if (link === null) {
+      return { startAt: 0, rows: [] };
+    }
+    const rows = await this.readFile(link);
+    return { startAt: link.toSeq + 1, rows: rows ?? [] };
+  }
+
+  /** Whether a click on "load older" has something to load. */
+  hasOlder(): boolean {
+    return this.older !== null;
+  }
+
+  /** The file before the oldest one shown, oldest first. Rejects when it cannot be read, and offers it again. */
+  loadOlder(): Promise<HistoryRow[]> {
+    this.loading ??= this.loadOlderOnce().finally(() => {
+      this.loading = null;
+    });
+    return this.loading;
+  }
+
+  private async loadOlderOnce(): Promise<HistoryRow[]> {
+    const link = this.older;
+    if (link === null) {
+      return [];
+    }
+    const bytes = await this.source.readFile(link.ref);
+    const check = parseHistoryFile(bytes, this.topic, link);
+    if (!check.ok) {
+      // A file that is not what its link names never will be, so it is not offered again.
+      this.older = null;
+      throw new Error(`history file ${link.ref} refused (${check.reason}): ${check.detail}`);
+    }
+    this.report(check.value.skipped);
+    this.older = check.value.prev;
+    return check.value.rows;
+  }
+
+  /**
+   * The history link of the newest readable entry at or below the head. Null means no history file is named, so the
+   * chat is read from its first slot.
+   */
+  private async newestLink(headIndex: number, headPayload: Uint8Array): Promise<HistoryLink | null> {
+    const head = parseFeedEntry(headPayload, headIndex, this.topic);
+    if (head.ok) {
+      return head.value.history;
+    }
+    for (let index = headIndex - 1; index >= Math.max(0, headIndex - HEAD_SEARCH_DEPTH); index--) {
+      const payload = await this.source.readSlot(index).catch((error: unknown) => {
+        if (error instanceof UnreadableSlotError) {
+          return null;
+        }
+        throw error;
+      });
+      if (payload === null) {
+        continue;
+      }
+      const entry = parseFeedEntry(payload, index, this.topic);
+      if (entry.ok) {
+        return entry.value.history;
+      }
+    }
+    return null;
+  }
+
+  /** The rows of the file `link` names, or null when it could not be read now. */
+  private async readFile(link: HistoryLink): Promise<HistoryRow[] | null> {
+    try {
+      const check = parseHistoryFile(await this.source.readFile(link.ref), this.topic, link);
+      if (!check.ok) {
+        this.events.error(new Error(`history file ${link.ref} refused (${check.reason}): ${check.detail}`));
+        return null;
+      }
+      this.report(check.value.skipped);
+      this.older = check.value.prev;
+      return check.value.rows;
+    } catch (error) {
+      // The live chat does not wait on its history: the file is offered again as "load older".
+      this.events.error(error);
+      this.older = link;
+      return null;
+    }
+  }
+
+  private report(skipped: number): void {
+    if (skipped > 0) {
+      this.events.skipped(skipped);
+    }
+  }
+}
