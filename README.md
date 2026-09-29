@@ -109,6 +109,12 @@ await chat.stop();
 | `ERROR`                     | `unknown`        | A failure the chat recovers from on its own.                                                                                    |
 | `CRITICAL_ERROR`            | `unknown`        | Opening failed three times in a row. It keeps trying.                                                                           |
 
+**The order of a sent message's events.** `MESSAGE_REQUEST_INITIATED` comes first, then `MESSAGE_REQUEST_UPLOADED`
+once a write is accepted, then `MESSAGE_RECEIVED` when the feed shows it. The resends and the give-up wait while the
+status is not `live`, so a message is not failed only because this viewer could not see the feed. A message can still
+be failed and then shown, for example when the server published it after the last resend, so `MESSAGE_RECEIVED` may
+follow `MESSAGE_REQUEST_ERROR` for the same `id`, and a viewer settles on the received one.
+
 A `MessageData` has `id`, `type`, `message` (the text or emoji), `username`, `address`, `timestamp` (the server's
 receive time, or the sender's clock while pending), `targetMessageId` for a reply or reaction, `chatTopic`,
 `signature`, `index` (the feed index, -1 while pending) and `sentAt` (the sender's clock, which nothing checks).
