@@ -96,6 +96,8 @@ export class FeedFollower {
     this.next = fromIndex;
     this.unservedPolls = 0;
     this.gatewayFailures = 0;
+    this.missed.clear();
+    this.status = null;
     this.running = true;
     this.schedule(0);
   }
