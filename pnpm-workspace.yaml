@@ -13,3 +13,7 @@ minimumReleaseAgeStrict: true
 allowBuilds:
   bufferutil: false
   utf-8-validate: false
+
+# Peers are installed only when a package here names them. Otherwise pnpm installs every optional peer of vite,
+# sass among them, which this library never runs and whose tree carries advisories.
+autoInstallPeers: false
