@@ -102,7 +102,7 @@ export class Sender {
       const closed = this.reactions.get(key);
       this.reactions.delete(key);
       if (closed && closed.taps % 2 === 1 && !this.stopped) {
-        this.send({ topic, type: MessageType.Reaction, target, text: emoji });
+        this.send({ topic, type: MessageType.REACTION, target, text: emoji });
       }
     }, this.settings.reactionWindowMs);
     this.reactions.set(key, { taps: 1, timer });

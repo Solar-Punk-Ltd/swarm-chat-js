@@ -58,7 +58,7 @@ afterEach(() => {
 describe('Sender.send', () => {
   it('writes the signed message once, straight away, and reports it pending then written', async () => {
     const { sender, writes, events } = harness();
-    const message = sender.send({ topic: TOPIC, type: MessageType.Text, text: 'hello' });
+    const message = sender.send({ topic: TOPIC, type: MessageType.TEXT, text: 'hello' });
 
     expect(events.pending).toEqual([message]);
     expect(writes).toHaveLength(1);
@@ -71,14 +71,14 @@ describe('Sender.send', () => {
 
   it('refuses a message the server would refuse, writing nothing', () => {
     const { sender, writes, events } = harness();
-    expect(() => sender.send({ topic: TOPIC, type: MessageType.Text, text: '' })).toThrow(ChatMessageError);
+    expect(() => sender.send({ topic: TOPIC, type: MessageType.TEXT, text: '' })).toThrow(ChatMessageError);
     expect(writes).toHaveLength(0);
     expect(events.pending).toHaveLength(0);
   });
 
   it('resends the identical bytes every ten seconds until the feed shows it', async () => {
     const { sender, writes, events } = harness();
-    const message = sender.send({ topic: TOPIC, type: MessageType.Text, text: 'hello' });
+    const message = sender.send({ topic: TOPIC, type: MessageType.TEXT, text: 'hello' });
 
     await vi.advanceTimersByTimeAsync(9_999);
     expect(writes).toHaveLength(1);
@@ -96,7 +96,7 @@ describe('Sender.send', () => {
 
   it('fails a message after five resends, ten seconds after the last', async () => {
     const { sender, writes, events } = harness();
-    const message = sender.send({ topic: TOPIC, type: MessageType.Text, text: 'hello' });
+    const message = sender.send({ topic: TOPIC, type: MessageType.TEXT, text: 'hello' });
 
     await vi.advanceTimersByTimeAsync(50_000);
     expect(writes).toHaveLength(6);
@@ -109,7 +109,7 @@ describe('Sender.send', () => {
 
   it('keeps resending through write errors, and fails with the last error', async () => {
     const { sender, writes, events } = harness({ fail: true });
-    const message = sender.send({ topic: TOPIC, type: MessageType.Text, text: 'hello' });
+    const message = sender.send({ topic: TOPIC, type: MessageType.TEXT, text: 'hello' });
 
     await vi.advanceTimersByTimeAsync(60_000);
     expect(writes).toHaveLength(6);
@@ -119,7 +119,7 @@ describe('Sender.send', () => {
 
   it('waits for a slow write to settle before counting ten seconds', async () => {
     const { sender, writes, answer } = harness({ hold: true });
-    sender.send({ topic: TOPIC, type: MessageType.Text, text: 'hello' });
+    sender.send({ topic: TOPIC, type: MessageType.TEXT, text: 'hello' });
 
     await vi.advanceTimersByTimeAsync(30_000);
     expect(writes).toHaveLength(1);
@@ -130,7 +130,7 @@ describe('Sender.send', () => {
 
   it('reports written once, however many writes succeed', async () => {
     const { sender, events } = harness();
-    sender.send({ topic: TOPIC, type: MessageType.Text, text: 'hello' });
+    sender.send({ topic: TOPIC, type: MessageType.TEXT, text: 'hello' });
     await vi.advanceTimersByTimeAsync(30_000);
     expect(events.written).toHaveLength(1);
   });
@@ -139,7 +139,7 @@ describe('Sender.send', () => {
 describe('Sender.confirm', () => {
   it('ignores a message with this id from another address', async () => {
     const { sender, events } = harness();
-    const message = sender.send({ topic: TOPIC, type: MessageType.Text, text: 'hello' });
+    const message = sender.send({ topic: TOPIC, type: MessageType.TEXT, text: 'hello' });
     sender.confirm({ ...message, addr: '22'.repeat(20) });
     expect(events.confirmed).toHaveLength(0);
     expect(sender.isPending(message.id)).toBe(true);
@@ -147,14 +147,14 @@ describe('Sender.confirm', () => {
 
   it('ignores a message it never sent', () => {
     const { sender, events } = harness();
-    const other = sender.send({ topic: TOPIC, type: MessageType.Text, text: 'one' });
+    const other = sender.send({ topic: TOPIC, type: MessageType.TEXT, text: 'one' });
     sender.confirm({ ...other, id: 'f'.repeat(32) });
     expect(events.confirmed).toHaveLength(0);
   });
 
   it('still confirms a message that has already failed', async () => {
     const { sender, events } = harness();
-    const message = sender.send({ topic: TOPIC, type: MessageType.Text, text: 'hello' });
+    const message = sender.send({ topic: TOPIC, type: MessageType.TEXT, text: 'hello' });
     await vi.advanceTimersByTimeAsync(60_000);
     sender.confirm(message);
     expect(events.confirmed).toEqual([message]);
@@ -164,7 +164,7 @@ describe('Sender.confirm', () => {
 describe('Sender.retry', () => {
   it('writes a failed message again with the same bytes and starts its resends over', async () => {
     const { sender, writes, events } = harness();
-    const message = sender.send({ topic: TOPIC, type: MessageType.Text, text: 'hello' });
+    const message = sender.send({ topic: TOPIC, type: MessageType.TEXT, text: 'hello' });
     await vi.advanceTimersByTimeAsync(60_000);
     expect(events.failed).toHaveLength(1);
 
@@ -223,7 +223,7 @@ describe('Sender.react', () => {
 describe('Sender.stop', () => {
   it('cancels every resend and every open reaction window', async () => {
     const { sender, writes, events } = harness();
-    sender.send({ topic: TOPIC, type: MessageType.Text, text: 'hello' });
+    sender.send({ topic: TOPIC, type: MessageType.TEXT, text: 'hello' });
     sender.react(TOPIC, 'a1'.repeat(16), '👍');
     sender.stop();
     await vi.advanceTimersByTimeAsync(120_000);
@@ -234,7 +234,7 @@ describe('Sender.stop', () => {
 
   it('schedules nothing when a write settles after the stop', async () => {
     const { sender, writes, answer } = harness({ hold: true });
-    sender.send({ topic: TOPIC, type: MessageType.Text, text: 'hello' });
+    sender.send({ topic: TOPIC, type: MessageType.TEXT, text: 'hello' });
     sender.stop();
     answer('ok');
     await vi.advanceTimersByTimeAsync(120_000);
