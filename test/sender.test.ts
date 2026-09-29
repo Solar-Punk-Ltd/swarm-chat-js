@@ -2,7 +2,7 @@ import { PrivateKey } from '@ethersphere/bee-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ChatMessageError, MessageType, parseChatMessage, type ChatMessage } from '../src/message';
-import { Sender, type GsocWrite, type SenderEvents } from '../src/sender';
+import { DEFAULT_SENDER_SETTINGS, Sender, type GsocWrite, type SenderEvents } from '../src/sender';
 
 // Test only.
 const TEST_KEY = new PrivateKey('11'.repeat(32));
@@ -16,7 +16,7 @@ interface Harness {
 }
 
 /** A sender whose writes resolve at once, unless `hold` is set, when each waits for `answer`. */
-function harness(options: { hold?: boolean; fail?: boolean } = {}): Harness {
+function harness(options: { hold?: boolean; fail?: boolean; isLive?: () => boolean } = {}): Harness {
   const writes: Uint8Array[] = [];
   const waiting: { resolve: () => void; reject: (error: Error) => void }[] = [];
   const write: GsocWrite = (payload) => {
@@ -30,12 +30,18 @@ function harness(options: { hold?: boolean; fail?: boolean } = {}): Harness {
     return Promise.resolve();
   };
   const events: Harness['events'] = { pending: [], written: [], failed: [], confirmed: [] };
-  const sender = new Sender(TEST_KEY, 'tester', write, {
-    pending: (message) => events.pending.push(message),
-    written: (message) => events.written.push(message),
-    failed: (message) => events.failed.push(message),
-    confirmed: (message) => events.confirmed.push(message),
-  });
+  const sender = new Sender(
+    TEST_KEY,
+    'tester',
+    write,
+    {
+      pending: (message) => events.pending.push(message),
+      written: (message) => events.written.push(message),
+      failed: (message) => events.failed.push(message),
+      confirmed: (message) => events.confirmed.push(message),
+    },
+    { ...DEFAULT_SENDER_SETTINGS, ...(options.isLive ? { isLive: options.isLive } : {}) },
+  );
   const answer = (outcome: 'ok' | Error) => {
     const next = waiting.shift();
     if (outcome === 'ok') {
@@ -133,6 +139,24 @@ describe('Sender.send', () => {
     sender.send({ topic: TOPIC, type: MessageType.TEXT, text: 'hello' });
     await vi.advanceTimersByTimeAsync(30_000);
     expect(events.written).toHaveLength(1);
+  });
+});
+
+describe('while the reader is not live', () => {
+  it('holds the resends and the give-up, and resumes them once it is', async () => {
+    let live = false;
+    const { sender, writes, events } = harness({ isLive: () => live });
+    const message = sender.send({ topic: TOPIC, type: MessageType.TEXT, text: 'hello' });
+
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(writes).toHaveLength(1);
+    expect(events.failed).toHaveLength(0);
+
+    live = true;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(writes).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(50_000);
+    expect(events.failed).toEqual([message]);
   });
 });
 

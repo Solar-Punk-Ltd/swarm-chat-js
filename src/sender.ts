@@ -12,12 +12,18 @@ export interface SenderSettings {
   maxResends: number;
   /** Taps on one reaction inside this window become one net toggle. */
   reactionWindowMs: number;
+  /**
+   * Whether the reader can see the chat feed now. While it cannot, the resends and the give-up wait, since a message
+   * the server published would be failed only because this viewer could not see it.
+   */
+  isLive: () => boolean;
 }
 
 export const DEFAULT_SENDER_SETTINGS: SenderSettings = {
   resendAfterMs: 10_000,
   maxResends: 5,
   reactionWindowMs: 1_000,
+  isLive: () => true,
 };
 
 export interface SenderEvents {
@@ -181,6 +187,10 @@ export class Sender {
     }
     outgoing.timer = setTimeout(() => {
       outgoing.timer = null;
+      if (!this.settings.isLive()) {
+        this.scheduleNext(outgoing);
+        return;
+      }
       if (outgoing.writes > this.settings.maxResends) {
         this.events.failed(outgoing.message, outgoing.lastError ?? new Error('never seen on the chat feed'));
         return;

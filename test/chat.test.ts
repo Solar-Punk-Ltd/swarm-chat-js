@@ -304,6 +304,23 @@ describe('sendMessage', () => {
     expect(events[EVENTS.MESSAGE_RECEIVED]).toEqual([expect.objectContaining({ id: pending!.id })]);
   });
 
+  it('never fails a message the server published while this reader could not see the feed', async () => {
+    const { chat, gateway, events } = harness();
+    await chat.start();
+    await vi.advanceTimersByTimeAsync(10);
+    gateway.down = true;
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+    const pending = await chat.sendMessage('hello', MessageType.TEXT);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(events[EVENTS.MESSAGE_REQUEST_ERROR]).toHaveLength(0);
+
+    gateway.down = false;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(events[EVENTS.MESSAGE_RECEIVED]).toEqual([expect.objectContaining({ id: pending!.id })]);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(events[EVENTS.MESSAGE_REQUEST_ERROR]).toHaveLength(0);
+  });
+
   it('sends nothing to a feed of its own, only the one inbox write per attempt', async () => {
     const { chat, server, gateway } = harness();
     await chat.start();

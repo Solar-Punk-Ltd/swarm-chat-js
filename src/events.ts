@@ -12,7 +12,10 @@ export const EVENTS = {
   MESSAGE_REQUEST_INITIATED: 'messageRequestInitiated',
   /** The first write of a message that the node accepted. It is still pending until MESSAGE_RECEIVED. */
   MESSAGE_REQUEST_UPLOADED: 'messageRequestUploaded',
-  /** A message whose resends ran out unseen. `retrySendMessage` sends it again. */
+  /**
+   * A message whose resends ran out unseen while the reader was live. `retrySendMessage` sends it again. A
+   * MESSAGE_RECEIVED for the same id may still follow, if the server published it late.
+   */
   MESSAGE_REQUEST_ERROR: 'messageRequestError',
   /** Opening has failed three times in a row. It keeps trying, and a later LOADING_INIT `false` means it got through. */
   CRITICAL_ERROR: 'criticalError',

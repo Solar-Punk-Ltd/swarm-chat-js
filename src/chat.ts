@@ -89,7 +89,11 @@ export class SwarmChat {
     this.topic = infra.chatTopic;
     this.nickname = user.nickname;
     this.openRetryMs = parts.openRetryMs ?? OPEN_RETRY_MS;
-    this.senderSettings = { ...DEFAULT_SENDER_SETTINGS, ...parts.sender };
+    this.senderSettings = {
+      ...DEFAULT_SENDER_SETTINGS,
+      isLive: () => this.status === FeedStatus.LIVE,
+      ...parts.sender,
+    };
 
     const timeouts: SwarmTimeouts = {
       slotReadMs: infra.socReadTimeout ?? 5_000,
