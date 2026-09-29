@@ -53,11 +53,20 @@ describe('beeChatSource.readSlot', () => {
     expect(seen[0]?.url).toMatch(/^\/chunks\/[0-9a-f]{64}$/);
   });
 
-  it('rejects for a 500, which is the gateway failing and never the end of the chat', async () => {
+  it('answers null for a 500, which a Bee 2.6 cluster answers for a slot never written', async () => {
     answer = () => ({ status: 500 });
     const source = beeChatSource(new Bee(base), OWNER, 'chat-test', TIMEOUTS);
-    await expect(source.readSlot(3)).rejects.toThrow();
+    await expect(source.readSlot(3)).resolves.toBeNull();
   });
+
+  it.each([502, 503, 504])(
+    'rejects for a %i, which is the gateway failing and never the end of the chat',
+    async (status) => {
+      answer = () => ({ status });
+      const source = beeChatSource(new Bee(base), OWNER, 'chat-test', TIMEOUTS);
+      await expect(source.readSlot(3)).rejects.not.toBeInstanceOf(UnreadableSlotError);
+    },
+  );
 
   it('returns the payload of a slot the feed owner wrote', async () => {
     // A real bee-js feed writer uploads the slot, and the fake gateway serves back what it received as the chunk.
@@ -129,8 +138,14 @@ describe('beeChatSource.readHead', () => {
     expect(seen[0]?.url).toMatch(new RegExp(`^/feeds/${OWNER}/[0-9a-f]{64}`));
   });
 
-  it('rejects for any other failure', async () => {
-    answer = () => ({ status: 502 });
+  it('answers null for a 500 from the head lookup', async () => {
+    answer = () => ({ status: 500 });
+    const source = beeChatSource(new Bee(base), OWNER, 'chat-test', TIMEOUTS);
+    await expect(source.readHead()).resolves.toBeNull();
+  });
+
+  it.each([502, 503, 504])('rejects for a %i from the head lookup', async (status) => {
+    answer = () => ({ status });
     const source = beeChatSource(new Bee(base), OWNER, 'chat-test', TIMEOUTS);
     await expect(source.readHead()).rejects.toThrow();
   });

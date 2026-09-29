@@ -39,11 +39,35 @@ export interface SwarmTimeouts {
 }
 
 /**
- * A 404 from Bee means no peer gave the chunk within Bee's retry budget, which at the live edge is the ordinary
- * "not written yet" and elsewhere a slow read. It never means the chat has ended. Every other failure is the gateway.
+ * Whether Bee said the chunk is not there. A 404 means no peer gave it within Bee's retry budget, which at the live
+ * edge is the ordinary "not written yet" and elsewhere a slow read. A Bee 2.6 cluster answers 500 on `GET /chunks` for
+ * a slot never written, measured on the test bed, so a 500 counts too, as bee-js's own `isRetrievable` counts it.
+ * Neither ever means the chat has ended, and a read that is wrong about "not there" is asked again on the next poll.
+ * Every other failure, a timeout, an abort, a refused connection or a 502, 503 or 504, is the gateway failing.
  */
-export function isNotFound(error: unknown): boolean {
-  return error instanceof BeeResponseError && error.status === 404;
+export function isAbsent(error: unknown): boolean {
+  return error instanceof BeeResponseError && (error.status === 404 || error.status === 500);
+}
+
+/**
+ * One slot read, sorted into what it means: the payload, null for a slot that is not there, an UnreadableSlotError for
+ * a chunk served that fails its own check, and a rejection for the gateway failing. Shared by the Bee reader and the
+ * tests' fake, so both sort failures the same way.
+ */
+export async function readSlotThrough(index: number, read: () => Promise<Uint8Array>): Promise<Uint8Array | null> {
+  try {
+    return await read();
+  } catch (error) {
+    if (isAbsent(error)) {
+      return null;
+    }
+    // bee-js turns every transport failure, an abort included, into a BeeResponseError. Anything else was thrown
+    // while reading a response that arrived.
+    if (error instanceof BeeResponseError) {
+      throw error;
+    }
+    throw new UnreadableSlotError(index, { cause: error });
+  }
 }
 
 /**
@@ -55,28 +79,16 @@ export function beeChatSource(bee: Bee, owner: string, chatTopic: string, timeou
   const reader = (timeoutMs: number) => bee.feed.makeReader(topic, owner, within(timeoutMs));
 
   return {
-    async readSlot(index) {
-      try {
-        const { payload } = await reader(timeouts.slotReadMs).downloadPayload({ index });
-        return payload.toUint8Array();
-      } catch (error) {
-        if (isNotFound(error)) {
-          return null;
-        }
-        // bee-js turns every transport failure, an abort included, into a BeeResponseError. Anything else was thrown
-        // while reading a response that arrived.
-        if (error instanceof BeeResponseError) {
-          throw error;
-        }
-        throw new UnreadableSlotError(index, { cause: error });
-      }
-    },
+    readSlot: (index) =>
+      readSlotThrough(index, async () =>
+        (await reader(timeouts.slotReadMs).downloadPayload({ index })).payload.toUint8Array(),
+      ),
     async readHead() {
       try {
         const { payload, feedIndex } = await reader(timeouts.feedReadMs).downloadPayload();
         return { index: Number(feedIndex.toBigInt()), payload: payload.toUint8Array() };
       } catch (error) {
-        if (isNotFound(error)) {
+        if (isAbsent(error)) {
           return null;
         }
         throw error;
