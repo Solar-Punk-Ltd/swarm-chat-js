@@ -242,6 +242,36 @@ describe.each([404, 500] as const)('with Bee answering %i for a slot not there',
       expect(gateway.slotReads.filter((index) => index === 3)).toHaveLength(readsOfThree);
     });
 
+    it('probes a long quiet live edge at least once a minute', async () => {
+      const gateway = feedOf(1);
+      const probedAt: number[] = [];
+      const read = gateway.readSlot.bind(gateway);
+      gateway.readSlot = (index) => {
+        if (index === 2) {
+          probedAt.push(Date.now());
+        }
+        return read(index);
+      };
+      const { follower } = run(gateway);
+      follower.start(0);
+      await vi.advanceTimersByTimeAsync(20 * 60_000);
+      const gaps = probedAt.slice(1).map((at, i) => at - probedAt[i]!);
+      expect(Math.max(...gaps)).toBeLessThanOrEqual(60_000);
+      expect(probedAt.length).toBeLessThan(30);
+    });
+
+    it('finds a hole that opens after a long quiet within a minute', async () => {
+      const gateway = feedOf(1);
+      const { follower, seqs } = run(gateway);
+      follower.start(0);
+      await vi.advanceTimersByTimeAsync(13 * 60_000);
+      gateway.hidden.add(1);
+      gateway.write(entryAt(1)).write(entryAt(2));
+      await vi.advanceTimersByTimeAsync(61_000);
+      expect(seqs()).toEqual([0, 2]);
+      expect(follower.missedIndices).toEqual([1]);
+    });
+
     it('probes a quiet live edge at three, six, twelve and twenty-four refused polls, and no more often', async () => {
       const { follower, gateway } = run(feedOf(1));
       follower.start(0);
