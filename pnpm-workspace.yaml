@@ -1,0 +1,19 @@
+# One package, and pnpm's settings for it.
+
+# Every dependency is added at its exact version.
+saveExact: true
+
+# No version younger than one week (in minutes) is installed, transitive ones included, and an install fails rather
+# than fall back to an older version when nothing in a range is old enough.
+minimumReleaseAge: 10080
+minimumReleaseAgeStrict: true
+
+# The dependencies whose install scripts run, true, or are skipped, false. Both are optional native helpers of ws,
+# which bee-js's websocket uses, and ws works without them.
+allowBuilds:
+  bufferutil: false
+  utf-8-validate: false
+
+# Peers are installed only when a package here names them. Otherwise pnpm installs every optional peer of vite,
+# sass among them, which this library never runs and whose tree carries advisories.
+autoInstallPeers: false
