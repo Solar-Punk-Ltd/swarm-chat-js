@@ -15,8 +15,13 @@ export interface ChatSettings {
     nickname: string;
   };
   infra: {
-    /** The Bee node or gateway every read and write goes through. */
+    /** The Bee node or gateway the chat is read through, and written through too when `writeUrl` is not set. */
     beeUrl: string;
+    /**
+     * The Bee node or gateway the inbox writes go through, when they go somewhere other than the reads, such as a write
+     * gateway that stamps them. Left out, writes go to `beeUrl`.
+     */
+    writeUrl?: string;
     /** The batch the inbox writes are stamped with. Left out for a gateway that stamps writes itself. */
     stamp?: string;
     /** The inbox's identifier string, one for every chat, as the server listens on it. */
@@ -100,13 +105,12 @@ export class SwarmChat {
       feedReadMs: infra.feedReadTimeout ?? 15_000,
       writeMs: infra.gsocWriteTimeout ?? 10_000,
     };
-    const needsBee = !parts.source || !parts.write;
-    const bee = needsBee ? new Bee(infra.beeUrl) : null;
-    this.source = parts.source ?? beeChatSource(bee!, withoutPrefix(infra.chatAddress), infra.chatTopic, timeouts);
+    this.source =
+      parts.source ?? beeChatSource(new Bee(infra.beeUrl), withoutPrefix(infra.chatAddress), infra.chatTopic, timeouts);
     this.write =
       parts.write ??
       beeGsocWrite(
-        bee!,
+        new Bee(infra.writeUrl ?? infra.beeUrl),
         infra.stamp ? withoutPrefix(infra.stamp) : GATEWAY_STAMPS_ITSELF,
         withoutPrefix(infra.gsocResourceId),
         infra.gsocTopic,
