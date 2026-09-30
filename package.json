@@ -1,6 +1,6 @@
 {
   "name": "@solarpunkltd/swarm-chat-js",
-  "version": "7.0.0",
+  "version": "7.1.0",
   "description": "JS library for chatting on Swarm",
   "keywords": [
     "chat",
