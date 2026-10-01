@@ -1,4 +1,11 @@
-import { createChatMessage, MessageType, type ChatMessage, type FeedEntry, type HistoryLink } from '../src/message';
+import {
+  createChatMessage,
+  encodeSlotNote,
+  MessageType,
+  type ChatMessage,
+  type FeedEntry,
+  type HistoryLink,
+} from '../src/message';
 import { BeeResponseError } from '@ethersphere/bee-js';
 
 import { HeadLookupTimeoutError, readSlotThrough, type ChatSource } from '../src/swarm';
@@ -41,6 +48,32 @@ export class FakeGateway implements ChatSource {
   readonly slotReads: number[] = [];
   headReads = 0;
   fileReads: string[] = [];
+  /** Notes by time slot, as the server writes them. */
+  readonly notes = new Map<number, Uint8Array>();
+  /** Every note read, by time slot, and the clock when it was asked. */
+  readonly noteReads: { slot: number; at: number }[] = [];
+  /** Note reads that reject as a gateway that does not answer, while `down` stays false. */
+  notesDown = false;
+
+  writeNote(slot: number, newest: number, writtenAt = Date.now()): this {
+    this.notes.set(slot, encodeSlotNote({ newest, writtenAt }));
+    return this;
+  }
+
+  readNote(slot: number): Promise<Uint8Array | null> {
+    this.noteReads.push({ slot, at: Date.now() });
+    return readSlotThrough(slot, async () => {
+      if (this.down || this.notesDown) {
+        throw new BeeResponseError('GET', `/chunks/note-${slot}`, 'fetch failed');
+      }
+      const payload = this.notes.get(slot);
+      if (!payload) {
+        const status = FakeGateway.absentStatus;
+        throw new BeeResponseError('GET', `/chunks/note-${slot}`, 'Not Found', undefined, status, String(status));
+      }
+      return payload;
+    });
+  }
 
   write(entry: FeedEntry): this {
     this.slots.set(entry.seq, bytes(entry));
