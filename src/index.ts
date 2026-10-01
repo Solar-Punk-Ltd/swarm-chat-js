@@ -9,6 +9,7 @@ export {
   type SkippedMessage,
 } from './events.js';
 export { FeedStatus, UnreadableGatewayError, type SkipReason, type FollowerSettings } from './follower.js';
+export type { NoteSettings } from './notes.js';
 export type { SenderSettings, GsocWrite } from './sender.js';
 export { HeadLookupTimeoutError, UnreadableSlotError, type ChatSource } from './swarm.js';
 export type { EthAddress } from '@ethersphere/bee-js';
