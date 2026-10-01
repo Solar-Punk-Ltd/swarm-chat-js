@@ -11,6 +11,7 @@ import {
   HeadLookupTimeoutError,
   UnreadableSlotError,
 } from '../src/swarm';
+import { encodeSlotNote, noteAddress, noteIdentifier } from '../src/message';
 
 // Test only: the owner and the GSOC key are never used against a real node.
 const OWNER = '19e7e376e7c213b7e7e7e46cc70a5dd086daff2a';
@@ -193,5 +194,79 @@ describe('beeGsocWrite', () => {
     answer = () => ({ status: 402 });
     const write = beeGsocWrite(new Bee(base), GATEWAY_STAMPS_ITSELF, GSOC_KEY, 'gsoc-inbox', TIMEOUTS);
     await expect(write(new Uint8Array([1]))).rejects.toThrow();
+  });
+});
+
+/** The chunk a real bee-js single owner chunk writer uploads, as the gateway would store and serve it. */
+async function signedChunk(key: PrivateKey, identifier: Uint8Array, payload: Uint8Array): Promise<Uint8Array> {
+  const received: Uint8Array[] = [];
+  const capturing = createServer((request, response) => {
+    const parts: Buffer[] = [];
+    request.on('data', (part: Buffer) => parts.push(part));
+    request.on('end', () => {
+      const [id, query] = (request.url ?? '').split('/').slice(3).join('/').split('?sig=');
+      received.push(
+        new Uint8Array([...Buffer.from(id ?? '', 'hex'), ...Buffer.from(query ?? '', 'hex'), ...Buffer.concat(parts)]),
+      );
+      response.writeHead(201, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ reference: 'ab'.repeat(32) }));
+    });
+  });
+  await new Promise<void>((resolve) => capturing.listen(0, '127.0.0.1', resolve));
+  try {
+    const url = `http://127.0.0.1:${(capturing.address() as AddressInfo).port}`;
+    await new Bee(url).soc.makeWriter(key).upload(GATEWAY_STAMPS_ITSELF, identifier, payload);
+  } finally {
+    await new Promise<void>((resolve) => capturing.close(() => resolve()));
+  }
+  return received[0]!;
+}
+
+describe('beeChatSource.readNote', () => {
+  const note = encodeSlotNote({ newest: 3, writtenAt: 1759140002003 });
+
+  it('reads the note through GET /chunks at the address of its slot, never through a /soc path', async () => {
+    answer = () => ({ status: 404 });
+    const source = beeChatSource(new Bee(base), OWNER, 'chat-test', TIMEOUTS, 2000);
+    await expect(source.readNote?.(5)).resolves.toBeNull();
+    expect(seen.map((request) => request.url)).toEqual([`/chunks/${noteAddress('chat-test', 2000, 5, OWNER).toHex()}`]);
+  });
+
+  it('puts the slot length into the address, so a server on another slot length is simply not found', async () => {
+    answer = () => ({ status: 404 });
+    await beeChatSource(new Bee(base), OWNER, 'chat-test', TIMEOUTS, 1000).readNote?.(5);
+    expect(seen[0]?.url).toBe(`/chunks/${noteAddress('chat-test', 1000, 5, OWNER).toHex()}`);
+  });
+
+  it('returns the payload of a note the feed owner signed', async () => {
+    const key = new PrivateKey(GSOC_KEY);
+    const owner = key.publicKey().address().toHex();
+    const chunk = await signedChunk(key, noteIdentifier('chat-test', 2000, 5).toUint8Array(), note);
+    answer = () => ({ status: 200, body: chunk });
+    const source = beeChatSource(new Bee(base), owner, 'chat-test', TIMEOUTS, 2000);
+    await expect(source.readNote?.(5)).resolves.toEqual(note);
+  });
+
+  it('names a note signed by anyone but the owner as unreadable, never as a note', async () => {
+    const chunk = await signedChunk(
+      new PrivateKey('33'.repeat(32)),
+      noteIdentifier('chat-test', 2000, 5).toUint8Array(),
+      note,
+    );
+    answer = () => ({ status: 200, body: chunk });
+    const source = beeChatSource(new Bee(base), OWNER, 'chat-test', TIMEOUTS, 2000);
+    await expect(source.readNote?.(5)).rejects.toBeInstanceOf(UnreadableSlotError);
+  });
+
+  it.each([404, 500])('answers null for a %i', async (status) => {
+    answer = () => ({ status });
+    await expect(beeChatSource(new Bee(base), OWNER, 'chat-test', TIMEOUTS).readNote?.(5)).resolves.toBeNull();
+  });
+
+  it.each([502, 503, 504])('rejects for a %i, which is the gateway failing', async (status) => {
+    answer = () => ({ status });
+    await expect(beeChatSource(new Bee(base), OWNER, 'chat-test', TIMEOUTS).readNote?.(5)).rejects.not.toBeInstanceOf(
+      UnreadableSlotError,
+    );
   });
 });

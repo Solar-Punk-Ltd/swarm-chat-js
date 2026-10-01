@@ -56,7 +56,7 @@ describe('ChatHistory.open', () => {
       gateway.write(entryAt(seq));
     }
     const { history } = open(gateway);
-    expect(await history.open()).toEqual({ startAt: 0, rows: [] });
+    expect(await history.open()).toEqual({ startAt: 0, rows: [], notes: null });
     expect(history.hasOlder()).toBe(false);
   });
 
@@ -64,14 +64,14 @@ describe('ChatHistory.open', () => {
     const gateway = twoFileChat();
     gateway.head = 'not-found';
     const { history } = open(gateway);
-    expect(await history.open()).toEqual({ startAt: 0, rows: [] });
+    expect(await history.open()).toEqual({ startAt: 0, rows: [], notes: null });
   });
 
   it('reads from slot 0 when the head lookup outlives its timeout, and reports it', async () => {
     const gateway = twoFileChat();
     gateway.head = 'timeout';
     const { history, errors } = open(gateway);
-    expect(await history.open()).toEqual({ startAt: 0, rows: [] });
+    expect(await history.open()).toEqual({ startAt: 0, rows: [], notes: null });
     expect(errors).toHaveLength(1);
   });
 
@@ -103,7 +103,7 @@ describe('ChatHistory.open', () => {
     gateway.files.delete(FILE_B);
     const { history, errors } = open(gateway);
     const opening = await history.open();
-    expect(opening).toEqual({ startAt: 6, rows: [] });
+    expect(opening).toEqual({ startAt: 6, rows: [], notes: null });
     expect(errors).toHaveLength(1);
     expect(history.hasOlder()).toBe(true);
 
@@ -118,7 +118,7 @@ describe('ChatHistory.open', () => {
     const gateway = twoFileChat();
     damage(gateway);
     const { history, errors } = open(gateway);
-    expect(await history.open()).toEqual({ startAt: 0, rows: [] });
+    expect(await history.open()).toEqual({ startAt: 0, rows: [], notes: null });
     expect(errors).toHaveLength(1);
     expect(history.hasOlder()).toBe(false);
   });
