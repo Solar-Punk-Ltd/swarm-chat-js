@@ -406,3 +406,28 @@ describe('a listener that throws', () => {
     quiet.mockRestore();
   });
 });
+
+describe('a chat whose server writes notes', () => {
+  it('opens from the newest note, follows by notes on its slot length, and never asks for the head or the next slot', async () => {
+    vi.setSystemTime(1759140000000);
+    const gateway = new FakeGateway();
+    gateway.write(entryAt(0)).write(entryAt(1));
+    const slot = Math.floor(Date.now() / 1_000);
+    gateway.writeNote(slot - 3, 1, Date.now() - 2_000);
+    const { chat, received } = harness(gateway, { ...SETTINGS, infra: { ...SETTINGS.infra, noteSlotMs: 1_000 } });
+
+    await chat.start();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(received().map((message) => message.index)).toEqual([0, 1]);
+    expect(gateway.headReads).toBe(0);
+
+    gateway.write(entryAt(2));
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(received()).toHaveLength(2);
+    gateway.writeNote(Math.floor(Date.now() / 1_000), 2, Date.now());
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(received().map((message) => message.index)).toEqual([0, 1, 2]);
+    expect(gateway.slotReads).not.toContain(3);
+    await chat.stop();
+  });
+});

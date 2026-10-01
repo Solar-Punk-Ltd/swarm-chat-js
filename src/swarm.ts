@@ -1,5 +1,6 @@
 import { BeeResponseError, Identifier, PrivateKey, Topic, type Bee, type BeeRequestOptions } from '@ethersphere/bee-js';
 
+import { DEFAULT_NOTE_SLOT_MS, noteIdentifier } from './message/index.js';
 import type { GsocWrite } from './sender.js';
 
 /** Everything the reader asks of Swarm, so the reader can be driven by a fake in tests. */
@@ -16,6 +17,11 @@ export interface ChatSource {
   readHead(): Promise<{ index: number; payload: Uint8Array } | null>;
   /** A history file's bytes. Rejects when it cannot be read. */
   readFile(reference: string): Promise<Uint8Array>;
+  /**
+   * The payload of time slot `slot`'s note, or null when Bee answered that it is not there. Sorts its failures as
+   * `readSlot` does. A source without it follows the chat by polling the next slot, as before notes existed.
+   */
+  readNote?(slot: number): Promise<Uint8Array | null>;
 }
 
 /** Bee's head lookup did not answer within its timeout, which on a long chat or a busy gateway is ordinary. */
@@ -84,12 +90,27 @@ export async function readSlotThrough(index: number, read: () => Promise<Uint8Ar
 /**
  * Reads a chat feed through bee-js's feed reader with an explicit index, which reads `GET /chunks/{address}` and
  * answers 404 only when the chunk could not be found, where `/soc/{owner}/{id}` answers 404 for any failure at all.
+ * Notes are read through bee-js's single owner chunk reader, which reads the same `GET /chunks/{address}` and checks
+ * the chunk is the owner's.
  */
-export function beeChatSource(bee: Bee, owner: string, chatTopic: string, timeouts: SwarmTimeouts): ChatSource {
+export function beeChatSource(
+  bee: Bee,
+  owner: string,
+  chatTopic: string,
+  timeouts: SwarmTimeouts,
+  noteSlotMs = DEFAULT_NOTE_SLOT_MS,
+): ChatSource {
   const topic = Topic.fromString(chatTopic);
   const reader = (timeoutMs: number) => bee.feed.makeReader(topic, owner, within(timeoutMs));
 
   return {
+    readNote: (slot) =>
+      readSlotThrough(slot, async () => {
+        const chunk = await bee.soc
+          .makeReader(owner, within(timeouts.slotReadMs))
+          .download(noteIdentifier(chatTopic, noteSlotMs, slot));
+        return chunk.payload.toUint8Array();
+      }),
     readSlot: (index) =>
       readSlotThrough(index, async () =>
         (await reader(timeouts.slotReadMs).downloadPayload({ index })).payload.toUint8Array(),
