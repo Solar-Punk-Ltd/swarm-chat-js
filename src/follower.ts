@@ -1,4 +1,5 @@
 import { parseFeedEntry, type FeedEntry, type ReadRefusal } from './message/index.js';
+import type { NoteReader } from './notes.js';
 import { UnreadableSlotError, type ChatSource } from './swarm.js';
 
 export const FeedStatus = {
@@ -64,6 +65,12 @@ export class UnreadableGatewayError extends Error {
   }
 }
 
+/** Where a follower that reads notes starts: the newest feed slot a note named, and the next time slot to ask. */
+export interface NoteStart {
+  newest: number;
+  nextNoteSlot: number;
+}
+
 export interface FollowerEvents {
   entry(entry: FeedEntry): void;
   skipped(index: number, reason: SkipReason, detail: string): void;
@@ -72,14 +79,26 @@ export interface FollowerEvents {
 }
 
 /**
- * Follows a chat feed the way the video player follows its playlist feed: explicit slot reads after the last one
+ * Follows a chat feed by explicit slot reads, in one of two ways.
+ *
+ * Led by notes, when the server writes them: once each time slot is over the follower asks for its note, and reads
+ * feed slots only up to the newest one a note has named. Every address it asks for is then either written or never
+ * will be, so Bee never learns to skip its peers for a message about to arrive. A slot a note named that does not load
+ * goes to the retry list. Silence longer than the heartbeat makes the follower stop trusting its own clock.
+ *
+ * Polling, when no note has been found, which is how a server without notes is followed: reads after the last slot
  * seen, several in one poll, until one is refused. A refused next slot is the live edge and is polled again. When it
  * keeps being refused, the follower looks a few slots past it, and a later slot that answers means the refused one is
  * a message no peer is giving out right now. That one is stepped past and kept on a short list to read again, so a
- * message skipped arrives late rather than never.
+ * message skipped arrives late rather than never. A follower that can read notes keeps asking for them while it polls
+ * and is led by them from the first one it finds.
  */
 export class FeedFollower {
   private next = 0;
+  /** The newest feed slot a note has named, or null while no note has been found and the feed is polled. */
+  private ceiling: number | null = null;
+  private nextNoteSlot = 0;
+  private lastNoteFoundAt = 0;
   private unservedPolls = 0;
   private nextProbeAt = 0;
   private unreadablePolls = 0;
@@ -96,6 +115,7 @@ export class FeedFollower {
     private readonly topic: string,
     private readonly events: FollowerEvents,
     settings: Partial<FollowerSettings> = {},
+    private readonly notes: NoteReader | null = null,
   ) {
     this.settings = { ...DEFAULT_FOLLOWER_SETTINGS, ...settings };
   }
@@ -109,10 +129,21 @@ export class FeedFollower {
     return [...this.missed.keys()];
   }
 
-  /** Starts polling at `fromIndex`, with the first poll at once. Starting again restarts from the new index. */
-  start(fromIndex: number): void {
+  /** Whether notes lead the follower, rather than polling. */
+  get ledByNotes(): boolean {
+    return this.ceiling !== null;
+  }
+
+  /**
+   * Starts at `fromIndex`, with the first read at once, led by notes from `notes` when the opening found one and
+   * polling otherwise. Starting again restarts from the new index.
+   */
+  start(fromIndex: number, notes: NoteStart | null = null): void {
     this.stop();
     this.next = fromIndex;
+    this.ceiling = notes?.newest ?? null;
+    this.nextNoteSlot = notes?.nextNoteSlot ?? (this.notes ? this.notes.lastReadableSlot() + 1 : 0);
+    this.lastNoteFoundAt = this.settings.now();
     this.resetRefusals();
     this.unreadablePolls = 0;
     this.gatewayFailures = 0;
@@ -144,6 +175,9 @@ export class FeedFollower {
     let walked = 0;
     let failed = false;
     try {
+      if (this.notes !== null) {
+        await this.readDueNotes(this.notes, generation);
+      }
       walked = await this.walk(generation);
       await this.readMissed(generation);
     } catch (error) {
@@ -160,10 +194,48 @@ export class FeedFollower {
       return;
     }
     this.gatewayAnswered();
-    this.schedule(walked >= this.settings.maxSlotsPerPoll ? 0 : this.settings.pollIntervalMs);
+    this.schedule(walked >= this.settings.maxSlotsPerPoll ? 0 : this.untilNextRead());
   }
 
-  /** Reads forward from the next slot. Returns how many slots it consumed. Throws when the gateway fails. */
+  /** The wait before the next read: the poll interval while polling, the next note's time while led by notes. */
+  private untilNextRead(): number {
+    if (this.ceiling === null || this.notes === null) {
+      return this.settings.pollIntervalMs;
+    }
+    return Math.max(0, this.notes.readableAt(this.nextNoteSlot) - this.settings.now());
+  }
+
+  /**
+   * Asks for the notes of every time slot that has ended since the last ask. One slot is read on its own. Several,
+   * after timers were slowed in a hidden tab, are read the way an opening reads them, newest first, back no further
+   * than a heartbeat, stopping at the first found, since the newest note names everything an older one does.
+   */
+  private async readDueNotes(notes: NoteReader, generation: number): Promise<void> {
+    const now = this.settings.now();
+    const last = notes.lastReadableSlot(now);
+    if (last < this.nextNoteSlot) {
+      return;
+    }
+    const oldest = Math.max(this.nextNoteSlot, last - notes.lookBackSlots + 1);
+    const found = await notes.scan(last, oldest);
+    if (generation !== this.generation) {
+      return;
+    }
+    this.nextNoteSlot = last + 1;
+    if (found) {
+      this.lastNoteFoundAt = now;
+      this.ceiling = Math.max(this.ceiling ?? -1, found.note.newest, this.next - 1);
+      return;
+    }
+    if (now - this.lastNoteFoundAt >= notes.silenceMs) {
+      this.lastNoteFoundAt = now;
+      notes.clock.distrust();
+      // A later clock moves the slots due back. Slots asked too early are asked again once they are over, since a
+      // clock far ahead would otherwise wait out its whole lead before asking anything.
+      this.nextNoteSlot = Math.min(this.nextNoteSlot, notes.lastReadableSlot(now) + 1);
+    }
+  }
+
   /** A slot's payload, null when refused, or 'unreadable' when it was served and failed its own check. */
   private async read(index: number): Promise<Uint8Array | null | 'unreadable'> {
     try {
@@ -188,9 +260,18 @@ export class FeedFollower {
   private async walk(generation: number): Promise<number> {
     for (let consumed = 0; consumed < this.settings.maxSlotsPerPoll; consumed++) {
       const index = this.next;
+      if (this.ceiling !== null && index > this.ceiling) {
+        return consumed;
+      }
       const payload = await this.read(index);
       if (generation !== this.generation) {
         return consumed;
+      }
+      if (this.ceiling !== null && (payload === null || payload === 'unreadable')) {
+        // A note named it, so it exists: a slot no peer gives out now is read again later, never polled.
+        this.remember(index);
+        this.next = index + 1;
+        continue;
       }
       if (payload === null || payload === 'unreadable') {
         // Counted only when this poll read nothing: a poll that read four slots and then met the live edge advanced.
@@ -316,6 +397,7 @@ export class FeedFollower {
   private accept(index: number, payload: Uint8Array): void {
     const check = parseFeedEntry(payload, index, this.topic);
     if (check.ok) {
+      this.notes?.clock.observe(check.value.at, this.settings.now());
       this.events.entry(check.value);
     } else {
       this.events.skipped(index, check.reason, check.detail);

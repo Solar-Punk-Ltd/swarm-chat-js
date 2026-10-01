@@ -4,6 +4,7 @@ import { ChatEmitter, EVENTS, pendingMessageData, publishedMessageData, type Mes
 import { FeedFollower, FeedStatus, type FollowerSettings } from './follower.js';
 import { ChatHistory } from './history.js';
 import { MessageType, type FeedEntry, type HistoryRow } from './message/index.js';
+import { NoteReader, readsNotes, type NoteSettings } from './notes.js';
 import { DEFAULT_SENDER_SETTINGS, Sender, type GsocWrite, type SenderSettings } from './sender.js';
 import { beeChatSource, beeGsocWrite, GATEWAY_STAMPS_ITSELF, type ChatSource, type SwarmTimeouts } from './swarm.js';
 
@@ -44,6 +45,10 @@ export interface ChatSettings {
     gsocWriteTimeout?: number;
     /** One feed slot read, 5,000 ms by default. */
     socReadTimeout?: number;
+    /** The server's NOTE_SLOT_MS, 2,000 ms by default. It is part of every note's address, so it must match. */
+    noteSlotMs?: number;
+    /** The server's NOTE_HEARTBEAT_MS, 30,000 ms by default, how far back an opening looks for a note. */
+    noteHeartbeatMs?: number;
   };
 }
 
@@ -53,6 +58,7 @@ export interface ChatParts {
   write: GsocWrite;
   follower: Partial<FollowerSettings>;
   sender: Partial<SenderSettings>;
+  notes: Partial<NoteSettings>;
   /** The waits between opening attempts, the last repeated. */
   openRetryMs: readonly number[];
 }
@@ -79,6 +85,7 @@ export class SwarmChat {
   private readonly openRetryMs: readonly number[];
   private readonly follower: FeedFollower;
   private readonly history: ChatHistory;
+  private readonly notes: NoteReader | null;
   private sender: Sender;
   private readonly seen = new Set<number>();
   private status: FeedStatus | null = null;
@@ -105,8 +112,20 @@ export class SwarmChat {
       feedReadMs: infra.feedReadTimeout ?? 15_000,
       writeMs: infra.gsocWriteTimeout ?? 10_000,
     };
+    const noteSettings: Partial<NoteSettings> = {
+      ...(infra.noteSlotMs === undefined ? {} : { slotMs: infra.noteSlotMs }),
+      ...(infra.noteHeartbeatMs === undefined ? {} : { heartbeatMs: infra.noteHeartbeatMs }),
+      ...parts.notes,
+    };
     this.source =
-      parts.source ?? beeChatSource(new Bee(infra.beeUrl), withoutPrefix(infra.chatAddress), infra.chatTopic, timeouts);
+      parts.source ??
+      beeChatSource(
+        new Bee(infra.beeUrl),
+        withoutPrefix(infra.chatAddress),
+        infra.chatTopic,
+        timeouts,
+        noteSettings.slotMs,
+      );
     this.write =
       parts.write ??
       beeGsocWrite(
@@ -117,6 +136,14 @@ export class SwarmChat {
         timeouts,
       );
 
+    const now = parts.follower?.now ?? (() => Date.now());
+    const followerSettings: Partial<FollowerSettings> = {
+      pollIntervalMs: infra.pollingInterval ?? 1_000,
+      ...parts.follower,
+      now,
+    };
+    const source = this.source;
+    this.notes = readsNotes(source) ? new NoteReader(source, noteSettings, now) : null;
     this.follower = new FeedFollower(
       this.source,
       this.topic,
@@ -126,17 +153,23 @@ export class SwarmChat {
         status: (status) => this.setStatus(status),
         error: (error) => this.emitter.emit(EVENTS.ERROR, error),
       },
-      { pollIntervalMs: infra.pollingInterval ?? 1_000, ...parts.follower },
+      followerSettings,
+      this.notes,
     );
-    this.history = new ChatHistory(this.source, this.topic, {
-      skipped: (count) =>
-        this.emitter.emit(EVENTS.MESSAGE_SKIPPED, {
-          index: -1,
-          reason: 'history-row',
-          detail: `${count} rows of a history file`,
-        }),
-      error: (error) => this.emitter.emit(EVENTS.ERROR, error),
-    });
+    this.history = new ChatHistory(
+      this.source,
+      this.topic,
+      {
+        skipped: (count) =>
+          this.emitter.emit(EVENTS.MESSAGE_SKIPPED, {
+            index: -1,
+            reason: 'history-row',
+            detail: `${count} rows of a history file`,
+          }),
+        error: (error) => this.emitter.emit(EVENTS.ERROR, error),
+      },
+      this.notes,
+    );
     this.sender = this.makeSender();
   }
 
@@ -251,7 +284,7 @@ export class SwarmChat {
           return;
         }
         this.showRows(opening.rows);
-        this.follower.start(opening.startAt);
+        this.follower.start(opening.startAt, opening.notes);
         this.emitter.emit(EVENTS.LOADING_INIT, false);
         return;
       } catch (error) {
