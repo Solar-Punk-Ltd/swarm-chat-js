@@ -15,13 +15,19 @@ the inbox and writes the feed. Version 7 of the library reads and writes the v7 
    bytes are written again every ten seconds, up to five times, and then it is failed with a manual retry.
 2. **Publishing.** The server checks each message's shape and signature and writes it to the chat's feed as the next
    entry, at index 0, 1, 2 and on. After a message is published it saves a history file of the chat, and every entry
-   links to the newest file saved.
-3. **Opening.** A reader asks Bee for the feed's head once, shows the history file the head entry links to, and reads
-   the entries after it.
-4. **Following.** A reader polls explicit feed slots after the last one it saw, several in one poll. A slot not
-   written yet is the ordinary live state and is simply asked again. A slot that fails its checks is skipped and never
-   stops the chat. A slot no peer gives out while later slots exist is stepped past and read again on later polls, so a
-   message skipped arrives late rather than never. Gateway failures back off with jitter up to eight seconds.
+   links to the newest file saved. Once a two-second time slot ends in which a message landed, and at least every 30
+   seconds while the chat is active, it writes a slot note naming the newest entry. See
+   [Slot notes](#slot-notes-for-servers-and-tools).
+3. **Opening.** A reader reads the notes of the slots just ended, newest first, back as far as one heartbeat. The
+   newest note found names the newest entry, whose history file is shown, and the entries after it are read. Only
+   when no note is found, which is a server that writes none, does it ask Bee for the feed's head instead.
+4. **Following.** Once each time slot is over, plus a second, a reader asks for that slot's note once, and reads the
+   feed entries up to the newest one a note named, never further. So it never asks Bee for an address before it is
+   written. Bee answers such a request by skipping its peers for that address for a minute, which made new messages
+   arrive about forty seconds late while readers polled the next slot. An entry a note named that does not load is
+   read again on later reads, so a message arrives late rather than never. A slot that fails its checks is skipped
+   and never stops the chat. Gateway failures back off with jitter up to eight seconds. A reader of a server that
+   writes no notes polls the next slot as 7.1 did, and is led by notes from the first one it finds.
 5. **Older messages.** Loading older messages is a click, which reads the history file before the oldest one shown.
 
 ## Installation
@@ -75,10 +81,12 @@ await chat.stop();
 | `infra.gsocResourceId`   | The mined key every sender signs inbox writes with. The server's operator mines it.                                                                   |
 | `infra.chatTopic`        | The chat's topic, which every message carries and the feed is named by.                                                                               |
 | `infra.chatAddress`      | The server's feed owner address.                                                                                                                      |
-| `infra.pollingInterval`  | How often a reader polls at the live edge, 1,000 ms by default.                                                                                       |
+| `infra.pollingInterval`  | How often a reader of a server without notes polls at the live edge, 1,000 ms by default.                                                             |
 | `infra.socReadTimeout`   | One feed slot read, 5,000 ms by default.                                                                                                              |
 | `infra.feedReadTimeout`  | The head lookup and a history file download, 15,000 ms by default. A head lookup that runs out of time reads the chat from slot 0.                    |
 | `infra.gsocWriteTimeout` | One inbox write, 10,000 ms by default.                                                                                                                |
+| `infra.noteSlotMs`       | The server's `NOTE_SLOT_MS`, 2,000 ms by default. It is part of every note's address, so a different value finds no notes and polls instead.          |
+| `infra.noteHeartbeatMs`  | The server's `NOTE_HEARTBEAT_MS`, 30,000 ms by default, which sets how far back an opening looks for a note.                                          |
 
 ## Methods
 
@@ -160,6 +168,40 @@ signed with bee-js's `PrivateKey.sign` and checked with `Signature.recoverPublic
 | `chatMessageSchema`, `hasValidSignature`, `signedBytes`, `encodeChatMessage` | The parts.                                                                                  |
 | `feedEntrySchema`, `parseFeedEntry`                                          | The feed entry, `{v, seq, at, msg, history}`.                                               |
 | `historyFileSchema`, `parseHistoryFile`                                      | The history file, `{v, topic, fromSeq, toSeq, messages, prev}`.                             |
+
+## Slot notes, for servers and tools
+
+A note tells readers which feed entries exist, so they never ask for one that does not. Time slot `s` covers
+`[s * slotMs, (s + 1) * slotMs)` in Unix milliseconds, `slotMs` being 2,000 by default. The note of slot `s` is a
+single owner chunk signed by the chat feed's key, at the identifier keccak256 of the UTF-8 text
+`<chat topic>/note/<slotMs>/<s>`, and is read through `GET /chunks/<address>`. Its payload is
+`{"v":1,"newest":<the highest feed index written>,"writtenAt":<the server's clock in ms>}`, `newest` -1 for a chat with
+nothing written yet, and a payload that fails this strict shape counts as no note.
+
+The server writes a slot's note once the slot is over, when an entry landed since its last note that was written, or
+when a heartbeat has passed since that note. An entry's own write has finished before any note names it. A note write
+that fails is not retried at its address: the next slot's note carries the same news.
+
+| Export                                                           | Use                                                    |
+| ---------------------------------------------------------------- | ------------------------------------------------------ |
+| `noteSlotOf(timeMs, slotMs)`, `noteSlotEnd(slot, slotMs)`        | The slot arithmetic.                                   |
+| `noteIdentifier(topic, slotMs, slot)`, `noteAddress(..., owner)` | Where a note is written and read.                      |
+| `encodeSlotNote(note)`, `parseSlotNote(bytes)`, `slotNoteSchema` | The payload, encoded in field order and read strictly. |
+| `DEFAULT_NOTE_SLOT_MS`, `DEFAULT_NOTE_HEARTBEAT_MS`              | The defaults both sides share.                         |
+
+**The reader's clock.** A reader schedules note reads by its own clock. Every note's `writtenAt` and every entry's `at`
+was stamped before the reader received it, so the reader runs at most `received - stamped` ahead of the server. While
+notes are found it trusts its own clock, moving reads earlier only when that bound proves the clock runs behind. When
+no note is found for longer than a heartbeat, it waits out the whole bound from then on, which is never early. A
+clock that runs behind sees every stamp as old as it expects, so its messages arrive as late as it runs behind.
+
+## Changes in 7.2
+
+- Readers follow a chat by its slot notes and no longer ask for the next feed slot before it exists, so a new message
+  arrives in seconds rather than about forty. Opening needs no head lookup either. A server without notes is followed
+  as 7.1 followed it.
+- The note protocol is exported from the root and from `./message` for the server. New settings `infra.noteSlotMs`
+  and `infra.noteHeartbeatMs`.
 
 ## Changes from 6.x
 
