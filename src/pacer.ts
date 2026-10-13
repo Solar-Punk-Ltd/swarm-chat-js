@@ -25,18 +25,18 @@ export class MissingReadPacer {
   ) {}
 
   /** The local time from which `slot` may be read again, which is in the past for an address not held back. */
-  readableAt(slot: number): number {
+  readableAt(slot: number, now = this.now()): number {
     const at = this.missedAt.get(slot);
-    return at === undefined ? Number.NEGATIVE_INFINITY : at + this.spacingMs;
+    return at === undefined || this.expired(at, now) ? Number.NEGATIVE_INFINITY : at + this.spacingMs;
   }
 
   mayRead(slot: number, now = this.now()): boolean {
-    return now >= this.readableAt(slot);
+    return now >= this.readableAt(slot, now);
   }
 
   missed(slot: number, now = this.now()): void {
     for (const [held, at] of this.missedAt) {
-      if (now - at >= this.spacingMs) {
+      if (this.expired(at, now)) {
         this.missedAt.delete(held);
       }
     }
@@ -49,5 +49,10 @@ export class MissingReadPacer {
 
   clear(): void {
     this.missedAt.clear();
+  }
+
+  /** A miss recorded after `now` was recorded before the clock was set back, and holds nothing. */
+  private expired(at: number, now: number): boolean {
+    return at > now || now - at >= this.spacingMs;
   }
 }
