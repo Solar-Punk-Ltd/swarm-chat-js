@@ -197,7 +197,7 @@ notes are found it trusts its own clock, moving reads earlier only when that bou
 no note is found for longer than a heartbeat, it waits out the whole bound from then on, which is never early. A
 clock that runs behind sees every stamp as old as it expects, so its messages arrive as late as it runs behind.
 
-## Unreleased
+## Changes in 7.3
 
 - A reader asks Bee for an address that came back missing no more than three times a minute, a feed slot and a note
   alike. Polling the next slot every second, as a reader that found no note did, kept that slot on Bee's skip list,
