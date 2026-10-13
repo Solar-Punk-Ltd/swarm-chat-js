@@ -6,6 +6,7 @@ import {
   parseSlotNote,
   type SlotNote,
 } from './message/index.js';
+import { DEFAULT_MISSING_READ_SPACING_MS, MissingReadPacer } from './pacer.js';
 import { UnreadableSlotError, type ChatSource } from './swarm.js';
 
 export interface NoteSettings {
@@ -19,6 +20,8 @@ export interface NoteSettings {
   scanBatch: number;
   /** The furthest the clock correction goes either way. */
   clockLimitMs: number;
+  /** The shortest wait between two reads of a note that came back missing, see `pacer.ts` for why. */
+  missingReadSpacingMs: number;
 }
 
 export const DEFAULT_NOTE_SETTINGS: NoteSettings = {
@@ -27,6 +30,7 @@ export const DEFAULT_NOTE_SETTINGS: NoteSettings = {
   marginMs: 1_000,
   scanBatch: 4,
   clockLimitMs: 5 * 60_000,
+  missingReadSpacingMs: DEFAULT_MISSING_READ_SPACING_MS,
 };
 
 /** A note that was found, and the time slot it was found at. */
@@ -92,6 +96,7 @@ export class NoteReader {
   /** Note reads that found a note, and those that found none, an unreadable chunk or a note that failed its check. */
   readonly counts = { found: 0, empty: 0 };
   readonly settings: NoteSettings;
+  private readonly pacer: MissingReadPacer;
 
   constructor(
     private readonly source: NoteSource,
@@ -100,6 +105,7 @@ export class NoteReader {
   ) {
     this.settings = { ...DEFAULT_NOTE_SETTINGS, ...settings };
     this.clock = new ClockCorrection(this.settings.clockLimitMs);
+    this.pacer = new MissingReadPacer(this.settings.missingReadSpacingMs, now);
   }
 
   /** The newest time slot whose note may be asked for at `now`: over, and the margin past, by the server's clock. */
@@ -122,11 +128,21 @@ export class NoteReader {
     return this.settings.heartbeatMs + 2 * this.settings.slotMs + this.settings.marginMs;
   }
 
-  /** One slot's note, or null when there is none to be had. Rejects only when the gateway fails. */
+  /**
+   * One slot's note, or null when there is none to be had. Rejects only when the gateway fails. A note that came back
+   * missing is not asked for again within the spacing, which only an opening tried again or a clock found to run
+   * ahead would do, and is then null without asking.
+   */
   async read(slot: number): Promise<SlotNote | null> {
+    if (!this.pacer.mayRead(slot)) {
+      return null;
+    }
     let payload: Uint8Array | null;
     try {
       payload = await this.source.readNote(slot);
+      if (payload === null) {
+        this.pacer.missed(slot);
+      }
     } catch (error) {
       if (!(error instanceof UnreadableSlotError)) {
         throw error;
