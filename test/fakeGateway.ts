@@ -46,6 +46,8 @@ export class FakeGateway implements ChatSource {
   head: { index: number } | 'not-found' | 'fail' | 'timeout' | null = null;
   down = false;
   readonly slotReads: number[] = [];
+  /** Every slot read, and the clock when it was asked. */
+  readonly slotReadsAt: { index: number; at: number }[] = [];
   headReads = 0;
   fileReads: string[] = [];
   /** Notes by time slot, as the server writes them. */
@@ -94,6 +96,7 @@ export class FakeGateway implements ChatSource {
   /** Answers the way bee-js does, and sorts the answer through the same function the Bee reader uses. */
   readSlot(index: number): Promise<Uint8Array | null> {
     this.slotReads.push(index);
+    this.slotReadsAt.push({ index, at: Date.now() });
     return readSlotThrough(index, async () => {
       if (this.down) {
         throw new BeeResponseError('GET', `/chunks/${index}`, 'fetch failed');

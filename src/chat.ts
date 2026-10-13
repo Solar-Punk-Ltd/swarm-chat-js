@@ -33,7 +33,7 @@ export interface ChatSettings {
     chatTopic: string;
     /** The server's feed owner address. */
     chatAddress: string;
-    /** How often the reader polls at the live edge, 1,000 ms by default. */
+    /** The shortest wait between two polls, and the first wait after the gateway failed, 1,000 ms by default. */
     pollingInterval?: number;
     /**
      * The head lookup and a history file download, 15,000 ms by default. An idle Bee answers the head lookup of a

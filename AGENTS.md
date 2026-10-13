@@ -27,6 +27,7 @@ scripts CI runs, by those names. `pnpm pack` builds first.
 | `src/message/note.ts`    | The slot note: slot arithmetic, identifier and address, payload. The server imports it.                        |
 | `src/notes.ts`           | Reading notes: one slot, a look back over several, and the clock correction.                                   |
 | `src/follower.ts`        | Follows the feed by explicit slots, led by notes: the walk, the retry list, backoff, status, polling fallback. |
+| `src/pacer.ts`           | The spacing of reads of an address that came back missing, and why Bee needs it.                               |
 | `src/history.ts`         | Opening from the newest history file, and loading older files by click.                                        |
 | `src/swarm.ts`           | Everything that touches bee-js: slot, head and file reads, and the inbox write.                                |
 | `src/chat.ts`            | `SwarmChat`, which wires the parts together.                                                                   |
@@ -42,8 +43,9 @@ The package has two entries: the root, and `./message`, which the server uses an
   inside, although the second names its parameter `digest`. Hashing first is how 6.2.8 came to prefix twice.
 - **Never ask Bee for an address before it exists.** A failed read makes Bee skip its peers for that address for a
   minute, which delayed every new message by about forty seconds. A note is asked for only once its slot is over, and
-  a feed slot only once a note named it. The head lookup and the polling of the next slot are kept only for a server
-  that writes no notes.
+  a feed slot only once a note named it. The head lookup and the polling of the next slot are kept only for a reader
+  that finds no note, and an address that came back missing is asked for again no sooner than
+  `DEFAULT_MISSING_READ_SPACING_MS` later (`src/pacer.ts`), so no address is read four times in a minute.
 - **The note is a contract with the server**, as the message is: its identifier text, its payload and the slot length.
 - **A 404 or a 500 is never the end of the chat.** On a slot it means the chunk is not there or was not found in time,
   which at the live edge is ordinary. Bee 2.8 answers 404 and a Bee 2.6 cluster answers 500 for a slot never written.

@@ -10,6 +10,7 @@ import {
   type MessageData,
 } from '../src';
 import type { ChatParts, ChatSettings } from '../src/chat';
+import { DEFAULT_MISSING_READ_SPACING_MS } from '../src/pacer';
 
 import { bytes, entryAt, FakeGateway, TEST_KEY, TOPIC } from './fakeGateway';
 
@@ -91,7 +92,7 @@ afterEach(() => {
 });
 
 describe('start', () => {
-  it('opens the chat, shows what is there, then follows it live', async () => {
+  it('opens the chat, shows what is there, then follows it live, reading the refused next slot again after the spacing', async () => {
     const gateway = new FakeGateway();
     gateway.write(entryAt(0)).write(entryAt(1));
     const { chat, events, received } = harness(gateway);
@@ -103,7 +104,9 @@ describe('start', () => {
     expect(events[EVENTS.STATUS]).toEqual([FeedStatus.LIVE]);
 
     gateway.write(entryAt(2));
-    await vi.advanceTimersByTimeAsync(POLL_MS);
+    await vi.advanceTimersByTimeAsync(DEFAULT_MISSING_READ_SPACING_MS - 20);
+    expect(received().map((message) => message.index)).toEqual([0, 1]);
+    await vi.advanceTimersByTimeAsync(20);
     expect(received().map((message) => message.index)).toEqual([0, 1, 2]);
   });
 
@@ -300,7 +303,7 @@ describe('sendMessage', () => {
     server.deaf = false;
     expect(chat.retrySendMessage(pending!)).toBe(true);
     expect(server.writes[6]).toEqual(server.writes[0]);
-    await vi.advanceTimersByTimeAsync(POLL_MS);
+    await vi.advanceTimersByTimeAsync(DEFAULT_MISSING_READ_SPACING_MS);
     expect(events[EVENTS.MESSAGE_RECEIVED]).toEqual([expect.objectContaining({ id: pending!.id })]);
   });
 
