@@ -25,9 +25,11 @@ the inbox and writes the feed. Version 7 of the library reads and writes the v7 
    feed entries up to the newest one a note named, never further. So it never asks Bee for an address before it is
    written. Bee answers such a request by skipping its peers for that address for a minute, which made new messages
    arrive about forty seconds late while readers polled the next slot. An entry a note named that does not load is
-   read again on later reads, so a message arrives late rather than never. A slot that fails its checks is skipped
-   and never stops the chat. Gateway failures back off with jitter up to eight seconds. A reader of a server that
-   writes no notes polls the next slot as 7.1 did, and is led by notes from the first one it finds.
+   read again later, so a message arrives late rather than never. A slot that fails its checks is skipped and never
+   stops the chat. Gateway failures back off with jitter up to eight seconds. A reader that finds no note, which is a
+   server that writes none or a chat it has not opened yet, polls the next slot, and is led by notes from the first
+   one it finds. Any address that came back missing, a feed slot or a note, is asked for again no sooner than twenty
+   seconds later, three times a minute at most, which keeps Bee from skipping its peers for it.
 5. **Older messages.** Loading older messages is a click, which reads the history file before the oldest one shown.
 
 ## Installation
@@ -81,7 +83,7 @@ await chat.stop();
 | `infra.gsocResourceId`   | The mined key every sender signs inbox writes with. The server's operator mines it.                                                                   |
 | `infra.chatTopic`        | The chat's topic, which every message carries and the feed is named by.                                                                               |
 | `infra.chatAddress`      | The server's feed owner address.                                                                                                                      |
-| `infra.pollingInterval`  | How often a reader of a server without notes polls at the live edge, 1,000 ms by default.                                                             |
+| `infra.pollingInterval`  | The shortest wait between two polls, and the first wait after the gateway failed, 1,000 ms by default.                                                |
 | `infra.socReadTimeout`   | One feed slot read, 5,000 ms by default.                                                                                                              |
 | `infra.feedReadTimeout`  | The head lookup and a history file download, 15,000 ms by default. A head lookup that runs out of time reads the chat from slot 0.                    |
 | `infra.gsocWriteTimeout` | One inbox write, 10,000 ms by default.                                                                                                                |
@@ -194,6 +196,12 @@ was stamped before the reader received it, so the reader runs at most `received 
 notes are found it trusts its own clock, moving reads earlier only when that bound proves the clock runs behind. When
 no note is found for longer than a heartbeat, it waits out the whole bound from then on, which is never early. A
 clock that runs behind sees every stamp as old as it expects, so its messages arrive as late as it runs behind.
+
+## Unreleased
+
+- A reader asks Bee for an address that came back missing no more than three times a minute, a feed slot and a note
+  alike. Polling the next slot every second, as a reader that found no note did, kept that slot on Bee's skip list,
+  so the first messages in a quiet room arrived 40 to 55 s late. A slot a note names is still read at once.
 
 ## Changes in 7.2
 
