@@ -30,7 +30,8 @@ function run(gateway: FakeGateway, settings: Partial<FollowerSettings> = {}): Ru
       status: (status) => statuses.push(status),
       error: (error) => errors.push(error),
     },
-    { pollIntervalMs: POLL_MS, random: () => 1, now: () => Date.now(), ...settings },
+    // The walk, the probe and the retry list at the poll interval. The spacing of reads of a missing slot has its own tests.
+    { pollIntervalMs: POLL_MS, missingReadSpacingMs: 0, random: () => 1, now: () => Date.now(), ...settings },
   );
   return { gateway, follower, seqs: () => entries.map((entry) => entry.seq), skipped, statuses, errors };
 }

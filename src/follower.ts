@@ -1,5 +1,6 @@
 import { parseFeedEntry, type FeedEntry, type ReadRefusal } from './message/index.js';
 import type { NoteReader } from './notes.js';
+import { DEFAULT_MISSING_READ_SPACING_MS, MissingReadPacer } from './pacer.js';
 import { UnreadableSlotError, type ChatSource } from './swarm.js';
 
 export const FeedStatus = {
@@ -17,7 +18,10 @@ export type FeedStatus = (typeof FeedStatus)[keyof typeof FeedStatus];
 export type SkipReason = ReadRefusal | 'unreachable';
 
 export interface FollowerSettings {
+  /** The shortest wait between two polls, and the first wait after the gateway failed. */
   pollIntervalMs: number;
+  /** The shortest wait between two reads of a feed slot that came back missing, see `pacer.ts` for why. */
+  missingReadSpacingMs: number;
   /** Slots one poll may walk before handing back, which only a viewer catching up on a backlog reaches. */
   maxSlotsPerPoll: number;
   /** Polls the next slot may be refused before asking whether anything lies behind it. */
@@ -43,6 +47,7 @@ export interface FollowerSettings {
 
 export const DEFAULT_FOLLOWER_SETTINGS: FollowerSettings = {
   pollIntervalMs: 1_000,
+  missingReadSpacingMs: DEFAULT_MISSING_READ_SPACING_MS,
   maxSlotsPerPoll: 16,
   unservedPollsBeforeProbe: 3,
   unreadablePollsBeforeFailure: 3,
@@ -87,7 +92,9 @@ export interface FollowerEvents {
  * goes to the retry list. Silence longer than the heartbeat makes the follower stop trusting its own clock.
  *
  * Polling, when no note has been found, which is how a server without notes is followed: reads after the last slot
- * seen, several in one poll, until one is refused. A refused next slot is the live edge and is polled again. When it
+ * seen, several in one poll, until one is refused. A refused next slot is the live edge and is read again, but no
+ * sooner than `missingReadSpacingMs` after it was refused, since reading a missing address every second is what keeps
+ * Bee skipping its peers for it once it is written. The same spacing holds for every slot read again. When it
  * keeps being refused, the follower looks a few slots past it, and a later slot that answers means the refused one is
  * a message no peer is giving out right now. That one is stepped past and kept on a short list to read again, so a
  * message skipped arrives late rather than never. A follower that can read notes keeps asking for them while it polls
@@ -109,6 +116,7 @@ export class FeedFollower {
   private running = false;
   private status: FeedStatus | null = null;
   private readonly settings: FollowerSettings;
+  private readonly pacer: MissingReadPacer;
 
   constructor(
     private readonly source: ChatSource,
@@ -118,6 +126,7 @@ export class FeedFollower {
     private readonly notes: NoteReader | null = null,
   ) {
     this.settings = { ...DEFAULT_FOLLOWER_SETTINGS, ...settings };
+    this.pacer = new MissingReadPacer(this.settings.missingReadSpacingMs, this.settings.now);
   }
 
   /** The index of the next slot this follower will ask for. */
@@ -148,6 +157,7 @@ export class FeedFollower {
     this.unreadablePolls = 0;
     this.gatewayFailures = 0;
     this.missed.clear();
+    this.pacer.clear();
     this.status = null;
     this.running = true;
     this.schedule(0);
@@ -197,12 +207,25 @@ export class FeedFollower {
     this.schedule(walked >= this.settings.maxSlotsPerPoll ? 0 : this.untilNextRead());
   }
 
-  /** The wait before the next read: the poll interval while polling, the next note's time while led by notes. */
+  /**
+   * The wait before the next read: until the next note is due, the next slot may be polled, or a slot on the retry
+   * list may be read again, whichever comes first. A slot the pacer does not hold back, one served unreadable, waits
+   * the poll interval.
+   */
   private untilNextRead(): number {
-    if (this.ceiling === null || this.notes === null) {
-      return this.settings.pollIntervalMs;
+    const now = this.settings.now();
+    const slotDue = (index: number) => {
+      const readableAt = this.pacer.readableAt(index);
+      return readableAt > now ? readableAt : now + this.settings.pollIntervalMs;
+    };
+    const due = [...this.missed.keys()].map(slotDue);
+    if (this.notes !== null) {
+      due.push(this.notes.readableAt(this.nextNoteSlot));
     }
-    return Math.max(0, this.notes.readableAt(this.nextNoteSlot) - this.settings.now());
+    if (this.ceiling === null) {
+      due.push(slotDue(this.next));
+    }
+    return Math.max(0, Math.min(...due) - now);
   }
 
   /**
@@ -238,14 +261,26 @@ export class FeedFollower {
 
   /** A slot's payload, null when refused, or 'unreadable' when it was served and failed its own check. */
   private async read(index: number): Promise<Uint8Array | null | 'unreadable'> {
+    let payload: Uint8Array | null;
     try {
-      return await this.source.readSlot(index);
+      payload = await this.source.readSlot(index);
     } catch (error) {
       if (error instanceof UnreadableSlotError) {
         return 'unreadable';
       }
       throw error;
     }
+    if (payload === null) {
+      this.pacer.missed(index);
+    } else {
+      this.pacer.found(index);
+    }
+    return payload;
+  }
+
+  /** As `read`, for a slot no note has named, or 'held' without asking Bee while its last miss is too recent. */
+  private async readUnnamed(index: number): Promise<Uint8Array | null | 'unreadable' | 'held'> {
+    return this.pacer.mayRead(index) ? this.read(index) : 'held';
   }
 
   /**
@@ -263,12 +298,13 @@ export class FeedFollower {
       if (this.ceiling !== null && index > this.ceiling) {
         return consumed;
       }
-      const payload = await this.read(index);
-      if (generation !== this.generation) {
+      // A slot a note named exists, so it is read at once, whenever it was last refused.
+      const payload = this.ceiling === null ? await this.readUnnamed(index) : await this.read(index);
+      if (generation !== this.generation || payload === 'held') {
         return consumed;
       }
       if (this.ceiling !== null && (payload === null || payload === 'unreadable')) {
-        // A note named it, so it exists: a slot no peer gives out now is read again later, never polled.
+        // A slot no peer gives out now is read again later, never polled.
         this.remember(index);
         this.next = index + 1;
         continue;
@@ -306,8 +342,8 @@ export class FeedFollower {
     if (this.unservedPolls !== this.nextProbeAt) {
       return false;
     }
-    const { probeIntervalCapMs, pollIntervalMs } = this.settings;
-    const capPolls = Math.max(1, Math.ceil(probeIntervalCapMs / pollIntervalMs));
+    const { probeIntervalCapMs, pollIntervalMs, missingReadSpacingMs } = this.settings;
+    const capPolls = Math.max(1, Math.ceil(probeIntervalCapMs / Math.max(pollIntervalMs, missingReadSpacingMs)));
     this.nextProbeAt += Math.min(this.nextProbeAt, capPolls);
     return true;
   }
@@ -326,22 +362,22 @@ export class FeedFollower {
     const refused = new Set<number>([missing]);
     for (const distance of this.settings.probeDistances) {
       const found = missing + distance;
-      const payload = await this.read(found);
+      const payload = await this.readUnnamed(found);
       if (generation !== this.generation) {
         return false;
       }
-      if (payload === null || payload === 'unreadable') {
+      if (payload === null || payload === 'unreadable' || payload === 'held') {
         refused.add(found);
         continue;
       }
       this.resetRefusals();
       this.remember(missing);
       for (let gap = missing + 1; gap < found; gap++) {
-        const between = refused.has(gap) ? null : await this.read(gap);
+        const between = refused.has(gap) ? null : await this.readUnnamed(gap);
         if (generation !== this.generation) {
           return false;
         }
-        if (between === null || between === 'unreadable') {
+        if (between === null || between === 'unreadable' || between === 'held') {
           this.remember(gap);
         } else {
           this.accept(gap, between);
@@ -366,9 +402,9 @@ export class FeedFollower {
   }
 
   /**
-   * Reads the stepped-past slots tried least recently, and lets go of any unread for `missedExpiryMs`. The map keeps
-   * its entries in the order they were last tried, so a slot that never loads moves to the back and cannot keep the
-   * ones behind it from being read.
+   * Reads the stepped-past slots tried least recently whose last miss is old enough, and lets go of any unread for
+   * `missedExpiryMs`. The map keeps its entries in the order they were last tried, so a slot that never loads moves to
+   * the back and cannot keep the ones behind it from being read.
    */
   private async readMissed(generation: number): Promise<void> {
     const now = this.settings.now();
@@ -378,7 +414,9 @@ export class FeedFollower {
         this.events.skipped(index, 'unreachable', 'not served within the time a stepped-past slot is kept');
       }
     }
-    const due = [...this.missed.keys()].slice(0, this.settings.missedReadsPerPoll);
+    const due = [...this.missed.keys()]
+      .filter((index) => this.pacer.mayRead(index, now))
+      .slice(0, this.settings.missedReadsPerPoll);
     for (const index of due) {
       const payload = await this.read(index);
       if (generation !== this.generation) {
