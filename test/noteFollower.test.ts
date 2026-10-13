@@ -4,6 +4,7 @@ import { FeedFollower, FeedStatus, type FollowerSettings, type NoteStart } from 
 import { ChatHistory } from '../src/history';
 import { noteSlotEnd, noteSlotOf, type FeedEntry } from '../src/message';
 import { ClockCorrection, NoteReader, type NoteSettings } from '../src/notes';
+import { DEFAULT_MISSING_READ_SPACING_MS } from '../src/pacer';
 
 import { bytes, entryAt, FakeGateway, TOPIC } from './fakeGateway';
 
@@ -152,7 +153,7 @@ describe('following led by notes', () => {
     follower.stop();
   });
 
-  it('puts a slot a note named that does not load on the retry list, and shows it once it loads', async () => {
+  it('puts a slot a note named that does not load on the retry list, and reads it again only after the spacing', async () => {
     const gateway = new FakeGateway();
     for (let seq = 0; seq <= 3; seq++) {
       gateway.write(entryAt(seq));
@@ -166,7 +167,9 @@ describe('following led by notes', () => {
     expect(follower.missedIndices).toEqual([1]);
 
     gateway.hidden.delete(1);
-    await vi.advanceTimersByTimeAsync(SLOT_MS);
+    await vi.advanceTimersByTimeAsync(DEFAULT_MISSING_READ_SPACING_MS - 1);
+    expect(gateway.slotReads.filter((index) => index === 1)).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
     expect(seqs()).toEqual([0, 2, 3, 1]);
     expect(follower.missedIndices).toEqual([]);
     follower.stop();
@@ -239,14 +242,14 @@ describe('following led by notes', () => {
 });
 
 describe('following a server that writes no notes', () => {
-  it('polls the next slot as before, and is led by notes from the first note it finds', async () => {
+  it('polls the next slot once every spacing, and is led by notes from the first note it finds', async () => {
     const gateway = new FakeGateway();
     gateway.write(entryAt(0)).write(entryAt(1));
     const { follower, seqs } = run(gateway);
     follower.start(0);
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(2 * DEFAULT_MISSING_READ_SPACING_MS + 1_000);
     expect(seqs()).toEqual([0, 1]);
-    expect(gateway.slotReads.filter((index) => index === 2).length).toBeGreaterThan(1);
+    expect(gateway.slotReads.filter((index) => index === 2)).toHaveLength(3);
     expect(follower.ledByNotes).toBe(false);
 
     const now = Date.now();
@@ -256,6 +259,63 @@ describe('following a server that writes no notes', () => {
     const readsOfTwo = gateway.slotReads.filter((index) => index === 2).length;
     await vi.advanceTimersByTimeAsync(30_000);
     expect(gateway.slotReads.filter((index) => index === 2).length).toBe(readsOfTwo);
+    follower.stop();
+  });
+});
+
+/** The most reads of any one address within a minute: one minute is how long Bee skips its peers for it. */
+function mostReadsInAMinute(reads: { key: number; at: number }[]): number {
+  let most = 0;
+  for (const read of reads) {
+    const inMinute = reads.filter(
+      (other) => other.key === read.key && other.at >= read.at && other.at < read.at + 60_000,
+    );
+    most = Math.max(most, inMinute.length);
+  }
+  return most;
+}
+
+const slotKeys = (gateway: FakeGateway) => gateway.slotReadsAt.map(({ index, at }) => ({ key: index, at }));
+const noteKeys = (gateway: FakeGateway) => gateway.noteReads.map(({ slot, at }) => ({ key: slot, at }));
+
+describe('never asking Bee again and again for an address that is not there', () => {
+  it('reads no address of an empty chat more than three times a minute while polling a server without notes', async () => {
+    const { follower, gateway } = run(new FakeGateway());
+    follower.start(0);
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    expect(gateway.slotReads.filter((index) => index === 0).length).toBeGreaterThanOrEqual(15);
+    expect(mostReadsInAMinute(slotKeys(gateway))).toBeLessThanOrEqual(3);
+    expect(mostReadsInAMinute(noteKeys(gateway))).toBe(1);
+    follower.stop();
+  });
+
+  it('reads a named slot no peer gives out at most three times a minute', async () => {
+    const gateway = new FakeGateway();
+    gateway.write(entryAt(0)).write(entryAt(1));
+    gateway.hidden.add(1);
+    gateway.writeNote(S0, 1, T0 + SLOT_MS);
+    const { follower, seqs } = run(gateway);
+    follower.start(0, startAt(-1));
+    await vi.advanceTimersByTimeAsync(4 * 60_000);
+    expect(seqs()).toEqual([0]);
+    expect(follower.missedIndices).toEqual([1]);
+    expect(mostReadsInAMinute(slotKeys(gateway))).toBeLessThanOrEqual(3);
+    follower.stop();
+  });
+
+  it('reads a slot a note names at once, though the polling before the first note found it missing a moment ago', async () => {
+    const gateway = new FakeGateway();
+    const { follower, seqs } = run(gateway);
+    follower.start(0);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(gateway.slotReads).toContain(0);
+
+    gateway.write(entryAt(0));
+    const slot = noteSlotOf(Date.now(), SLOT_MS);
+    gateway.writeNote(slot, 0, Date.now());
+    await vi.advanceTimersByTimeAsync(noteSlotEnd(slot, SLOT_MS) + MARGIN_MS - Date.now());
+    expect(follower.ledByNotes).toBe(true);
+    expect(seqs()).toEqual([0]);
     follower.stop();
   });
 });
