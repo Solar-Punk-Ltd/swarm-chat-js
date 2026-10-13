@@ -289,7 +289,7 @@ describe('never asking Bee again and again for an address that is not there', ()
     follower.stop();
   });
 
-  it('reads a named slot no peer gives out at most three times a minute', async () => {
+  it('reads a named slot no peer gives out at most three times a minute, and each note once', async () => {
     const gateway = new FakeGateway();
     gateway.write(entryAt(0)).write(entryAt(1));
     gateway.hidden.add(1);
@@ -300,6 +300,7 @@ describe('never asking Bee again and again for an address that is not there', ()
     expect(seqs()).toEqual([0]);
     expect(follower.missedIndices).toEqual([1]);
     expect(mostReadsInAMinute(slotKeys(gateway))).toBeLessThanOrEqual(3);
+    expect(mostReadsInAMinute(noteKeys(gateway))).toBe(1);
     follower.stop();
   });
 
@@ -317,6 +318,17 @@ describe('never asking Bee again and again for an address that is not there', ()
     expect(follower.ledByNotes).toBe(true);
     expect(seqs()).toEqual([0]);
     follower.stop();
+  });
+
+  it('an opening tried again does not ask for the notes the last one found missing', async () => {
+    const gateway = new FakeGateway();
+    const notes = new NoteReader(gateway, NOTES, () => Date.now());
+    const history = new ChatHistory(gateway, TOPIC, { error: () => {}, skipped: () => {} }, notes);
+    await history.open();
+    await vi.advanceTimersByTimeAsync(SLOT_MS);
+    await history.open();
+    expect(gateway.noteReads).toHaveLength(notes.lookBackSlots + 1);
+    expect(mostReadsInAMinute(noteKeys(gateway))).toBe(1);
   });
 });
 
