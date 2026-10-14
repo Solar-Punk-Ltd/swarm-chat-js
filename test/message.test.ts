@@ -106,10 +106,10 @@ const VECTORS: Vector[] = [
       via: 'own-stamp',
       own: true,
       idb: CHAT_BINDING,
-      sig: '6d1da0dca31dc883e090dae9a8ccf1edb88a5d38aa2bd6a9f380641349c2eddc316b545283da8f34952a5af71cf5b33fe87d6eb40bfe7b920d9651170be197a81c',
+      sig: '93e497f15181b14486f1ebf0396baef7fa562c9bbc2d8a5d45cb212838a406c953dceb64206519b8feb4d8c2ec56bd90039e92eba2730553ff4eeb8b4138fa911c',
     },
     signed:
-      '[8,"chat-devcon-main","d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4","text","","signed in with Swarm ID","tester","a531fcf12e72328748c12ba58b2b023c00e9a8f9",1759140003000,"own-stamp",true,"Swarm ID chat binding v1\\nSite: https://example.com\\nChat address: 0xa531fcf12e72328748c12ba58b2b023c00e9a8f9\\nDate: 2026-10-14T12:00:00.000Z","0x81b66b5a35aac1203c8c19883c40965e1eaee71ba57df28d3465cb8e03cf4263297bc64b2e5db5d815ae4ebb504f0a8c36ead8193bb13cd44138b2de44642c7d1c"]',
+      '[8,"chat-devcon-main","d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4","text","","signed in with Swarm ID","tester","c6b7cb635534a22fbc368643cc40355545f666dc",1759140003000,"own-stamp",true,"Swarm ID chat binding v1\\nSite: https://example.com\\nChat address: 0xc6b7cb635534a22fbc368643cc40355545f666dc\\nDate: 2026-10-14T12:00:00.000Z","0xee2151a66fcdb0852b1bff2a03578aff9556f893e4c6d2aef2d484b4ada153804a7b1c97f40eac18fbd5f75674c918c48a761800e8122b7eae7af45393d9a24d1b"]',
   },
 ];
 
