@@ -8,6 +8,7 @@ import {
   MessageVia,
   parseChatMessage,
   SwarmChat,
+  verifyChatMessage,
   type MessageData,
 } from '../src';
 import type { ChatParts, ChatSettings } from '../src/chat';
@@ -126,7 +127,7 @@ describe('start', () => {
       username: 'tester',
       timestamp: 1759140000000,
       index: 0,
-      chatTopic: TOPIC,
+      signedMessage: { topic: TOPIC },
     });
     expect(message).not.toHaveProperty('targetMessageId');
   });
@@ -301,6 +302,38 @@ describe('sendMessage', () => {
       message: { idb: CHAT_BINDING },
       identity: { account: FORK_ACCOUNT, site: BOUND_SITE },
     });
+  });
+
+  it('hands a page the signed message in every MessageData, pending and published, for it to verify', async () => {
+    const privateKey = await chatKeyFor(BOUND_SITE);
+    const { chat, events, received } = harness(new FakeGateway(), {
+      ...SETTINGS,
+      user: { ...SETTINGS.user, privateKey, binding: CHAT_BINDING },
+    });
+    await chat.start();
+    const pending = await chat.sendMessage('hello', MessageType.TEXT);
+    await vi.advanceTimersByTimeAsync(DEFAULT_MISSING_READ_SPACING_MS + POLL_MS);
+
+    const [initiated] = events[EVENTS.MESSAGE_REQUEST_INITIATED] as MessageData[];
+    const [published] = received();
+    for (const data of [pending!, initiated!, published!]) {
+      expect(verifyChatMessage(data.signedMessage, { origin: BOUND_SITE })).toMatchObject({
+        ok: true,
+        message: { id: pending!.id, text: 'hello', idb: CHAT_BINDING },
+        identity: { account: FORK_ACCOUNT },
+      });
+    }
+    expect(published!.index).toBe(0);
+  });
+
+  it('keeps no copy in MessageData of a value only the signed message needs', async () => {
+    const { chat } = harness();
+    await chat.start();
+    const pending = await chat.sendMessage('hello', MessageType.TEXT);
+    expect(Object.keys(pending!)).not.toEqual(expect.arrayContaining(['signature']));
+    expect(Object.keys(pending!)).not.toEqual(expect.arrayContaining(['chatTopic']));
+    expect(Object.keys(pending!)).not.toEqual(expect.arrayContaining(['sentAt']));
+    expect(pending!.signedMessage).toMatchObject({ topic: TOPIC, ts: expect.any(Number) as number });
   });
 
   it('refuses, sending nothing, a binding for another chat address than its key', async () => {
