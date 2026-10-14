@@ -165,13 +165,15 @@ A message is a JSON object of at most 3,072 bytes of UTF-8, its fields in this o
 | `via`    | Who paid for the inbox write: `gateway` (the gateway's stamp) or `own-stamp` (the sender's own)              |
 | `own`    | `true` when the sender also keeps a copy of the message in its own feed                                      |
 | `idb`    | Only for a signed-in sender: its Swarm ID chat binding, `{ msg, sig }`                                       |
-| `sig`    | 130 lowercase hex characters                                                                                 |
+| `sig`    | 130 lowercase hex characters of r, s and v, with v 27 or 28 and s in the lower half                          |
 
 Characters are counted as Unicode code points, so an emoji counts once, and `countCharacters` counts the same way for
 a composer. The signed bytes are the UTF-8 of
 `JSON.stringify([8, topic, id, type, target, text, name, addr, ts, via, own, idb?.msg ?? '', idb?.sig ?? ''])`, signed
 with bee-js's `PrivateKey.sign` and checked with `Signature.recoverPublicKey`, both over the raw bytes. So `via`, `own`
-and the binding cannot be changed or taken off without breaking the signature.
+and the binding cannot be changed or taken off without breaking the signature. Every signature has a second valid
+spelling, s replaced by n - s with v flipped, and bee-js reads any v but 27 as 28, so the check refuses all but the
+low s spelling with v 27 or 28, the one bee-js signs. One message has one valid signature.
 
 ### The Swarm ID chat binding
 

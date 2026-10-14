@@ -43,6 +43,8 @@ The package has two entries: the root, and `./message`, which the server uses an
   fixed vectors in `test/message.test.ts` must keep passing unchanged. A change to them is a change to the server too.
 - **Sign and verify the raw bytes.** bee-js's `PrivateKey.sign` and `Signature.recoverPublicKey` hash and prefix
   inside, although the second names its parameter `digest`. Hashing first is how 6.2.8 came to prefix twice.
+- **One signature per message, and per binding.** A signature counts only with v 27 or 28 and a low s
+  (`src/message/canonicalSignature.ts`). bee-js recovers the same signer from the high s twin and from any other v.
 - **The binding is the Swarm ID fork's, read as the fork reads it.** Its text, its site check and its signature
   spelling follow `verifyChatBinding` in solarpunk-id's `lib/src/utils/chat-binding.ts`, and `test/bindingVectors.ts`
   holds bindings the fork made on its `feat/site-chat-key` branch. Their chat address is the fork's per-site chat key,

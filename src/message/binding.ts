@@ -1,6 +1,8 @@
 import { publicKeyToAddress, recoverPublicKey } from '@ethersphere/core-sdk/crypto';
 import { z } from 'zod';
 
+import { isCanonicalSignature } from './canonicalSignature.js';
+
 /**
  * The Swarm ID chat binding: the account's statement, signed with its own key, that a chat address on one site is its
  * own. The Swarm ID fork (solarpunk-id, `lib/src/utils/chat-binding.ts`) makes it, and this module reads it exactly as
@@ -22,8 +24,6 @@ const LINE_COUNT = 4;
 
 const PERSONAL_MESSAGE_PREFIX = '\x19Ethereum Signed Message:\n';
 const RECOVERY_IDS = new Set([27, 28]);
-const SECP256K1_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
-const SECP256K1_HALF_ORDER = SECP256K1_ORDER / 2n;
 
 const CHAT_ADDRESS_PATTERN = /^0x[0-9a-f]{40}$/;
 /** `Date.prototype.toISOString` exactly: UTC, milliseconds and a `Z`. */
@@ -111,14 +111,19 @@ function toHex(bytes: Uint8Array): string {
 
 /** The account that made `sig` over `text`, or null for a signature the fork would refuse or nothing recovers from. */
 function recoverAccount(text: string, sig: string): string | null {
-  const r = BigInt(`0x${sig.slice(2, 66)}`);
-  const s = BigInt(`0x${sig.slice(66, 130)}`);
+  const rHex = sig.slice(2, 66);
+  const sHex = sig.slice(66, 130);
   const v = parseInt(sig.slice(130), 16);
-  if (!RECOVERY_IDS.has(v) || r === 0n || r >= SECP256K1_ORDER || s === 0n || s > SECP256K1_HALF_ORDER) {
+  if (!RECOVERY_IDS.has(v) || !isCanonicalSignature(rHex, sHex)) {
     return null;
   }
   try {
-    const point = recoverPublicKey(personalMessage(text), r, s, BigInt(v) as 27n | 28n);
+    const point = recoverPublicKey(
+      personalMessage(text),
+      BigInt(`0x${rHex}`),
+      BigInt(`0x${sHex}`),
+      BigInt(v) as 27n | 28n,
+    );
     return `0x${toHex(publicKeyToAddress(point))}`;
   } catch {
     return null;
