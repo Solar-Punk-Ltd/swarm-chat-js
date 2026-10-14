@@ -2,6 +2,7 @@ import {
   createChatMessage,
   encodeSlotNote,
   MessageType,
+  MessageVia,
   type ChatMessage,
   type FeedEntry,
   type HistoryLink,
@@ -21,12 +22,18 @@ export function bytes(value: unknown): Uint8Array {
 }
 
 export function testMessage(text: string, topic = TOPIC): ChatMessage {
-  return createChatMessage(TEST_KEY, { topic, type: MessageType.TEXT, text, name: 'tester', ts: 1759140000000 })
-    .message;
+  return createChatMessage(TEST_KEY, {
+    topic,
+    type: MessageType.TEXT,
+    text,
+    name: 'tester',
+    ts: 1759140000000,
+    via: MessageVia.GATEWAY,
+  }).message;
 }
 
 export function entryAt(seq: number, history: HistoryLink | null = null, text = `message ${seq}`): FeedEntry {
-  return { v: 7, seq, at: 1759140000000 + seq, msg: testMessage(text), history };
+  return { v: 8, seq, at: 1759140000000 + seq, msg: testMessage(text), history };
 }
 
 /**

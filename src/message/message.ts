@@ -1,16 +1,23 @@
 import { PrivateKey, Signature } from '@ethersphere/bee-js';
 import { z } from 'zod';
 
+import { chatBindingSchema, checkChatBinding, type ChatBinding, type ChatIdentity } from './binding.js';
+import { isCanonicalSignature } from './canonicalSignature.js';
+
 /**
- * The chat message of version 7: what a browser sends as a GSOC payload, what the server verifies before it
+ * The chat message of version 8: what a browser sends as a GSOC payload, what the server verifies before it
  * publishes, and what every feed entry carries back as `msg`. This module is the only place its bytes are built,
- * signed, checked and read, and the server imports it from here rather than keeping a copy.
+ * signed, checked and read, and the server imports it from here rather than keeping a copy. A message of any other
+ * version fails the shape check.
  */
 
-export const MESSAGE_VERSION = 7;
+export const MESSAGE_VERSION = 8;
 
-/** Measured on the UTF-8 of the whole JSON object, on top of the per-field caps. */
-export const MAX_MESSAGE_BYTES = 2048;
+/**
+ * Measured on the UTF-8 of the whole JSON object, on top of the per-field caps. Large enough for a 500 character text
+ * of two byte characters with a Swarm ID binding, at every other cap.
+ */
+export const MAX_MESSAGE_BYTES = 3072;
 
 export const MAX_TOPIC_CHARACTERS = 128;
 export const MAX_TEXT_CHARACTERS = 500;
@@ -23,6 +30,14 @@ export const MessageType = {
 } as const;
 
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];
+
+/** Who paid for the inbox write: the gateway's stamp, or the sender's own. */
+export const MessageVia = {
+  GATEWAY: 'gateway',
+  OWN_STAMP: 'own-stamp',
+} as const;
+
+export type MessageVia = (typeof MessageVia)[keyof typeof MessageVia];
 
 /**
  * Characters are counted as Unicode code points, never as UTF-16 units, so an emoji outside the basic plane counts
@@ -60,6 +75,11 @@ export const chatMessageSchema = z
     name: characters(1, MAX_NAME_CHARACTERS),
     addr: lowercaseHex(40),
     ts: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    via: z.enum([MessageVia.GATEWAY, MessageVia.OWN_STAMP]),
+    /** Whether the sender also keeps a copy of this message in its own feed, named by `ownFeedTopic`. */
+    own: z.boolean(),
+    /** The sender's Swarm ID chat binding, present only for a signed-in sender. */
+    idb: chatBindingSchema.optional(),
     sig: lowercaseHex(130),
   })
   .refine((message) => (message.type === MessageType.TEXT) === (message.target === ''), {
@@ -71,11 +91,22 @@ export type ChatMessage = z.infer<typeof chatMessageSchema>;
 
 export type UnsignedChatMessage = Omit<ChatMessage, 'sig'>;
 
-export type ChatMessageRefusal = 'too-large' | 'not-utf8' | 'not-json' | 'shape' | 'signature';
+export type ChatMessageRefusal = 'too-large' | 'not-utf8' | 'not-json' | 'shape' | 'signature' | 'binding';
 
+/** `identity` is null for a guest, a message with no binding. */
 export type ChatMessageCheck =
-  | { ok: true; message: ChatMessage }
+  | { ok: true; message: ChatMessage; identity: ChatIdentity | null }
   | { ok: false; reason: ChatMessageRefusal; detail: string };
+
+/**
+ * `origin` is the site the chat runs on, a bare origin such as `https://example.com`, and is required: a binding for
+ * any other site is refused, so a binding signed for one site never passes in another site's chat.
+ */
+export interface VerifyOptions {
+  origin: string;
+  /** Accept a binding for `http://localhost`, `http://127.0.0.1` or `http://[::1]`, as only a development build signs. */
+  allowLocalHttp?: boolean;
+}
 
 export class ChatMessageError extends Error {
   constructor(
@@ -88,6 +119,10 @@ export class ChatMessageError extends Error {
 }
 
 const encoder = new TextEncoder();
+
+/** The two recovery bytes a signature may end in, as hex. */
+const RECOVERY_27 = '1b';
+const RECOVERY_28 = '1c';
 const decoder = new TextDecoder('utf-8', { fatal: true });
 
 /** The exact bytes a sender signs and a verifier recovers the signer from. Their order is the contract. */
@@ -103,6 +138,10 @@ export function signedBytes(message: UnsignedChatMessage): Uint8Array {
       message.name,
       message.addr,
       message.ts,
+      message.via,
+      message.own,
+      message.idb?.msg ?? '',
+      message.idb?.sig ?? '',
     ]),
   );
 }
@@ -119,6 +158,9 @@ export function encodeChatMessage(message: ChatMessage): Uint8Array {
     name: message.name,
     addr: message.addr,
     ts: message.ts,
+    via: message.via,
+    own: message.own,
+    ...(message.idb ? { idb: { msg: message.idb.msg, sig: message.idb.sig } } : {}),
     sig: message.sig,
   };
   return encoder.encode(JSON.stringify(ordered));
@@ -140,6 +182,12 @@ export interface ChatMessageDraft {
   id?: string;
   /** The sender's clock in milliseconds, `Date.now()` when left out. */
   ts?: number;
+  /** Who pays for the inbox write. Required, since nothing can tell from here. */
+  via: MessageVia;
+  /** Whether the sender also keeps a copy in its own feed, false when left out. */
+  own?: boolean;
+  /** The sender's Swarm ID chat binding, given only for a signed-in sender. */
+  idb?: ChatBinding;
 }
 
 export interface SignedChatMessage {
@@ -153,7 +201,7 @@ function describeIssues(error: z.ZodError): string {
 
 /**
  * Builds and signs a message, and throws a ChatMessageError before signing anything that the server would refuse:
- * a field outside its cap, or a payload over MAX_MESSAGE_BYTES.
+ * a field outside its cap, a payload over MAX_MESSAGE_BYTES, or a binding that is not for this key.
  */
 export function createChatMessage(
   privateKey: PrivateKey | Uint8Array | string,
@@ -170,6 +218,9 @@ export function createChatMessage(
     name: draft.name,
     addr: signer.publicKey().address().toHex(),
     ts: draft.ts ?? Date.now(),
+    via: draft.via,
+    own: draft.own ?? false,
+    ...(draft.idb ? { idb: draft.idb } : {}),
   };
 
   // A placeholder of the signature's exact length checks the shape and measures the final payload before signing.
@@ -182,13 +233,30 @@ export function createChatMessage(
   if (size > MAX_MESSAGE_BYTES) {
     throw new ChatMessageError('too-large', `${size} bytes, the cap is ${MAX_MESSAGE_BYTES}`);
   }
+  if (unsigned.idb) {
+    // Which sites a binding may name is the verifier's call, so only what no verifier would accept is refused here.
+    const binding = checkChatBinding(unsigned.idb, unsigned.addr, { allowLocalHttp: true });
+    if (!binding.ok) {
+      throw new ChatMessageError('binding', binding.detail);
+    }
+  }
 
   const message: ChatMessage = { ...unsigned, sig: signer.sign(signedBytes(unsigned)).toHex() };
   return { message, bytes: encodeChatMessage(message) };
 }
 
-/** Whether `sig` was made over this message's signed bytes by the key behind `addr`. */
+/**
+ * Whether `sig` was made over this message's signed bytes by the key behind `addr`, in its one canonical spelling: v 27
+ * or 28 and a low s, as bee-js signs. bee-js would also recover the signer from the high s twin, or from any other v.
+ */
 export function hasValidSignature(message: ChatMessage): boolean {
+  const v = message.sig.slice(128);
+  if (
+    (v !== RECOVERY_27 && v !== RECOVERY_28) ||
+    !isCanonicalSignature(message.sig.slice(0, 64), message.sig.slice(64, 128))
+  ) {
+    return false;
+  }
   try {
     const signer = new Signature(message.sig).recoverPublicKey(signedBytes(message)).address();
     return signer.toHex() === message.addr;
@@ -197,23 +265,41 @@ export function hasValidSignature(message: ChatMessage): boolean {
   }
 }
 
-/** Checks a message that arrived as an object, its shape and its signature. */
-export function checkChatMessage(value: unknown): ChatMessageCheck {
+/**
+ * Verifies a message that arrived as an object: its shape, its signature, and, when it carries a binding, that the
+ * binding is the fork's four lines for this `addr` and for `options.origin`, and recovers an account. A message whose
+ * binding fails is refused as `binding`, never passed as a guest, and so is a bound message checked with no origin.
+ * Never throws, and touches no DOM and no Node API, so a page runs it in a Web Worker as the server runs it.
+ */
+export function verifyChatMessage(value: unknown, options: VerifyOptions): ChatMessageCheck {
   const shape = chatMessageSchema.safeParse(value);
   if (!shape.success) {
     return { ok: false, reason: 'shape', detail: describeIssues(shape.error) };
   }
-  if (!hasValidSignature(shape.data)) {
+  const message = shape.data;
+  if (!hasValidSignature(message)) {
     return { ok: false, reason: 'signature', detail: 'the signature was not made by addr over these fields' };
   }
-  return { ok: true, message: shape.data };
+  if (!message.idb) {
+    return { ok: true, message, identity: null };
+  }
+  // A caller outside TypeScript can still leave the origin out, which would accept a binding for any site.
+  if (typeof options?.origin !== 'string') {
+    return { ok: false, reason: 'binding', detail: 'no origin was given to check the binding against' };
+  }
+  const binding = checkChatBinding(message.idb, message.addr, options);
+  if (!binding.ok) {
+    return { ok: false, reason: 'binding', detail: binding.detail };
+  }
+  return { ok: true, message, identity: binding.identity };
 }
 
 /**
- * Checks a message as it arrived on the wire: the byte cap on the raw payload, then UTF-8, JSON, the shape and the
- * signature. Never throws, since the server calls it on whatever anybody writes to the chat's GSOC address.
+ * Verifies a message as it arrived on the wire: the byte cap on the raw payload, then UTF-8, JSON, and everything
+ * `verifyChatMessage` checks. Never throws, since the server calls it on whatever anybody writes to the chat's GSOC
+ * address.
  */
-export function parseChatMessage(payload: Uint8Array): ChatMessageCheck {
+export function parseChatMessage(payload: Uint8Array, options: VerifyOptions): ChatMessageCheck {
   if (payload.byteLength > MAX_MESSAGE_BYTES) {
     return { ok: false, reason: 'too-large', detail: `${payload.byteLength} bytes, the cap is ${MAX_MESSAGE_BYTES}` };
   }
@@ -229,5 +315,5 @@ export function parseChatMessage(payload: Uint8Array): ChatMessageCheck {
   } catch {
     return { ok: false, reason: 'not-json', detail: 'the payload is not JSON' };
   }
-  return checkChatMessage(value);
+  return verifyChatMessage(value, options);
 }

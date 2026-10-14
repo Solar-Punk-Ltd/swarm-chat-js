@@ -6,7 +6,8 @@ that feed. The browser talks only to a Bee node or gateway, never to a web serve
 
 The library needs its server,
 [Solar-Punk-Ltd/swarm-chat-aggregator-js](https://github.com/Solar-Punk-Ltd/swarm-chat-aggregator-js), which listens on
-the inbox and writes the feed. Version 7 of the library reads and writes the v7 message format only.
+the inbox and writes the feed. Version 8 of the library reads and writes the v8 message format only, and a v7 message
+fails its shape check.
 
 ## How it works
 
@@ -43,12 +44,13 @@ bee-js 13 is a peer dependency. The package runs in browsers and in Node 24 or l
 ## Usage
 
 ```ts
-import { EVENTS, MessageType, SwarmChat, type MessageData } from '@solarpunkltd/swarm-chat-js';
+import { EVENTS, MessageType, MessageVia, SwarmChat, type MessageData } from '@solarpunkltd/swarm-chat-js';
 
 const chat = new SwarmChat({
   user: { privateKey: userKey, nickname: 'alice' },
   infra: {
     beeUrl: 'https://gateway.example.com',
+    via: MessageVia.GATEWAY,
     gsocTopic: inboxIdentifier,
     gsocResourceId: minedInboxKey,
     chatTopic: 'chat-my-stream',
@@ -76,9 +78,11 @@ await chat.stop();
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `user.privateKey`        | Signs every message. A viewer that only reads may pass any key.                                                                                       |
 | `user.nickname`          | The name on every message, 1 to 20 characters. Nothing can be sent without one.                                                                       |
+| `user.binding`           | Optional. A signed-in viewer's Swarm ID chat binding, `{ msg, sig }`, for the chat address of `user.privateKey`. Every message then carries it.       |
 | `infra.beeUrl`           | The Bee node or gateway the chat is read through, and written through when `infra.writeUrl` is not set.                                               |
 | `infra.writeUrl`         | Optional. The Bee node or gateway the inbox writes go through, such as a write gateway that stamps them, when they go somewhere other than the reads. |
 | `infra.stamp`            | The batch the inbox writes are stamped with. Left out for a gateway that stamps writes itself.                                                        |
+| `infra.via`              | Required. Who pays for the inbox writes, `MessageVia.GATEWAY` or `MessageVia.OWN_STAMP`, as every message says in `via`.                              |
 | `infra.gsocTopic`        | The inbox's identifier string, the same for every chat.                                                                                               |
 | `infra.gsocResourceId`   | The mined key every sender signs inbox writes with. The server's operator mines it.                                                                   |
 | `infra.chatTopic`        | The chat's topic, which every message carries and the feed is named by.                                                                               |
@@ -127,8 +131,10 @@ be failed and then shown, for example when the server published it after the las
 follow `MESSAGE_REQUEST_ERROR` for the same `id`, and a viewer settles on the received one.
 
 A `MessageData` has `id`, `type`, `message` (the text or emoji), `username`, `address`, `timestamp` (the server's
-receive time, or the sender's clock while pending), `targetMessageId` for a reply or reaction, `chatTopic`,
-`signature`, `index` (the feed index, -1 while pending) and `sentAt` (the sender's clock, which nothing checks).
+receive time, or the sender's clock while pending), `targetMessageId` for a reply or reaction, `index` (the feed index,
+-1 while pending) and `signedMessage`, the message exactly as its sender signed it. Everything else the message says,
+its topic, its signature, the sender's clock, `via`, `own` and the binding, is read from `signedMessage`, and a page
+that shows who sent it hands `signedMessage` to `verifyChatMessage`. See [Verifying](#verifying).
 
 ## The message, for servers and tools
 
@@ -138,38 +144,104 @@ it rather than keeping a copy. It loads none of the reader.
 ```ts
 import { parseChatMessage, MAX_MESSAGE_BYTES } from '@solarpunkltd/swarm-chat-js/message';
 
-const check = parseChatMessage(payload);
+const check = parseChatMessage(payload, { origin: 'https://example.com' });
 if (check.ok) publish(check.message);
 else count(check.reason);
 ```
 
-A message is a JSON object of at most 2,048 bytes of UTF-8:
+A message is a JSON object of at most 3,072 bytes of UTF-8, its fields in this order:
 
 | Field    | Meaning                                                                                                      |
 | -------- | ------------------------------------------------------------------------------------------------------------ |
-| `v`      | `7`                                                                                                          |
+| `v`      | `8`                                                                                                          |
 | `topic`  | The chat's topic, 1 to 128 characters                                                                        |
 | `id`     | A random id, 32 lowercase hex characters                                                                     |
 | `type`   | `text`, `thread` (a reply, `target` is the parent) or `reaction` (`target` is the message, `text` the emoji) |
 | `target` | The id it refers to, or `""` for a text                                                                      |
 | `text`   | 1 to 500 characters                                                                                          |
 | `name`   | 1 to 20 characters                                                                                           |
-| `addr`   | The sender's address, 40 lowercase hex characters without `0x`                                               |
+| `addr`   | The sender's chat address, 40 lowercase hex characters without `0x`                                          |
 | `ts`     | The sender's clock in milliseconds                                                                           |
-| `sig`    | 130 hex characters                                                                                           |
+| `via`    | Who paid for the inbox write: `gateway` (the gateway's stamp) or `own-stamp` (the sender's own)              |
+| `own`    | `true` when the sender also keeps a copy of the message in its own feed                                      |
+| `idb`    | Only for a signed-in sender: its Swarm ID chat binding, `{ msg, sig }`                                       |
+| `sig`    | 130 lowercase hex characters of r, s and v, with v 27 or 28 and s in the lower half                          |
 
 Characters are counted as Unicode code points, so an emoji counts once, and `countCharacters` counts the same way for
-a composer. The signed bytes are the UTF-8 of `JSON.stringify([7, topic, id, type, target, text, name, addr, ts])`,
-signed with bee-js's `PrivateKey.sign` and checked with `Signature.recoverPublicKey`, both over the raw bytes.
+a composer. The signed bytes are the UTF-8 of
+`JSON.stringify([8, topic, id, type, target, text, name, addr, ts, via, own, idb?.msg ?? '', idb?.sig ?? ''])`, signed
+with bee-js's `PrivateKey.sign` and checked with `Signature.recoverPublicKey`, both over the raw bytes. So `via`, `own`
+and the binding cannot be changed or taken off without breaking the signature. Every signature has a second valid
+spelling, s replaced by n - s with v flipped, and bee-js reads any v but 27 as 28, so the check refuses all but the
+low s spelling with v 27 or 28, the one bee-js signs. One message has one valid signature.
 
-| Export                                                                       | Use                                                                                         |
-| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `parseChatMessage(bytes)`                                                    | The server's check of a raw payload: byte cap, UTF-8, JSON, shape, signature. Never throws. |
-| `checkChatMessage(value)`                                                    | The same for a parsed object.                                                               |
-| `createChatMessage(key, draft)`                                              | Builds and signs, throwing a `ChatMessageError` for anything the check would refuse.        |
-| `chatMessageSchema`, `hasValidSignature`, `signedBytes`, `encodeChatMessage` | The parts.                                                                                  |
-| `feedEntrySchema`, `parseFeedEntry`                                          | The feed entry, `{v, seq, at, msg, history}`.                                               |
-| `historyFileSchema`, `parseHistoryFile`                                      | The history file, `{v, topic, fromSeq, toSeq, messages, prev}`.                             |
+### The Swarm ID chat binding
+
+A Swarm ID account gives each site its own chat key, and nothing in that key says which account it came from. The fork
+derives it from the site's app secret, itself HMAC-SHA256 of the site's origin under the account key: the chat key is
+HMAC-SHA256 of `swarm-id chat key v1` under the app secret, asked again under `swarm-id chat key v1/1`, `/2` and on
+while the result is not a valid secp256k1 private key. This library never derives it. It only checks the address a
+binding names. The binding is the account's statement, signed with the account's own key, that one chat address on one
+site is its own. The Swarm ID fork signs it, and this library reads it exactly as the fork's `verifyChatBinding` does,
+without importing the fork. `msg` is four lines joined by `\n`:
+
+```text
+Swarm ID chat binding v1
+Site: https://example.com
+Chat address: 0x<addr>
+Date: 2026-10-14T12:00:00.000Z
+```
+
+The site is a bare https origin as a browser reports it (plain http only for `localhost`, `127.0.0.1` and `[::1]`, and
+only with `allowLocalHttp`), the chat address is `0x` and 40 lowercase hex characters, and the date is ISO 8601 UTC with
+milliseconds. `sig` is EIP-191 `personal_sign` over `msg`, written as the fork writes it: `0x` and 130 lowercase hex
+characters of r, s and v, v 27 or 28 and s in the lower half. Recovering it gives the account's address.
+
+### Verifying
+
+`verifyChatMessage(value, { origin, allowLocalHttp? })` checks a message's shape and its signature, and then, when it
+carries a binding, that the binding's text is those four lines, its chat address is the message's `addr`, its signature
+recovers an account, and its site is `origin`. It returns `{ ok: true, message, identity }`, `identity` being
+`{ account, site, date }` for a signed-in sender and `null` for a guest. A message whose binding fails is refused with
+the reason `binding` and is never shown as a guest.
+
+`origin` is required, the bare origin of the site whose chat this is, such as `https://example.com`. A binding signed
+for one site therefore never passes in another site's chat because a caller left the origin out. A JavaScript caller
+that passes none anyway gets every bound message refused as `binding`. The server passes its configured site origin,
+and a page passes its own.
+
+**What `identity.account` proves, and what it does not.** It proves only that whoever controls that Swarm ID account
+bound this chat key for this site, on the date the binding names. It is not a verified person, and it is not an
+account anyone has allowed. One person can hold many accounts, an account can be made in a minute, and a lost or shared
+account key binds just as well. A page that wants more, such as a badge for known people or a list of accounts allowed
+to post, keeps that list itself and compares `identity.account` with it.
+
+The server calls it, through `parseChatMessage`, on every payload. The reader in this library still checks no
+signature, since that cost 6.x about 36 ms of main thread per message, so a page that shows identities runs
+`verifyChatMessage` in a Web Worker on each event's `MessageData.signedMessage`, which is the feed
+entry's `msg` or, while pending, the message as it was signed. It never throws, and it touches no DOM and no Node API.
+
+### The own feed
+
+A sender that also keeps a copy of each message it sends says so with `own: true`. The copies live in a feed owned by
+the sender's chat address `addr`, under the topic `ownFeedTopic(chatTopic)`, which is `swarm-chat-own-feed-v1:` and the
+chat's topic, turned into a feed topic with `Topic.fromString` as the chat's own feed is. This library does not write
+that feed yet, so `SwarmChat` always sends `own: false`.
+
+| Export                                                                       | Use                                                                                                          |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `parseChatMessage(bytes, { origin })`                                        | The server's check of a raw payload: byte cap, UTF-8, JSON, then `verifyChatMessage`. Never throws.          |
+| `verifyChatMessage(value, { origin })`                                       | Shape, signature and binding of a parsed object, with the sender's identity. Never throws.                   |
+| `createChatMessage(key, draft)`                                              | Builds and signs, throwing a `ChatMessageError` for anything the check would refuse. `via` is required.      |
+| `MessageType`, `MessageVia`                                                  | The values of `type` and `via`.                                                                              |
+| `checkChatBinding(binding, addr, options?)`, `chatBindingSchema`             | The binding check on its own and its shape. Its `origin` is optional, for a sender checking its own binding. |
+| `ownFeedTopic(chatTopic)`, `OWN_FEED_TOPIC_PREFIX`                           | The topic of a sender's own feed of copies.                                                                  |
+| `chatMessageSchema`, `hasValidSignature`, `signedBytes`, `encodeChatMessage` | The parts.                                                                                                   |
+| `feedEntrySchema`, `parseFeedEntry`                                          | The feed entry, `{v, seq, at, msg, history}`.                                                                |
+| `historyFileSchema`, `parseHistoryFile`                                      | The history file, `{v, topic, fromSeq, toSeq, messages, prev}`.                                              |
+
+The feed entry and the history file carry `v` 8 like the message. A feed entry, at most 4,096 bytes, holds a message at
+the byte cap inside its largest wrapper.
 
 ## Slot notes, for servers and tools
 
@@ -196,6 +268,21 @@ was stamped before the reader received it, so the reader runs at most `received 
 notes are found it trusts its own clock, moving reads earlier only when that bound proves the clock runs behind. When
 no note is found for longer than a heartbeat, it waits out the whole bound from then on, which is never early. A
 clock that runs behind sees every stamp as old as it expects, so its messages arrive as late as it runs behind.
+
+## Changes in 8.0
+
+- The v8 message adds `via`, `own` and, for a signed-in sender, `idb`, its Swarm ID chat binding, all signed. A v7
+  message, entry or history file fails its shape check, and nothing reads both.
+- `verifyChatMessage` replaces `checkChatMessage` and also checks the binding, returning the sender's `identity`.
+  Both it and `parseChatMessage` require `{ origin }`, the site whose chat this is. A failed binding is refused with the
+  new reason `binding`.
+- `MAX_MESSAGE_BYTES` is 3,072, so a long text fits beside a binding.
+- `createChatMessage` requires `via` and takes `own` and `idb`. `SwarmChat` requires `infra.via` and takes
+  `user.binding`.
+- `ownFeedTopic` names the feed where a sender keeps its copies.
+- `MessageData.signedMessage` carries the whole signed message, for a page to verify. `chatTopic`, `signature` and
+  `sentAt` are gone from `MessageData`, since `signedMessage` carries them as `topic`, `sig` and `ts`.
+- The binding is recovered through `@ethersphere/core-sdk`, which bee-js 13 already installs, now a dependency here.
 
 ## Changes in 7.3
 

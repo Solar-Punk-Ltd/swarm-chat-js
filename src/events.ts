@@ -29,7 +29,10 @@ export const EVENTS = {
 
 export type ChatEvent = (typeof EVENTS)[keyof typeof EVENTS];
 
-/** A message as the viewer shows it. The field names are 6.x's, so a viewer built on 6.x changes little. */
+/**
+ * A message as the viewer shows it. The field names are 6.x's, so a viewer built on 6.x changes little. The fields a
+ * viewer renders are kept beside `signedMessage`, and everything else the message says is read from it.
+ */
 export interface MessageData {
   id: string;
   type: MessageType;
@@ -41,12 +44,13 @@ export interface MessageData {
   timestamp: number;
   /** The message a thread reply or a reaction refers to. */
   targetMessageId?: string;
-  chatTopic: string;
-  signature: string;
   /** The message's place in the chat, its feed index, or -1 while it is pending. */
   index: number;
-  /** The sender's own clock, which nothing checks. */
-  sentAt: number;
+  /**
+   * The message exactly as its sender signed it. The reader checks no signature, so a page that shows who sent it
+   * hands this to `verifyChatMessage`, in a Web Worker.
+   */
+  signedMessage: ChatMessage;
 }
 
 export interface SkippedMessage {
@@ -73,10 +77,8 @@ function messageData(message: ChatMessage, index: number, timestamp: number): Me
     address: message.addr,
     timestamp,
     ...(message.target ? { targetMessageId: message.target } : {}),
-    chatTopic: message.topic,
-    signature: message.sig,
     index,
-    sentAt: message.ts,
+    signedMessage: message,
   };
 }
 
