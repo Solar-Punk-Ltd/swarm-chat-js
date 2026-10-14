@@ -175,8 +175,11 @@ and the binding cannot be changed or taken off without breaking the signature.
 
 ### The Swarm ID chat binding
 
-A Swarm ID account gives each site its own chat key, and nothing in that key says which account it came from. The
-binding is the account's statement, signed with the account's own key, that one chat address on one site is its own.
+A Swarm ID account gives each site its own chat key, and nothing in that key says which account it came from. The fork
+derives it from the site's app secret, itself HMAC-SHA256 of the site's origin under the account key: the chat key is
+HMAC-SHA256 of `swarm-id chat key v1` under the app secret, asked again under `swarm-id chat key v1/1`, `/2` and on
+while the result is not a valid secp256k1 private key. This library never derives it. It only checks the address a
+binding names. The binding is the account's statement, signed with the account's own key, that one chat address on one site is its own.
 The Swarm ID fork signs it, and this library reads it exactly as the fork's `verifyChatBinding` does, without importing
 the fork. `msg` is four lines joined by `\n`:
 

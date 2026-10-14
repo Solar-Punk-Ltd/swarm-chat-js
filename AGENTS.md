@@ -45,7 +45,9 @@ The package has two entries: the root, and `./message`, which the server uses an
   inside, although the second names its parameter `digest`. Hashing first is how 6.2.8 came to prefix twice.
 - **The binding is the Swarm ID fork's, read as the fork reads it.** Its text, its site check and its signature
   spelling follow `verifyChatBinding` in solarpunk-id's `lib/src/utils/chat-binding.ts`, and `test/bindingVectors.ts`
-  holds bindings the fork made. That signature is EIP-191 `personal_sign` over the text itself, which bee-js's
+  holds bindings the fork made on its `feat/site-chat-key` branch. Their chat address is the fork's per-site chat key,
+  and `chatKeyFor` there derives it the way the fork's `deriveChatKey` does, so when the fork changes that derivation
+  the vectors are made again from its built code. That signature is EIP-191 `personal_sign` over the text itself, which bee-js's
   `Signature` cannot recover, so `binding.ts` recovers through `@ethersphere/core-sdk/crypto` and passes v as a bigint.
   A binding that fails is refused as `binding`, never shown as a guest.
 - **`verifyChatMessage` runs in a Web Worker.** It never throws and uses no DOM and no Node API, since a page verifies

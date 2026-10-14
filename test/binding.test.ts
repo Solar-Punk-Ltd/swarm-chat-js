@@ -16,7 +16,7 @@ import {
   BOUND_CHAT_ADDR,
   BOUND_SITE,
   CHAT_BINDING,
-  CHAT_BINDING_V27,
+  CHAT_BINDING_V28,
   chatKeyFor,
   FORK_ACCOUNT,
   FORK_ACCOUNT_KEY,
@@ -86,8 +86,8 @@ describe('the fork-compatible binding vector', () => {
   });
 
   it.each([
-    ['28', CHAT_BINDING],
-    ['27', CHAT_BINDING_V27],
+    ['27', CHAT_BINDING],
+    ['28', CHAT_BINDING_V28],
   ])('recovers the account the way the fork recovers it, with v %s and a low s', (v, binding) => {
     const sig = binding.sig.slice(2);
     const r = BigInt(`0x${sig.slice(0, 64)}`);
@@ -110,8 +110,8 @@ describe('the fork-compatible binding vector', () => {
   });
 
   it.each([
-    ['28', CHAT_BINDING, '2026-10-14T12:00:00.000Z'],
-    ['27', CHAT_BINDING_V27, '2026-10-14T12:04:00.000Z'],
+    ['27', CHAT_BINDING, '2026-10-14T12:00:00.000Z'],
+    ['28', CHAT_BINDING_V28, '2026-10-14T12:01:00.000Z'],
   ])('verifies here as the fork verified it, with v %s', (_v, binding, date) => {
     const message = signedWith(boundKey, binding);
     expect(verifyChatMessage(message, { origin: BOUND_SITE })).toEqual({
