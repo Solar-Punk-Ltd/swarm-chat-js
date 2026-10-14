@@ -49,7 +49,9 @@ The package has two entries: the root, and `./message`, which the server uses an
   `Signature` cannot recover, so `binding.ts` recovers through `@ethersphere/core-sdk/crypto` and passes v as a bigint.
   A binding that fails is refused as `binding`, never shown as a guest.
 - **`verifyChatMessage` runs in a Web Worker.** It never throws and uses no DOM and no Node API, since a page verifies
-  identities off its main thread.
+  identities off its main thread. It gets the message from `MessageData.signedMessage`, so every event that carries a
+  `MessageData` carries the message exactly as signed. A value `signedMessage` already carries gets no field of its own
+  in `MessageData` unless a viewer renders it.
 - **Never ask Bee for an address before it exists.** A failed read makes Bee skip its peers for that address for a
   minute, which delayed every new message by about forty seconds. A note is asked for only once its slot is over, and
   a feed slot only once a note named it. The head lookup and the polling of the next slot are kept only for a reader
