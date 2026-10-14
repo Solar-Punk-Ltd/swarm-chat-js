@@ -5,6 +5,7 @@ import {
   EVENTS,
   FeedStatus,
   MessageType,
+  MessageVia,
   parseChatMessage,
   SwarmChat,
   type MessageData,
@@ -12,6 +13,7 @@ import {
 import type { ChatParts, ChatSettings } from '../src/chat';
 import { DEFAULT_MISSING_READ_SPACING_MS } from '../src/pacer';
 
+import { BOUND_SITE, CHAT_BINDING, chatKeyFor, FORK_ACCOUNT } from './bindingVectors';
 import { bytes, entryAt, FakeGateway, TEST_KEY, TOPIC } from './fakeGateway';
 
 const POLL_MS = 500;
@@ -20,6 +22,7 @@ const SETTINGS: ChatSettings = {
   user: { privateKey: TEST_KEY, nickname: 'tester' },
   infra: {
     beeUrl: 'http://gateway.example.com',
+    via: MessageVia.GATEWAY,
     gsocTopic: 'gsoc-inbox',
     // Test only.
     gsocResourceId: '22'.repeat(32),
@@ -52,7 +55,7 @@ class FakeServer {
     }
     this.published.add(check.message.id);
     const seq = this.gateway.slots.size;
-    this.gateway.writeRaw(seq, bytes({ v: 7, seq, at: 1759150000000 + seq, msg: check.message, history: null }));
+    this.gateway.writeRaw(seq, bytes({ v: 8, seq, at: 1759150000000 + seq, msg: check.message, history: null }));
   };
 }
 
@@ -174,9 +177,9 @@ describe('start', () => {
   it('never shows one message twice, even when two history files overlap', async () => {
     const gateway = new FakeGateway();
     const row = (seq: number) => ({ seq, at: seq, msg: entryAt(seq).msg });
-    const older = { v: 7, topic: TOPIC, fromSeq: 0, toSeq: 1, messages: [row(0), row(1)], prev: null };
+    const older = { v: 8, topic: TOPIC, fromSeq: 0, toSeq: 1, messages: [row(0), row(1)], prev: null };
     const newest = {
-      v: 7,
+      v: 8,
       topic: TOPIC,
       fromSeq: 1,
       toSeq: 2,
@@ -273,6 +276,43 @@ describe('sendMessage', () => {
     expect(check.ok && check.message).toMatchObject({ type: 'thread', target: 'a1'.repeat(16) });
   });
 
+  it('says in every message who paid, as its settings name, and keeps no own copy', async () => {
+    const { chat, server } = harness(new FakeGateway(), {
+      ...SETTINGS,
+      infra: { ...SETTINGS.infra, via: MessageVia.OWN_STAMP },
+    });
+    await chat.start();
+    await chat.sendMessage('hello', MessageType.TEXT);
+    const check = parseChatMessage(server.writes[0]!);
+    expect(check.ok && check.message).toMatchObject({ via: MessageVia.OWN_STAMP, own: false });
+    expect(check.ok && 'idb' in check.message).toBe(false);
+  });
+
+  it("carries a signed-in viewer's binding, which the check reads as the account", async () => {
+    const privateKey = await chatKeyFor(BOUND_SITE);
+    const { chat, server } = harness(new FakeGateway(), {
+      ...SETTINGS,
+      user: { ...SETTINGS.user, privateKey, binding: CHAT_BINDING },
+    });
+    await chat.start();
+    await chat.sendMessage('hello', MessageType.TEXT);
+    expect(parseChatMessage(server.writes[0]!, { origin: BOUND_SITE })).toMatchObject({
+      ok: true,
+      message: { idb: CHAT_BINDING },
+      identity: { account: FORK_ACCOUNT, site: BOUND_SITE },
+    });
+  });
+
+  it('refuses, sending nothing, a binding for another chat address than its key', async () => {
+    const { chat, server } = harness(new FakeGateway(), {
+      ...SETTINGS,
+      user: { ...SETTINGS.user, binding: CHAT_BINDING },
+    });
+    await chat.start();
+    await expect(chat.sendMessage('hello', MessageType.TEXT)).rejects.toMatchObject({ reason: 'binding' });
+    expect(server.writes).toHaveLength(0);
+  });
+
   it('merges quick taps on one reaction into one net toggle', async () => {
     const { chat, server } = harness();
     await chat.start();
@@ -338,7 +378,7 @@ describe('fetchPreviousMessages', () => {
   it('shows the file before the oldest shown, and says when there is no more', async () => {
     const gateway = new FakeGateway();
     const older = {
-      v: 7,
+      v: 8,
       topic: TOPIC,
       fromSeq: 0,
       toSeq: 0,
@@ -346,7 +386,7 @@ describe('fetchPreviousMessages', () => {
       prev: null,
     };
     const newest = {
-      v: 7,
+      v: 8,
       topic: TOPIC,
       fromSeq: 1,
       toSeq: 1,

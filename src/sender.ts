@@ -1,6 +1,13 @@
 import type { PrivateKey } from '@ethersphere/bee-js';
 
-import { createChatMessage, MessageType, type ChatMessage, type ChatMessageDraft } from './message/index.js';
+import {
+  createChatMessage,
+  MessageType,
+  type ChatBinding,
+  type ChatMessage,
+  type ChatMessageDraft,
+  type MessageVia,
+} from './message/index.js';
 
 /** Writes one payload to the chat's GSOC address. Rejects when the write did not reach the node. */
 export type GsocWrite = (payload: Uint8Array) => Promise<void>;
@@ -52,7 +59,15 @@ interface ReactionTaps {
   timer: ReturnType<typeof setTimeout>;
 }
 
-export type SendDraft = Omit<ChatMessageDraft, 'name' | 'ts' | 'id'>;
+export type SendDraft = Omit<ChatMessageDraft, 'name' | 'ts' | 'id' | 'via' | 'own' | 'idb'>;
+
+/** What every message this sender signs says about who sent it and how. */
+export interface SenderProfile {
+  name: string;
+  via: MessageVia;
+  /** The sender's Swarm ID chat binding, for a signed-in sender only. */
+  idb?: ChatBinding;
+}
 
 /**
  * Sends signed messages as GSOC writes and keeps each one pending until the chat feed shows it. A pending message is
@@ -65,7 +80,7 @@ export class Sender {
 
   constructor(
     private readonly key: PrivateKey,
-    private readonly name: string,
+    private readonly profile: SenderProfile,
     private readonly write: GsocWrite,
     private readonly events: SenderEvents,
     private readonly settings: SenderSettings = DEFAULT_SENDER_SETTINGS,
@@ -77,7 +92,8 @@ export class Sender {
 
   /** Builds, signs and writes a message. Throws a ChatMessageError, and writes nothing, for one the server would refuse. */
   send(draft: SendDraft): ChatMessage {
-    const { message, bytes } = createChatMessage(this.key, { ...draft, name: this.name });
+    // Own stays false, since this sender keeps no copy in an own feed.
+    const { message, bytes } = createChatMessage(this.key, { ...draft, ...this.profile, own: false });
     const outgoing: Outgoing = {
       message,
       bytes,

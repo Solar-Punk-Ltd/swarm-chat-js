@@ -3,9 +3,9 @@ import { Bee, PrivateKey } from '@ethersphere/bee-js';
 import { ChatEmitter, EVENTS, pendingMessageData, publishedMessageData, type MessageData } from './events.js';
 import { FeedFollower, FeedStatus, type FollowerSettings } from './follower.js';
 import { ChatHistory } from './history.js';
-import { MessageType, type FeedEntry, type HistoryRow } from './message/index.js';
+import { MessageType, type ChatBinding, type FeedEntry, type HistoryRow, type MessageVia } from './message/index.js';
 import { NoteReader, readsNotes, type NoteSettings } from './notes.js';
-import { DEFAULT_SENDER_SETTINGS, Sender, type GsocWrite, type SenderSettings } from './sender.js';
+import { DEFAULT_SENDER_SETTINGS, Sender, type GsocWrite, type SenderProfile, type SenderSettings } from './sender.js';
 import { beeChatSource, beeGsocWrite, GATEWAY_STAMPS_ITSELF, type ChatSource, type SwarmTimeouts } from './swarm.js';
 
 export interface ChatSettings {
@@ -14,6 +14,11 @@ export interface ChatSettings {
     privateKey: string;
     /** The name shown on every message, 1 to 20 characters. */
     nickname: string;
+    /**
+     * The Swarm ID chat binding of a signed-in viewer, whose chat address must be `privateKey`'s. Every message then
+     * carries it, and a reader that verifies it shows the account. Left out for a guest.
+     */
+    binding?: ChatBinding;
   };
   infra: {
     /** The Bee node or gateway the chat is read through, and written through too when `writeUrl` is not set. */
@@ -25,6 +30,8 @@ export interface ChatSettings {
     writeUrl?: string;
     /** The batch the inbox writes are stamped with. Left out for a gateway that stamps writes itself. */
     stamp?: string;
+    /** Who pays for the inbox writes, the gateway's stamp or the sender's own, as every message says in `via`. */
+    via: MessageVia;
     /** The inbox's identifier string, one for every chat, as the server listens on it. */
     gsocTopic: string;
     /** The mined key every sender signs inbox writes with, which puts them in the server node's neighbourhood. */
@@ -78,7 +85,7 @@ export class SwarmChat {
   private readonly emitter = new ChatEmitter();
   private readonly key: PrivateKey;
   private readonly topic: string;
-  private readonly nickname: string;
+  private readonly profile: SenderProfile;
   private readonly source: ChatSource;
   private readonly write: GsocWrite;
   private readonly senderSettings: SenderSettings;
@@ -99,7 +106,11 @@ export class SwarmChat {
     const { user, infra } = settings;
     this.key = new PrivateKey(withoutPrefix(user.privateKey));
     this.topic = infra.chatTopic;
-    this.nickname = user.nickname;
+    this.profile = {
+      name: user.nickname,
+      via: infra.via,
+      ...(user.binding ? { idb: user.binding } : {}),
+    };
     this.openRetryMs = parts.openRetryMs ?? OPEN_RETRY_MS;
     this.senderSettings = {
       ...DEFAULT_SENDER_SETTINGS,
@@ -318,7 +329,7 @@ export class SwarmChat {
   private makeSender(): Sender {
     return new Sender(
       this.key,
-      this.nickname,
+      this.profile,
       this.write,
       {
         pending: (message) => this.emitter.emit(EVENTS.MESSAGE_REQUEST_INITIATED, pendingMessageData(message)),
