@@ -8,6 +8,7 @@ import {
   type ChatBinding,
   type ChatIdentity,
 } from './binding.js';
+import { isCanonicalSignature } from './canonicalSignature.js';
 
 /**
  * The chat message of version 8: what a browser sends as a GSOC payload, what the server verifies before it
@@ -116,6 +117,10 @@ export class ChatMessageError extends Error {
 }
 
 const encoder = new TextEncoder();
+
+/** The two recovery bytes a signature may end in, as hex. */
+const RECOVERY_27 = '1b';
+const RECOVERY_28 = '1c';
 const decoder = new TextDecoder('utf-8', { fatal: true });
 
 /** The exact bytes a sender signs and a verifier recovers the signer from. Their order is the contract. */
@@ -238,8 +243,18 @@ export function createChatMessage(
   return { message, bytes: encodeChatMessage(message) };
 }
 
-/** Whether `sig` was made over this message's signed bytes by the key behind `addr`. */
+/**
+ * Whether `sig` was made over this message's signed bytes by the key behind `addr`, in its one canonical spelling: v 27
+ * or 28 and a low s, as bee-js signs. bee-js would also recover the signer from the high s twin, or from any other v.
+ */
 export function hasValidSignature(message: ChatMessage): boolean {
+  const v = message.sig.slice(128);
+  if (
+    (v !== RECOVERY_27 && v !== RECOVERY_28) ||
+    !isCanonicalSignature(message.sig.slice(0, 64), message.sig.slice(64, 128))
+  ) {
+    return false;
+  }
   try {
     const signer = new Signature(message.sig).recoverPublicKey(signedBytes(message)).address();
     return signer.toHex() === message.addr;

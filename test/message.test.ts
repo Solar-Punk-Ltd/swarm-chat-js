@@ -1,4 +1,4 @@
-import { PrivateKey } from '@ethersphere/bee-js';
+import { PrivateKey, Signature } from '@ethersphere/bee-js';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -382,6 +382,25 @@ describe('the signature', () => {
   it('is refused when it was made over the version 7 fields alone', () => {
     const v7Fields = (JSON.parse(TEXT_VECTOR.signed) as unknown[]).slice(0, 9);
     const sig = new PrivateKey(TEST_KEY).sign(encoder.encode(JSON.stringify(v7Fields))).toHex();
+    expect(hasValidSignature({ ...message, sig })).toBe(false);
+  });
+
+  it('is refused in its high s spelling, which recovers the same signer, so one message has one signature', () => {
+    const order = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
+    const s = BigInt(`0x${message.sig.slice(64, 128)}`);
+    const highS = (order - s).toString(16).padStart(64, '0');
+    const flippedV = message.sig.slice(128) === '1b' ? '1c' : '1b';
+    const sig = `${message.sig.slice(0, 64)}${highS}${flippedV}`;
+    const signer = new Signature(sig).recoverPublicKey(signedBytes(message)).address().toHex();
+    expect(signer).toBe(message.addr);
+    expect(hasValidSignature({ ...message, sig })).toBe(false);
+    expect(verifyChatMessage({ ...message, sig })).toMatchObject({ ok: false, reason: 'signature' });
+  });
+
+  it('is refused with a recovery byte other than 27 or 28, which bee-js reads as 28 and so recovers the signer', () => {
+    expect(message.sig.slice(128)).toBe('1c');
+    const sig = `${message.sig.slice(0, 128)}1d`;
+    expect(new Signature(sig).recoverPublicKey(signedBytes(message)).address().toHex()).toBe(message.addr);
     expect(hasValidSignature({ ...message, sig })).toBe(false);
   });
 
