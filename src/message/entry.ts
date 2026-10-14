@@ -4,8 +4,9 @@ import { chatMessageSchema, MESSAGE_VERSION } from './message.js';
 
 /**
  * What the server writes: one feed entry per message at indices 0, 1, 2 and on, and one history file per chat that
- * the entries point to. The server builds these and the reader checks their shape. The reader does not check each
- * message's signature, because the server checked it before publishing.
+ * the entries point to. The server builds these and the reader checks their shape. Their `v` is MESSAGE_VERSION. The
+ * reader does not check each message's signature or binding, because the server checked both before publishing. A
+ * page that shows who sent a message verifies `msg` itself with `verifyChatMessage`, in a Web Worker.
  */
 
 /** A feed entry is always one chunk, so bee-js never wraps it. */
