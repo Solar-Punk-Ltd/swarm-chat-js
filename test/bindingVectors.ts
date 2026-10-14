@@ -19,6 +19,12 @@ export const CHAT_BINDING: ChatBinding = {
   sig: '0x81b66b5a35aac1203c8c19883c40965e1eaee71ba57df28d3465cb8e03cf4263297bc64b2e5db5d815ae4ebb504f0a8c36ead8193bb13cd44138b2de44642c7d1c',
 };
 
+/** The same site four minutes later, kept because its recovery byte is 27 where the first one's is 28. */
+export const CHAT_BINDING_V27: ChatBinding = {
+  msg: 'Swarm ID chat binding v1\nSite: https://example.com\nChat address: 0xa531fcf12e72328748c12ba58b2b023c00e9a8f9\nDate: 2026-10-14T12:04:00.000Z',
+  sig: '0x0ad789946644748a40669fc821cc61a8465d659d87c2f66921b1ee0646c2b050519d8f9561b0ba97ea8456b5198e5c5b52c8afec68feae9bf489373a8c1f40111b',
+};
+
 export const OTHER_SITE = 'https://other.example';
 export const OTHER_CHAT_ADDR = '7dbe2d309740e55abeb818365acf15bc95cd211a';
 

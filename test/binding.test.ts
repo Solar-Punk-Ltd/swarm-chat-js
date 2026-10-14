@@ -16,6 +16,7 @@ import {
   BOUND_CHAT_ADDR,
   BOUND_SITE,
   CHAT_BINDING,
+  CHAT_BINDING_V27,
   chatKeyFor,
   FORK_ACCOUNT,
   FORK_ACCOUNT_KEY,
@@ -84,14 +85,16 @@ describe('the fork-compatible binding vector', () => {
     expect(`0x${hex(r, 32)}${hex(s, 32)}${hex(v, 1)}`).toBe(CHAT_BINDING.sig);
   });
 
-  it('recovers the account the way the fork recovers it, with v 27 or 28 and a low s', () => {
-    const sig = CHAT_BINDING.sig.slice(2);
+  it.each([
+    ['28', CHAT_BINDING],
+    ['27', CHAT_BINDING_V27],
+  ])('recovers the account the way the fork recovers it, with v %s and a low s', (v, binding) => {
+    const sig = binding.sig.slice(2);
     const r = BigInt(`0x${sig.slice(0, 64)}`);
     const s = BigInt(`0x${sig.slice(64, 128)}`);
-    const v = parseInt(sig.slice(128), 16);
-    expect(v === 27 || v === 28).toBe(true);
+    expect(parseInt(sig.slice(128), 16)).toBe(Number(v));
     expect(s <= SECP256K1_ORDER / 2n).toBe(true);
-    const point = recoverPublicKey(personalMessage(CHAT_BINDING.msg), r, s, v as 27 | 28);
+    const point = recoverPublicKey(personalMessage(binding.msg), r, s, BigInt(v) as 27n | 28n);
     const account = Array.from(publicKeyToAddress(point), (byte) => byte.toString(16).padStart(2, '0')).join('');
     expect(`0x${account}`).toBe(FORK_ACCOUNT);
   });
@@ -106,12 +109,15 @@ describe('the fork-compatible binding vector', () => {
     ]);
   });
 
-  it('verifies here as the fork verified it', () => {
-    const message = signedWith(boundKey, CHAT_BINDING);
+  it.each([
+    ['28', CHAT_BINDING, '2026-10-14T12:00:00.000Z'],
+    ['27', CHAT_BINDING_V27, '2026-10-14T12:04:00.000Z'],
+  ])('verifies here as the fork verified it, with v %s', (_v, binding, date) => {
+    const message = signedWith(boundKey, binding);
     expect(verifyChatMessage(message, { origin: BOUND_SITE })).toEqual({
       ok: true,
       message,
-      identity: { account: FORK_ACCOUNT, site: BOUND_SITE, date: '2026-10-14T12:00:00.000Z' },
+      identity: { account: FORK_ACCOUNT, site: BOUND_SITE, date },
     });
   });
 });
