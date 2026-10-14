@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { createChatMessage, MessageType, parseFeedEntry, parseHistoryFile, type ChatMessage } from '../src/message';
+import {
+  createChatMessage,
+  MAX_ENTRY_BYTES,
+  MAX_MESSAGE_BYTES,
+  MessageType,
+  MessageVia,
+  parseFeedEntry,
+  parseHistoryFile,
+  type ChatMessage,
+} from '../src/message';
 
 // Test only.
 const TEST_KEY = '11'.repeat(32);
@@ -10,7 +19,8 @@ const REF = 'ab'.repeat(32);
 const encoder = new TextEncoder();
 
 function message(text: string, topic = TOPIC): ChatMessage {
-  return createChatMessage(TEST_KEY, { topic, type: MessageType.TEXT, text, name: 'tester' }).message;
+  return createChatMessage(TEST_KEY, { topic, type: MessageType.TEXT, text, name: 'tester', via: MessageVia.GATEWAY })
+    .message;
 }
 
 function bytes(value: unknown): Uint8Array {
@@ -19,7 +29,7 @@ function bytes(value: unknown): Uint8Array {
 
 describe('parseFeedEntry', () => {
   const msg = message('hello');
-  const entry = { v: 7, seq: 4, at: 1759140000000, msg, history: { ref: REF, toSeq: 2 } };
+  const entry = { v: 8, seq: 4, at: 1759140000000, msg, history: { ref: REF, toSeq: 2 } };
 
   it('reads an entry at its own index', () => {
     expect(parseFeedEntry(bytes(entry), 4, TOPIC)).toEqual({ ok: true, value: entry });
@@ -46,7 +56,7 @@ describe('parseFeedEntry', () => {
   });
 
   it.each<[string, unknown]>([
-    ['another version', { ...entry, v: 6 }],
+    ['a version 7 entry', { ...entry, v: 7 }],
     ['a negative seq', { ...entry, seq: -1 }],
     ['a message of the wrong shape', { ...entry, msg: { ...msg, id: 'x' } }],
     ['a history link with a short ref', { ...entry, history: { ref: 'ab', toSeq: 2 } }],
@@ -69,7 +79,7 @@ describe('parseFeedEntry', () => {
 
 describe('parseHistoryFile', () => {
   const rows = [0, 1, 2].map((seq) => ({ seq, at: 1759140000000 + seq, msg: message(`message ${seq}`) }));
-  const file = { v: 7, topic: TOPIC, fromSeq: 0, toSeq: 2, messages: rows, prev: null };
+  const file = { v: 8, topic: TOPIC, fromSeq: 0, toSeq: 2, messages: rows, prev: null };
   const link = { ref: REF, toSeq: 2 };
 
   it('reads the file its link names', () => {
@@ -109,5 +119,14 @@ describe('parseHistoryFile', () => {
 
   it('refuses a file whose range runs backwards', () => {
     expect(parseHistoryFile(bytes({ ...file, fromSeq: 3 }), TOPIC, link)).toMatchObject({ ok: false, reason: 'shape' });
+  });
+});
+
+describe('MAX_ENTRY_BYTES', () => {
+  it('holds a message at the byte cap inside the largest entry wrapper', () => {
+    const largest = Number.MAX_SAFE_INTEGER;
+    const wrapper = { v: 8, seq: largest, at: largest, msg: {}, history: { ref: 'cd'.repeat(64), toSeq: largest } };
+    const wrapperBytes = bytes(wrapper).byteLength - bytes({}).byteLength;
+    expect(wrapperBytes + MAX_MESSAGE_BYTES).toBeLessThanOrEqual(MAX_ENTRY_BYTES);
   });
 });

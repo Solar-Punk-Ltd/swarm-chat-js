@@ -13,7 +13,7 @@ export default defineConfig({
       fileName: (format, entryName) => `${entryName}.${format === 'es' ? 'js' : 'cjs'}`,
     },
     rollupOptions: {
-      external: ['@ethersphere/bee-js', 'zod'],
+      external: ['@ethersphere/bee-js', '@ethersphere/core-sdk/crypto', 'zod'],
     },
   },
 });

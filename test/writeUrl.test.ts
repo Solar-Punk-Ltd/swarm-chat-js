@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net';
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { MessageType, SwarmChat, type ChatSettings } from '../src/index';
+import { MessageType, MessageVia, SwarmChat, type ChatSettings } from '../src/index';
 
 // Test only: the owner and the keys are never used against a real node.
 const OWNER = '19e7e376e7c213b7e7e7e46cc70a5dd086daff2a';
@@ -45,6 +45,7 @@ function settings(infra: { beeUrl: string; writeUrl?: string }): ChatSettings {
     user: { privateKey: USER_KEY, nickname: 'ada' },
     infra: {
       ...infra,
+      via: MessageVia.GATEWAY,
       gsocTopic: 'inbox',
       gsocResourceId: GSOC_KEY,
       chatTopic: 'chat-test',
