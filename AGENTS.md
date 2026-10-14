@@ -56,6 +56,9 @@ The package has two entries: the root, and `./message`, which the server uses an
   identities off its main thread. It gets the message from `MessageData.signedMessage`, so every event that carries a
   `MessageData` carries the message exactly as signed. A value `signedMessage` already carries gets no field of its own
   in `MessageData` unless a viewer renders it.
+- **Every check of a message names the site.** `verifyChatMessage` and `parseChatMessage` require `{ origin }`, and a
+  bound message checked without one is refused, so a binding for one site never passes in another site's chat. Keep
+  the origin required, and never give it a default.
 - **Never ask Bee for an address before it exists.** A failed read makes Bee skip its peers for that address for a
   minute, which delayed every new message by about forty seconds. A note is asked for only once its slot is over, and
   a feed slot only once a note named it. The head lookup and the polling of the next slot are kept only for a reader

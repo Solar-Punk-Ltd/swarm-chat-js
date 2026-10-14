@@ -14,7 +14,7 @@ import {
 import type { ChatParts, ChatSettings } from '../src/chat';
 import { DEFAULT_MISSING_READ_SPACING_MS } from '../src/pacer';
 
-import { BOUND_SITE, CHAT_BINDING, chatKeyFor, FORK_ACCOUNT } from './bindingVectors';
+import { AT_SITE, BOUND_SITE, CHAT_BINDING, chatKeyFor, FORK_ACCOUNT } from './bindingVectors';
 import { bytes, entryAt, FakeGateway, TEST_KEY, TOPIC } from './fakeGateway';
 
 const POLL_MS = 500;
@@ -50,7 +50,7 @@ class FakeServer {
     if (this.failWrites) {
       throw new Error('gateway refused the write');
     }
-    const check = parseChatMessage(payload);
+    const check = parseChatMessage(payload, AT_SITE);
     if (this.deaf || !check.ok || this.published.has(check.message.id)) {
       return;
     }
@@ -273,7 +273,7 @@ describe('sendMessage', () => {
     const { chat, server } = harness();
     await chat.start();
     await chat.sendMessage('a reply', MessageType.THREAD, 'a1'.repeat(16));
-    const check = parseChatMessage(server.writes[0]!);
+    const check = parseChatMessage(server.writes[0]!, AT_SITE);
     expect(check.ok && check.message).toMatchObject({ type: 'thread', target: 'a1'.repeat(16) });
   });
 
@@ -284,7 +284,7 @@ describe('sendMessage', () => {
     });
     await chat.start();
     await chat.sendMessage('hello', MessageType.TEXT);
-    const check = parseChatMessage(server.writes[0]!);
+    const check = parseChatMessage(server.writes[0]!, AT_SITE);
     expect(check.ok && check.message).toMatchObject({ via: MessageVia.OWN_STAMP, own: false });
     expect(check.ok && 'idb' in check.message).toBe(false);
   });

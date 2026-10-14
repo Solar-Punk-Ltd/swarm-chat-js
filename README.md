@@ -144,7 +144,7 @@ it rather than keeping a copy. It loads none of the reader.
 ```ts
 import { parseChatMessage, MAX_MESSAGE_BYTES } from '@solarpunkltd/swarm-chat-js/message';
 
-const check = parseChatMessage(payload);
+const check = parseChatMessage(payload, { origin: 'https://example.com' });
 if (check.ok) publish(check.message);
 else count(check.reason);
 ```
@@ -181,9 +181,9 @@ A Swarm ID account gives each site its own chat key, and nothing in that key say
 derives it from the site's app secret, itself HMAC-SHA256 of the site's origin under the account key: the chat key is
 HMAC-SHA256 of `swarm-id chat key v1` under the app secret, asked again under `swarm-id chat key v1/1`, `/2` and on
 while the result is not a valid secp256k1 private key. This library never derives it. It only checks the address a
-binding names. The binding is the account's statement, signed with the account's own key, that one chat address on one site is its own.
-The Swarm ID fork signs it, and this library reads it exactly as the fork's `verifyChatBinding` does, without importing
-the fork. `msg` is four lines joined by `\n`:
+binding names. The binding is the account's statement, signed with the account's own key, that one chat address on one
+site is its own. The Swarm ID fork signs it, and this library reads it exactly as the fork's `verifyChatBinding` does,
+without importing the fork. `msg` is four lines joined by `\n`:
 
 ```text
 Swarm ID chat binding v1
@@ -199,15 +199,20 @@ characters of r, s and v, v 27 or 28 and s in the lower half. Recovering it give
 
 ### Verifying
 
-`verifyChatMessage(value, { origin?, allowLocalHttp? })` checks a message's shape and its signature, and then, when it
+`verifyChatMessage(value, { origin, allowLocalHttp? })` checks a message's shape and its signature, and then, when it
 carries a binding, that the binding's text is those four lines, its chat address is the message's `addr`, its signature
-recovers an account, and, when `origin` is given, its site is `origin`. It returns `{ ok: true, message, identity }`,
-`identity` being `{ account, site, date }` for a signed-in sender and `null` for a guest. A message whose binding fails
-is refused with the reason `binding` and is never shown as a guest.
+recovers an account, and its site is `origin`. It returns `{ ok: true, message, identity }`, `identity` being
+`{ account, site, date }` for a signed-in sender and `null` for a guest. A message whose binding fails is refused with
+the reason `binding` and is never shown as a guest.
+
+`origin` is required, the bare origin of the site whose chat this is, such as `https://example.com`. A binding signed
+for one site therefore never passes in another site's chat because a caller left the origin out. A JavaScript caller
+that passes none anyway gets every bound message refused as `binding`. The server passes its configured site origin,
+and a page passes its own.
 
 The server calls it, through `parseChatMessage`, on every payload. The reader in this library still checks no
 signature, since that cost 6.x about 36 ms of main thread per message, so a page that shows identities runs
-`verifyChatMessage` in a Web Worker, with its own origin, on each event's `MessageData.signedMessage`, which is the feed
+`verifyChatMessage` in a Web Worker on each event's `MessageData.signedMessage`, which is the feed
 entry's `msg` or, while pending, the message as it was signed. It never throws, and it touches no DOM and no Node API.
 
 ### The own feed
@@ -217,17 +222,17 @@ the sender's chat address `addr`, under the topic `ownFeedTopic(chatTopic)`, whi
 chat's topic, turned into a feed topic with `Topic.fromString` as the chat's own feed is. This library does not write
 that feed yet, so `SwarmChat` always sends `own: false`.
 
-| Export                                                                       | Use                                                                                                     |
-| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `parseChatMessage(bytes, options?)`                                          | The server's check of a raw payload: byte cap, UTF-8, JSON, then `verifyChatMessage`. Never throws.     |
-| `verifyChatMessage(value, options?)`                                         | Shape, signature and binding of a parsed object, with the sender's identity. Never throws.              |
-| `createChatMessage(key, draft)`                                              | Builds and signs, throwing a `ChatMessageError` for anything the check would refuse. `via` is required. |
-| `MessageType`, `MessageVia`                                                  | The values of `type` and `via`.                                                                         |
-| `checkChatBinding(binding, addr, options?)`, `chatBindingSchema`             | The binding check on its own, and its shape.                                                            |
-| `ownFeedTopic(chatTopic)`, `OWN_FEED_TOPIC_PREFIX`                           | The topic of a sender's own feed of copies.                                                             |
-| `chatMessageSchema`, `hasValidSignature`, `signedBytes`, `encodeChatMessage` | The parts.                                                                                              |
-| `feedEntrySchema`, `parseFeedEntry`                                          | The feed entry, `{v, seq, at, msg, history}`.                                                           |
-| `historyFileSchema`, `parseHistoryFile`                                      | The history file, `{v, topic, fromSeq, toSeq, messages, prev}`.                                         |
+| Export                                                                       | Use                                                                                                          |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `parseChatMessage(bytes, { origin })`                                        | The server's check of a raw payload: byte cap, UTF-8, JSON, then `verifyChatMessage`. Never throws.          |
+| `verifyChatMessage(value, { origin })`                                       | Shape, signature and binding of a parsed object, with the sender's identity. Never throws.                   |
+| `createChatMessage(key, draft)`                                              | Builds and signs, throwing a `ChatMessageError` for anything the check would refuse. `via` is required.      |
+| `MessageType`, `MessageVia`                                                  | The values of `type` and `via`.                                                                              |
+| `checkChatBinding(binding, addr, options?)`, `chatBindingSchema`             | The binding check on its own and its shape. Its `origin` is optional, for a sender checking its own binding. |
+| `ownFeedTopic(chatTopic)`, `OWN_FEED_TOPIC_PREFIX`                           | The topic of a sender's own feed of copies.                                                                  |
+| `chatMessageSchema`, `hasValidSignature`, `signedBytes`, `encodeChatMessage` | The parts.                                                                                                   |
+| `feedEntrySchema`, `parseFeedEntry`                                          | The feed entry, `{v, seq, at, msg, history}`.                                                                |
+| `historyFileSchema`, `parseHistoryFile`                                      | The history file, `{v, topic, fromSeq, toSeq, messages, prev}`.                                              |
 
 The feed entry and the history file carry `v` 8 like the message. A feed entry, at most 4,096 bytes, holds a message at
 the byte cap inside its largest wrapper.
@@ -263,7 +268,8 @@ clock that runs behind sees every stamp as old as it expects, so its messages ar
 - The v8 message adds `via`, `own` and, for a signed-in sender, `idb`, its Swarm ID chat binding, all signed. A v7
   message, entry or history file fails its shape check, and nothing reads both.
 - `verifyChatMessage` replaces `checkChatMessage` and also checks the binding, returning the sender's `identity`.
-  `parseChatMessage` takes the same options. A failed binding is refused with the new reason `binding`.
+  Both it and `parseChatMessage` require `{ origin }`, the site whose chat this is. A failed binding is refused with the
+  new reason `binding`.
 - `MAX_MESSAGE_BYTES` is 3,072, so a long text fits beside a binding.
 - `createChatMessage` requires `via` and takes `own` and `idb`. `SwarmChat` requires `infra.via` and takes
   `user.binding`.
