@@ -210,6 +210,12 @@ for one site therefore never passes in another site's chat because a caller left
 that passes none anyway gets every bound message refused as `binding`. The server passes its configured site origin,
 and a page passes its own.
 
+**What `identity.account` proves, and what it does not.** It proves only that whoever controls that Swarm ID account
+bound this chat key for this site, on the date the binding names. It is not a verified person, and it is not an
+account anyone has allowed. One person can hold many accounts, an account can be made in a minute, and a lost or shared
+account key binds just as well. A page that wants more, such as a badge for known people or a list of accounts allowed
+to post, keeps that list itself and compares `identity.account` with it.
+
 The server calls it, through `parseChatMessage`, on every payload. The reader in this library still checks no
 signature, since that cost 6.x about 36 ms of main thread per message, so a page that shows identities runs
 `verifyChatMessage` in a Web Worker on each event's `MessageData.signedMessage`, which is the feed
