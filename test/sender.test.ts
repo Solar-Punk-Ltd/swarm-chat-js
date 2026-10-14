@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatMessageError, MessageType, MessageVia, parseChatMessage, type ChatMessage } from '../src/message';
 import { DEFAULT_SENDER_SETTINGS, Sender, type GsocWrite, type SenderEvents } from '../src/sender';
 
+import { AT_SITE } from './bindingVectors';
+
 // Test only.
 const TEST_KEY = new PrivateKey('11'.repeat(32));
 const TOPIC = 'chat-test';
@@ -68,7 +70,7 @@ describe('Sender.send', () => {
 
     expect(events.pending).toEqual([message]);
     expect(writes).toHaveLength(1);
-    expect(parseChatMessage(writes[0]!)).toEqual({ ok: true, message, identity: null });
+    expect(parseChatMessage(writes[0]!, AT_SITE)).toEqual({ ok: true, message, identity: null });
 
     await vi.advanceTimersByTimeAsync(0);
     expect(events.written).toEqual([message]);
@@ -217,7 +219,7 @@ describe('Sender.react', () => {
     expect(writes).toHaveLength(0);
     await vi.advanceTimersByTimeAsync(1_000);
     expect(writes).toHaveLength(1);
-    const check = parseChatMessage(writes[0]!);
+    const check = parseChatMessage(writes[0]!, AT_SITE);
     expect(check.ok && check.message).toMatchObject({ type: 'reaction', target, text: '👍' });
   });
 
@@ -230,7 +232,7 @@ describe('Sender.react', () => {
     sender.react(TOPIC, target, '🎉');
     await vi.advanceTimersByTimeAsync(1_000);
     expect(writes).toHaveLength(1);
-    const check = parseChatMessage(writes[0]!);
+    const check = parseChatMessage(writes[0]!, AT_SITE);
     expect(check.ok && check.message.text).toBe('🎉');
   });
 

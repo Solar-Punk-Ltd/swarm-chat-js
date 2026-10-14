@@ -16,7 +16,7 @@ import {
   verifyChatMessage,
   type ChatMessage,
 } from '../src/message';
-import { BOUND_CHAT_ADDR, BOUND_SITE, CHAT_BINDING, chatKeyFor, FORK_ACCOUNT } from './bindingVectors';
+import { AT_SITE, BOUND_CHAT_ADDR, BOUND_SITE, CHAT_BINDING, chatKeyFor, FORK_ACCOUNT } from './bindingVectors';
 
 // Test only. A key nobody holds funds with, fixed so the vectors below never change.
 const TEST_KEY = '11'.repeat(32);
@@ -169,7 +169,7 @@ describe.each(VECTORS)('the vector of $label', ({ message, signed }) => {
   });
 
   it('passes the wire check', () => {
-    expect(parseChatMessage(encodeChatMessage(message))).toEqual({
+    expect(parseChatMessage(encodeChatMessage(message), AT_SITE)).toEqual({
       ok: true,
       message,
       identity: identityOf(message),
@@ -178,7 +178,7 @@ describe.each(VECTORS)('the vector of $label', ({ message, signed }) => {
 
   it('passes the object check, whatever order its fields arrived in', () => {
     const reversed = Object.fromEntries(Object.entries(message).reverse());
-    expect(verifyChatMessage(reversed)).toEqual({ ok: true, message, identity: identityOf(message) });
+    expect(verifyChatMessage(reversed, AT_SITE)).toEqual({ ok: true, message, identity: identityOf(message) });
   });
 
   // Each change keeps the shape valid, so only the signature can catch it.
@@ -212,11 +212,11 @@ describe.each(VECTORS)('the vector of $label', ({ message, signed }) => {
   }
 
   it.each(signatureTampers)('is refused on its signature when %s changes', (_field, change) => {
-    expect(verifyChatMessage(tampered(message, change))).toMatchObject({ ok: false, reason: 'signature' });
+    expect(verifyChatMessage(tampered(message, change), AT_SITE)).toMatchObject({ ok: false, reason: 'signature' });
   });
 
   it('is refused on its shape when v changes', () => {
-    expect(verifyChatMessage(tampered(message, { v: 7 }))).toMatchObject({ ok: false, reason: 'shape' });
+    expect(verifyChatMessage(tampered(message, { v: 7 }), AT_SITE)).toMatchObject({ ok: false, reason: 'shape' });
   });
 });
 
@@ -236,18 +236,18 @@ describe('a version 7 message', () => {
   };
 
   it('is refused on its shape, on the wire and as an object', () => {
-    expect(parseChatMessage(encoder.encode(JSON.stringify(v7)))).toMatchObject({ ok: false, reason: 'shape' });
-    expect(verifyChatMessage(v7)).toMatchObject({ ok: false, reason: 'shape' });
+    expect(parseChatMessage(encoder.encode(JSON.stringify(v7)), AT_SITE)).toMatchObject({ ok: false, reason: 'shape' });
+    expect(verifyChatMessage(v7, AT_SITE)).toMatchObject({ ok: false, reason: 'shape' });
   });
 
   it('is refused on its shape with v raised to 8, since it lacks via and own', () => {
-    expect(verifyChatMessage({ ...v7, v: 8 })).toMatchObject({ ok: false, reason: 'shape' });
+    expect(verifyChatMessage({ ...v7, v: 8 }, AT_SITE)).toMatchObject({ ok: false, reason: 'shape' });
   });
 });
 
 describe('the text vector with its type changed', () => {
   it('is refused on its shape, since a thread reply needs a target', () => {
-    expect(verifyChatMessage(tampered(TEXT_VECTOR.message, { type: 'thread' }))).toMatchObject({
+    expect(verifyChatMessage(tampered(TEXT_VECTOR.message, { type: 'thread' }), AT_SITE)).toMatchObject({
       ok: false,
       reason: 'shape',
     });
@@ -287,11 +287,11 @@ describe('the shape', () => {
     ['a short signature', { sig: valid.sig.slice(2) }],
     ['a field nobody signed', { admin: true }],
   ])('refuses %s', (_case, change) => {
-    expect(verifyChatMessage(tampered(valid, change))).toMatchObject({ ok: false, reason: 'shape' });
+    expect(verifyChatMessage(tampered(valid, change), AT_SITE)).toMatchObject({ ok: false, reason: 'shape' });
   });
 
   it.each([null, 'hello', 7, [], {}])('refuses %j', (value) => {
-    expect(verifyChatMessage(value)).toMatchObject({ ok: false, reason: 'shape' });
+    expect(verifyChatMessage(value, AT_SITE)).toMatchObject({ ok: false, reason: 'shape' });
   });
 
   it('accepts a text and a name at exactly their caps, counted in code points', () => {
@@ -302,7 +302,7 @@ describe('the shape', () => {
       name: '😀'.repeat(20),
       via: MessageVia.GATEWAY,
     });
-    expect(verifyChatMessage(message)).toEqual({ ok: true, message, identity: null });
+    expect(verifyChatMessage(message, AT_SITE)).toEqual({ ok: true, message, identity: null });
   });
 });
 
@@ -339,26 +339,29 @@ describe('the wire check', () => {
 
   it('refuses a payload over the byte cap before reading it', () => {
     const payload = new Uint8Array(MAX_MESSAGE_BYTES + 1).fill(0x20);
-    expect(parseChatMessage(payload)).toMatchObject({ ok: false, reason: 'too-large' });
+    expect(parseChatMessage(payload, AT_SITE)).toMatchObject({ ok: false, reason: 'too-large' });
   });
 
   it('accepts a payload of exactly the byte cap, padded with JSON whitespace', () => {
     const bytes = encodeChatMessage(message);
     const payload = new Uint8Array(MAX_MESSAGE_BYTES).fill(0x20);
     payload.set(bytes);
-    expect(parseChatMessage(payload)).toEqual({ ok: true, message, identity: null });
+    expect(parseChatMessage(payload, AT_SITE)).toEqual({ ok: true, message, identity: null });
   });
 
   it('refuses bytes that are not UTF-8', () => {
-    expect(parseChatMessage(new Uint8Array([0x7b, 0xff, 0x7d]))).toMatchObject({ ok: false, reason: 'not-utf8' });
+    expect(parseChatMessage(new Uint8Array([0x7b, 0xff, 0x7d]), AT_SITE)).toMatchObject({
+      ok: false,
+      reason: 'not-utf8',
+    });
   });
 
   it('refuses text that is not JSON', () => {
-    expect(parseChatMessage(encoder.encode('{"v":8'))).toMatchObject({ ok: false, reason: 'not-json' });
+    expect(parseChatMessage(encoder.encode('{"v":8'), AT_SITE)).toMatchObject({ ok: false, reason: 'not-json' });
   });
 
   it('refuses the empty payload', () => {
-    expect(parseChatMessage(new Uint8Array())).toMatchObject({ ok: false, reason: 'not-json' });
+    expect(parseChatMessage(new Uint8Array(), AT_SITE)).toMatchObject({ ok: false, reason: 'not-json' });
   });
 
   it('hands the origin to the binding check', () => {
@@ -394,7 +397,7 @@ describe('the signature', () => {
     const signer = new Signature(sig).recoverPublicKey(signedBytes(message)).address().toHex();
     expect(signer).toBe(message.addr);
     expect(hasValidSignature({ ...message, sig })).toBe(false);
-    expect(verifyChatMessage({ ...message, sig })).toMatchObject({ ok: false, reason: 'signature' });
+    expect(verifyChatMessage({ ...message, sig }, AT_SITE)).toMatchObject({ ok: false, reason: 'signature' });
   });
 
   it('is refused with a recovery byte other than 27 or 28, which bee-js reads as 28 and so recovers the signer', () => {

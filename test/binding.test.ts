@@ -6,13 +6,17 @@ import {
   CHAT_BINDING_TITLE,
   MessageType,
   MessageVia,
+  encodeChatMessage,
+  parseChatMessage,
   signedBytes,
   verifyChatMessage,
   type ChatBinding,
   type ChatMessage,
   type UnsignedChatMessage,
+  type VerifyOptions,
 } from '../src/message';
 import {
+  AT_SITE,
   BOUND_CHAT_ADDR,
   BOUND_SITE,
   CHAT_BINDING,
@@ -125,29 +129,37 @@ describe('the fork-compatible binding vector', () => {
 describe('a message with a binding', () => {
   it('is refused, never shown as a guest, when the binding names another chat address', () => {
     expect(OTHER_CHAT_ADDR).not.toBe(BOUND_CHAT_ADDR);
-    expect(verifyChatMessage(signedWith(boundKey, OTHER_SITE_BINDING))).toMatchObject({
+    expect(verifyChatMessage(signedWith(boundKey, OTHER_SITE_BINDING), AT_SITE)).toMatchObject({
       ok: false,
       reason: 'binding',
     });
   });
 
-  it('is refused when an origin is given and the binding is for another site', () => {
+  it('is refused when the binding is for another site than the origin', () => {
     const message = signedWith(boundKey, CHAT_BINDING);
     expect(verifyChatMessage(message, { origin: OTHER_SITE })).toMatchObject({ ok: false, reason: 'binding' });
     expect(verifyChatMessage(message, { origin: `${BOUND_SITE}/` })).toMatchObject({ ok: false, reason: 'binding' });
   });
 
-  it('is accepted for any site when no origin is given, and says which site it was', () => {
-    expect(verifyChatMessage(signedWith(boundKey, CHAT_BINDING))).toMatchObject({
-      ok: true,
-      identity: { site: BOUND_SITE },
-    });
+  it('is refused, never accepted for any site, when a caller leaves the origin out', () => {
+    const message = signedWith(boundKey, CHAT_BINDING);
+    const noOrigin = {} as VerifyOptions;
+    expect(verifyChatMessage(message, noOrigin)).toMatchObject({ ok: false, reason: 'binding' });
+    expect(parseChatMessage(encodeChatMessage(message), noOrigin)).toMatchObject({ ok: false, reason: 'binding' });
+  });
+
+  it('cannot be called without an origin', () => {
+    const message = signedWith(boundKey, undefined);
+    // @ts-expect-error The origin is required, so no caller leaves it out by accident.
+    expect(() => verifyChatMessage(message)).not.toThrow();
+    // @ts-expect-error The same holds on the wire.
+    expect(() => parseChatMessage(encodeChatMessage(message), { allowLocalHttp: true })).not.toThrow();
   });
 
   it('is refused for a local http site unless local http is allowed, as the fork refuses it', () => {
     expect(new PrivateKey(localKey).publicKey().address().toHex()).toBe(LOCAL_CHAT_ADDR);
     const message = signedWith(localKey, LOCAL_SITE_BINDING);
-    expect(verifyChatMessage(message)).toMatchObject({ ok: false, reason: 'binding' });
+    expect(verifyChatMessage(message, AT_SITE)).toMatchObject({ ok: false, reason: 'binding' });
     expect(verifyChatMessage(message, { allowLocalHttp: true, origin: LOCAL_SITE })).toMatchObject({
       ok: true,
       identity: { account: FORK_ACCOUNT, site: LOCAL_SITE },
@@ -160,17 +172,17 @@ describe('a message with a binding', () => {
     const highS = (SECP256K1_ORDER - s).toString(16).padStart(64, '0');
     const flippedV = sig.slice(128) === '1b' ? '1c' : '1b';
     const binding = { msg: CHAT_BINDING.msg, sig: `0x${sig.slice(0, 64)}${highS}${flippedV}` };
-    expect(verifyChatMessage(signedWith(boundKey, binding))).toMatchObject({ ok: false, reason: 'binding' });
+    expect(verifyChatMessage(signedWith(boundKey, binding), AT_SITE)).toMatchObject({ ok: false, reason: 'binding' });
   });
 
   it.each(['00', '01', '1d', 'ff'])('is refused when its recovery byte is %s', (v) => {
     const binding = { msg: CHAT_BINDING.msg, sig: `${CHAT_BINDING.sig.slice(0, -2)}${v}` };
-    expect(verifyChatMessage(signedWith(boundKey, binding))).toMatchObject({ ok: false, reason: 'binding' });
+    expect(verifyChatMessage(signedWith(boundKey, binding), AT_SITE)).toMatchObject({ ok: false, reason: 'binding' });
   });
 
   it('is refused, not thrown, when its r and s are zero', () => {
     const binding = { msg: CHAT_BINDING.msg, sig: `0x${'0'.repeat(128)}1b` };
-    expect(verifyChatMessage(signedWith(boundKey, binding))).toMatchObject({ ok: false, reason: 'binding' });
+    expect(verifyChatMessage(signedWith(boundKey, binding), AT_SITE)).toMatchObject({ ok: false, reason: 'binding' });
   });
 
   const [title, siteLine, chatLine, dateLine] = BOUND_LINES as [string, string, string, string];
@@ -194,7 +206,7 @@ describe('a message with a binding', () => {
     ['a date that does not exist', withLines([title, siteLine, chatLine, 'Date: 2026-02-30T12:00:00.000Z'])],
     ['a Windows line ending', { msg: BOUND_LINES.join('\r\n'), sig: CHAT_BINDING.sig }],
   ])('is refused when the binding text has %s', (_case, binding) => {
-    expect(verifyChatMessage(signedWith(boundKey, binding))).toMatchObject({ ok: false, reason: 'binding' });
+    expect(verifyChatMessage(signedWith(boundKey, binding), AT_SITE)).toMatchObject({ ok: false, reason: 'binding' });
   });
 });
 

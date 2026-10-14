@@ -1,13 +1,7 @@
 import { PrivateKey, Signature } from '@ethersphere/bee-js';
 import { z } from 'zod';
 
-import {
-  chatBindingSchema,
-  checkChatBinding,
-  type BindingOptions,
-  type ChatBinding,
-  type ChatIdentity,
-} from './binding.js';
+import { chatBindingSchema, checkChatBinding, type ChatBinding, type ChatIdentity } from './binding.js';
 import { isCanonicalSignature } from './canonicalSignature.js';
 
 /**
@@ -104,7 +98,15 @@ export type ChatMessageCheck =
   | { ok: true; message: ChatMessage; identity: ChatIdentity | null }
   | { ok: false; reason: ChatMessageRefusal; detail: string };
 
-export type VerifyOptions = BindingOptions;
+/**
+ * `origin` is the site the chat runs on, a bare origin such as `https://example.com`, and is required: a binding for
+ * any other site is refused, so a binding signed for one site never passes in another site's chat.
+ */
+export interface VerifyOptions {
+  origin: string;
+  /** Accept a binding for `http://localhost`, `http://127.0.0.1` or `http://[::1]`, as only a development build signs. */
+  allowLocalHttp?: boolean;
+}
 
 export class ChatMessageError extends Error {
   constructor(
@@ -265,11 +267,11 @@ export function hasValidSignature(message: ChatMessage): boolean {
 
 /**
  * Verifies a message that arrived as an object: its shape, its signature, and, when it carries a binding, that the
- * binding is the fork's four lines for this `addr` (and for `origin`, when given) and recovers an account. A message
- * whose binding fails is refused as `binding`, never passed as a guest. Never throws, and touches no DOM and no Node
- * API, so a page runs it in a Web Worker as the server runs it.
+ * binding is the fork's four lines for this `addr` and for `options.origin`, and recovers an account. A message whose
+ * binding fails is refused as `binding`, never passed as a guest, and so is a bound message checked with no origin.
+ * Never throws, and touches no DOM and no Node API, so a page runs it in a Web Worker as the server runs it.
  */
-export function verifyChatMessage(value: unknown, options: VerifyOptions = {}): ChatMessageCheck {
+export function verifyChatMessage(value: unknown, options: VerifyOptions): ChatMessageCheck {
   const shape = chatMessageSchema.safeParse(value);
   if (!shape.success) {
     return { ok: false, reason: 'shape', detail: describeIssues(shape.error) };
@@ -280,6 +282,10 @@ export function verifyChatMessage(value: unknown, options: VerifyOptions = {}): 
   }
   if (!message.idb) {
     return { ok: true, message, identity: null };
+  }
+  // A caller outside TypeScript can still leave the origin out, which would accept a binding for any site.
+  if (typeof options?.origin !== 'string') {
+    return { ok: false, reason: 'binding', detail: 'no origin was given to check the binding against' };
   }
   const binding = checkChatBinding(message.idb, message.addr, options);
   if (!binding.ok) {
@@ -293,7 +299,7 @@ export function verifyChatMessage(value: unknown, options: VerifyOptions = {}): 
  * `verifyChatMessage` checks. Never throws, since the server calls it on whatever anybody writes to the chat's GSOC
  * address.
  */
-export function parseChatMessage(payload: Uint8Array, options: VerifyOptions = {}): ChatMessageCheck {
+export function parseChatMessage(payload: Uint8Array, options: VerifyOptions): ChatMessageCheck {
   if (payload.byteLength > MAX_MESSAGE_BYTES) {
     return { ok: false, reason: 'too-large', detail: `${payload.byteLength} bytes, the cap is ${MAX_MESSAGE_BYTES}` };
   }
