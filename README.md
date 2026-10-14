@@ -131,8 +131,10 @@ be failed and then shown, for example when the server published it after the las
 follow `MESSAGE_REQUEST_ERROR` for the same `id`, and a viewer settles on the received one.
 
 A `MessageData` has `id`, `type`, `message` (the text or emoji), `username`, `address`, `timestamp` (the server's
-receive time, or the sender's clock while pending), `targetMessageId` for a reply or reaction, `chatTopic`,
-`signature`, `index` (the feed index, -1 while pending) and `sentAt` (the sender's clock, which nothing checks).
+receive time, or the sender's clock while pending), `targetMessageId` for a reply or reaction, `index` (the feed index,
+-1 while pending) and `signedMessage`, the message exactly as its sender signed it. Everything else the message says,
+its topic, its signature, the sender's clock, `via`, `own` and the binding, is read from `signedMessage`, and a page
+that shows who sent it hands `signedMessage` to `verifyChatMessage`. See [Verifying](#verifying).
 
 ## The message, for servers and tools
 
@@ -200,8 +202,8 @@ is refused with the reason `binding` and is never shown as a guest.
 
 The server calls it, through `parseChatMessage`, on every payload. The reader in this library still checks no
 signature, since that cost 6.x about 36 ms of main thread per message, so a page that shows identities runs
-`verifyChatMessage` on each feed entry's `msg` in a Web Worker, with its own origin. It never throws, and it touches no
-DOM and no Node API.
+`verifyChatMessage` in a Web Worker, with its own origin, on each event's `MessageData.signedMessage`, which is the feed
+entry's `msg` or, while pending, the message as it was signed. It never throws, and it touches no DOM and no Node API.
 
 ### The own feed
 
@@ -261,6 +263,8 @@ clock that runs behind sees every stamp as old as it expects, so its messages ar
 - `createChatMessage` requires `via` and takes `own` and `idb`. `SwarmChat` requires `infra.via` and takes
   `user.binding`.
 - `ownFeedTopic` names the feed where a sender keeps its copies.
+- `MessageData.signedMessage` carries the whole signed message, for a page to verify. `chatTopic`, `signature` and
+  `sentAt` are gone from `MessageData`, since `signedMessage` carries them as `topic`, `sig` and `ts`.
 - The binding is recovered through `@ethersphere/core-sdk`, which bee-js 13 already installs, now a dependency here.
 
 ## Changes in 7.3
