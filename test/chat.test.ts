@@ -289,6 +289,34 @@ describe('sendMessage', () => {
     expect(check.ok && 'idb' in check.message).toBe(false);
   });
 
+  it('signs own true when its settings keep an own copy, so a write can store the copy first from the same bytes', async () => {
+    const gateway = new FakeGateway();
+    const server = new FakeServer(gateway);
+    const copies: Uint8Array[] = [];
+    const { chat, events, received } = harness(
+      gateway,
+      { ...SETTINGS, infra: { ...SETTINGS.infra, via: MessageVia.OWN_STAMP, own: true } },
+      {
+        write: async (payload) => {
+          copies.push(payload);
+          await server.write(payload);
+        },
+      },
+    );
+    await chat.start();
+    const pending = await chat.sendMessage('hello', MessageType.TEXT);
+    await vi.advanceTimersByTimeAsync(DEFAULT_MISSING_READ_SPACING_MS + POLL_MS);
+
+    expect(copies).toEqual(server.writes);
+    const check = parseChatMessage(server.writes[0]!, AT_SITE);
+    expect(check.ok && check.message).toMatchObject({ id: pending!.id, via: MessageVia.OWN_STAMP, own: true });
+    const [initiated] = events[EVENTS.MESSAGE_REQUEST_INITIATED] as MessageData[];
+    const [published] = received();
+    for (const data of [pending!, initiated!, published!]) {
+      expect(data.signedMessage).toEqual(check.ok && check.message);
+    }
+  });
+
   it("carries a signed-in viewer's binding, which the check reads as the account", async () => {
     const privateKey = await chatKeyFor(BOUND_SITE);
     const { chat, server } = harness(new FakeGateway(), {
