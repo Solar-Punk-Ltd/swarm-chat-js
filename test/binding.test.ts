@@ -50,7 +50,7 @@ beforeAll(async () => {
  */
 function signedWith(key: string, idb: ChatBinding | undefined): ChatMessage {
   const unsigned: UnsignedChatMessage = {
-    v: 8,
+    v: 9,
     topic: 'chat-devcon-main',
     id: 'f7'.repeat(16),
     type: MessageType.TEXT,

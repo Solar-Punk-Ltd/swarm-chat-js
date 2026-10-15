@@ -78,7 +78,7 @@ describe('beeChatSource.readSlot', () => {
   it('returns the payload of a slot the feed owner wrote', async () => {
     // A real bee-js feed writer uploads the slot, and the fake gateway serves back what it received as the chunk.
     const owner = new PrivateKey(GSOC_KEY);
-    const payload = new TextEncoder().encode('{"v":8,"seq":0}');
+    const payload = new TextEncoder().encode('{"v":9,"seq":0}');
     let stored: Uint8Array = new Uint8Array();
     answer = () => ({ status: 200, body: stored });
     const received: Uint8Array[] = [];
@@ -179,7 +179,7 @@ describe('beeGsocWrite', () => {
       headers: { 'content-type': 'application/json' },
     });
     const write = beeGsocWrite(new Bee(base), GATEWAY_STAMPS_ITSELF, GSOC_KEY, 'gsoc-inbox', TIMEOUTS);
-    await write(new TextEncoder().encode('{"v":8}'));
+    await write(new TextEncoder().encode('{"v":9}'));
 
     expect(seen).toHaveLength(1);
     const [request] = seen;

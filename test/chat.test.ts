@@ -57,7 +57,7 @@ class FakeServer {
     }
     this.published.add(check.message.id);
     const seq = this.gateway.slots.size;
-    this.gateway.writeRaw(seq, bytes({ v: 8, seq, at: 1759150000000 + seq, msg: check.message, history: null }));
+    this.gateway.writeRaw(seq, bytes({ v: 9, seq, at: 1759150000000 + seq, msg: check.message, history: null }));
   };
 }
 
@@ -179,9 +179,9 @@ describe('start', () => {
   it('never shows one message twice, even when two history files overlap', async () => {
     const gateway = new FakeGateway();
     const row = (seq: number) => ({ seq, at: seq, msg: entryAt(seq).msg });
-    const older = { v: 8, topic: TOPIC, fromSeq: 0, toSeq: 1, messages: [row(0), row(1)], prev: null };
+    const older = { v: 9, topic: TOPIC, fromSeq: 0, toSeq: 1, messages: [row(0), row(1)], prev: null };
     const newest = {
-      v: 8,
+      v: 9,
       topic: TOPIC,
       fromSeq: 1,
       toSeq: 2,
@@ -439,7 +439,7 @@ describe('fetchPreviousMessages', () => {
   it('shows the file before the oldest shown, and says when there is no more', async () => {
     const gateway = new FakeGateway();
     const older = {
-      v: 8,
+      v: 9,
       topic: TOPIC,
       fromSeq: 0,
       toSeq: 0,
@@ -447,7 +447,7 @@ describe('fetchPreviousMessages', () => {
       prev: null,
     };
     const newest = {
-      v: 8,
+      v: 9,
       topic: TOPIC,
       fromSeq: 1,
       toSeq: 1,
