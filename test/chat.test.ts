@@ -15,6 +15,7 @@ import type { ChatParts, ChatSettings } from '../src/chat';
 import { DEFAULT_MISSING_READ_SPACING_MS } from '../src/pacer';
 
 import { AT_SITE, BOUND_SITE, CHAT_BINDING, chatKeyFor, FORK_ACCOUNT } from './bindingVectors';
+import { LINK_WALLET, WALLET_LINK } from './walletLinkVectors';
 import { bytes, entryAt, FakeGateway, TEST_KEY, TOPIC } from './fakeGateway';
 
 const POLL_MS = 500;
@@ -330,6 +331,32 @@ describe('sendMessage', () => {
       message: { idb: CHAT_BINDING },
       identity: { account: FORK_ACCOUNT, site: BOUND_SITE },
     });
+  });
+
+  it("carries a signed-in viewer's wallet link beside the binding, which the check reads as the wallet", async () => {
+    const privateKey = await chatKeyFor(BOUND_SITE);
+    const { chat, server } = harness(new FakeGateway(), {
+      ...SETTINGS,
+      user: { ...SETTINGS.user, privateKey, binding: CHAT_BINDING, walletLink: WALLET_LINK },
+    });
+    await chat.start();
+    await chat.sendMessage('hello', MessageType.TEXT);
+    expect(parseChatMessage(server.writes[0]!, { origin: BOUND_SITE })).toMatchObject({
+      ok: true,
+      message: { idb: CHAT_BINDING, wl: WALLET_LINK },
+      identity: { account: FORK_ACCOUNT, wallet: LINK_WALLET },
+    });
+  });
+
+  it('refuses, sending nothing, a wallet link without a binding', async () => {
+    const privateKey = await chatKeyFor(BOUND_SITE);
+    const { chat, server } = harness(new FakeGateway(), {
+      ...SETTINGS,
+      user: { ...SETTINGS.user, privateKey, walletLink: WALLET_LINK },
+    });
+    await chat.start();
+    await expect(chat.sendMessage('hello', MessageType.TEXT)).rejects.toMatchObject({ reason: 'shape' });
+    expect(server.writes).toHaveLength(0);
   });
 
   it('hands a page the signed message in every MessageData, pending and published, for it to verify', async () => {
