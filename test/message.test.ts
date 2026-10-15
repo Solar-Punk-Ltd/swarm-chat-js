@@ -326,6 +326,9 @@ describe('the shape', () => {
     ['a name with a newline', { name: 'line\nbreak' }],
     ['a name with a NUL', { name: 'nul\u0000' }],
     ['a name with a DEL', { name: 'del\u007f' }],
+    ['a name with a left-to-right mark', { name: 'ad\u200emin' }],
+    ['a name with a word joiner', { name: 'ad\u2060min' }],
+    ['a name with a soft hyphen', { name: 'ad\u00admin' }],
     ['an address with 0x', { addr: `0x${TEST_ADDR.slice(2)}` }],
     ['an address in capitals', { addr: TEST_ADDR.toUpperCase() }],
     ['a fractional ts', { ts: 1.5 }],
@@ -364,6 +367,21 @@ describe('the shape', () => {
 
 describe('the name', () => {
   it.each(['Zoë', 'Đorđe', 'Ζωή', 'Алиса', '李雷', 'سارا', 'אורי', 'नमस्ते', 'ok 👍🏽'])('accepts %s', (name) => {
+    const { message } = createChatMessage(TEST_KEY, {
+      topic: 'chat-x',
+      type: MessageType.TEXT,
+      text: 'hi',
+      name,
+      via: MessageVia.GATEWAY,
+    });
+    expect(verifyChatMessage(message, AT_SITE)).toMatchObject({ ok: true });
+  });
+
+  it.each([
+    ['a family emoji joined by zero width joiners', '\u{1F468}\u200d\u{1F469}\u200d\u{1F467}'],
+    ['a Persian name with a zero width non-joiner', 'می\u200cخواهم'],
+    ['a Devanagari conjunct with a zero width joiner', 'क्\u200dष'],
+  ])('accepts %s', (_, name) => {
     const { message } = createChatMessage(TEST_KEY, {
       topic: 'chat-x',
       type: MessageType.TEXT,
