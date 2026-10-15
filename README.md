@@ -83,6 +83,7 @@ await chat.stop();
 | `infra.writeUrl`         | Optional. The Bee node or gateway the inbox writes go through, such as a write gateway that stamps them, when they go somewhere other than the reads. |
 | `infra.stamp`            | The batch the inbox writes are stamped with. Left out for a gateway that stamps writes itself.                                                        |
 | `infra.via`              | Required. Who pays for the inbox writes, `MessageVia.GATEWAY` or `MessageVia.OWN_STAMP`, as every message says in `via`.                              |
+| `infra.own`              | Optional, `false` by default. Whether the sender keeps a copy of every message in its own feed, as every message says in `own`. See the own feed.     |
 | `infra.gsocTopic`        | The inbox's identifier string, the same for every chat.                                                                                               |
 | `infra.gsocResourceId`   | The mined key every sender signs inbox writes with. The server's operator mines it.                                                                   |
 | `infra.chatTopic`        | The chat's topic, which every message carries and the feed is named by.                                                                               |
@@ -225,8 +226,13 @@ entry's `msg` or, while pending, the message as it was signed. It never throws, 
 
 A sender that also keeps a copy of each message it sends says so with `own: true`. The copies live in a feed owned by
 the sender's chat address `addr`, under the topic `ownFeedTopic(chatTopic)`, which is `swarm-chat-own-feed-v1:` and the
-chat's topic, turned into a feed topic with `Topic.fromString` as the chat's own feed is. This library does not write
-that feed yet, so `SwarmChat` always sends `own: false`.
+chat's topic, turned into a feed topic with `Topic.fromString` as the chat's own feed is.
+
+`SwarmChat` signs `own: true` when `infra.own` is `true`, once per message, so the pending message a page shows and every
+resend carry it too. The library does not write the copy itself. A page that keeps copies passes its own inbox write,
+a `GsocWrite`, as `new SwarmChat(settings, { write })`. It is handed the signed payload, the same bytes on every resend.
+A write that stores the copy from those bytes before it writes them to the inbox never sends a message that claims a
+copy it does not have.
 
 | Export                                                                       | Use                                                                                                          |
 | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
@@ -268,6 +274,11 @@ was stamped before the reader received it, so the reader runs at most `received 
 notes are found it trusts its own clock, moving reads earlier only when that bound proves the clock runs behind. When
 no note is found for longer than a heartbeat, it waits out the whole bound from then on, which is never early. A
 clock that runs behind sees every stamp as old as it expects, so its messages arrive as late as it runs behind.
+
+## Changes in 8.1
+
+- `infra.own` signs every message with `own: true`, for a page whose write keeps a copy in the sender's own feed. Left
+  out, messages say `own: false` as in 8.0.
 
 ## Changes in 8.0
 
