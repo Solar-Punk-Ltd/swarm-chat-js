@@ -74,26 +74,27 @@ await chat.stop();
 
 ## Settings
 
-| Setting                  | Meaning                                                                                                                                               |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `user.privateKey`        | Signs every message. A viewer that only reads may pass any key.                                                                                       |
-| `user.nickname`          | The name on every message, 1 to 20 characters. Nothing can be sent without one.                                                                       |
-| `user.binding`           | Optional. A signed-in viewer's Swarm ID chat binding, `{ msg, sig }`, for the chat address of `user.privateKey`. Every message then carries it.       |
-| `infra.beeUrl`           | The Bee node or gateway the chat is read through, and written through when `infra.writeUrl` is not set.                                               |
-| `infra.writeUrl`         | Optional. The Bee node or gateway the inbox writes go through, such as a write gateway that stamps them, when they go somewhere other than the reads. |
-| `infra.stamp`            | The batch the inbox writes are stamped with. Left out for a gateway that stamps writes itself.                                                        |
-| `infra.via`              | Required. Who pays for the inbox writes, `MessageVia.GATEWAY` or `MessageVia.OWN_STAMP`, as every message says in `via`.                              |
-| `infra.own`              | Optional, `false` by default. Whether the sender keeps a copy of every message in its own feed, as every message says in `own`. See the own feed.     |
-| `infra.gsocTopic`        | The inbox's identifier string, the same for every chat.                                                                                               |
-| `infra.gsocResourceId`   | The mined key every sender signs inbox writes with. The server's operator mines it.                                                                   |
-| `infra.chatTopic`        | The chat's topic, which every message carries and the feed is named by.                                                                               |
-| `infra.chatAddress`      | The server's feed owner address.                                                                                                                      |
-| `infra.pollingInterval`  | The shortest wait between two polls, and the first wait after the gateway failed, 1,000 ms by default.                                                |
-| `infra.socReadTimeout`   | One feed slot read, 5,000 ms by default.                                                                                                              |
-| `infra.feedReadTimeout`  | The head lookup and a history file download, 15,000 ms by default. A head lookup that runs out of time reads the chat from slot 0.                    |
-| `infra.gsocWriteTimeout` | One inbox write, 10,000 ms by default.                                                                                                                |
-| `infra.noteSlotMs`       | The server's `NOTE_SLOT_MS`, 2,000 ms by default. It is part of every note's address, so a different value finds no notes and polls instead.          |
-| `infra.noteHeartbeatMs`  | The server's `NOTE_HEARTBEAT_MS`, 30,000 ms by default, which sets how far back an opening looks for a note.                                          |
+| Setting                  | Meaning                                                                                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `user.privateKey`        | Signs every message. A viewer that only reads may pass any key.                                                                                         |
+| `user.nickname`          | The name on every message, 1 to 20 characters. Nothing can be sent without one.                                                                         |
+| `user.binding`           | Optional. A signed-in viewer's Swarm ID chat binding, `{ msg, sig }`, for the chat address of `user.privateKey`. Every message then carries it.         |
+| `user.walletLink`        | Optional, only with `user.binding`. The viewer's Swarm ID wallet link, `{ msg, wsig, asig }`, for the binding's account. Every message then carries it. |
+| `infra.beeUrl`           | The Bee node or gateway the chat is read through, and written through when `infra.writeUrl` is not set.                                                 |
+| `infra.writeUrl`         | Optional. The Bee node or gateway the inbox writes go through, such as a write gateway that stamps them, when they go somewhere other than the reads.   |
+| `infra.stamp`            | The batch the inbox writes are stamped with. Left out for a gateway that stamps writes itself.                                                          |
+| `infra.via`              | Required. Who pays for the inbox writes, `MessageVia.GATEWAY` or `MessageVia.OWN_STAMP`, as every message says in `via`.                                |
+| `infra.own`              | Optional, `false` by default. Whether the sender keeps a copy of every message in its own feed, as every message says in `own`. See the own feed.       |
+| `infra.gsocTopic`        | The inbox's identifier string, the same for every chat.                                                                                                 |
+| `infra.gsocResourceId`   | The mined key every sender signs inbox writes with. The server's operator mines it.                                                                     |
+| `infra.chatTopic`        | The chat's topic, which every message carries and the feed is named by.                                                                                 |
+| `infra.chatAddress`      | The server's feed owner address.                                                                                                                        |
+| `infra.pollingInterval`  | The shortest wait between two polls, and the first wait after the gateway failed, 1,000 ms by default.                                                  |
+| `infra.socReadTimeout`   | One feed slot read, 5,000 ms by default.                                                                                                                |
+| `infra.feedReadTimeout`  | The head lookup and a history file download, 15,000 ms by default. A head lookup that runs out of time reads the chat from slot 0.                      |
+| `infra.gsocWriteTimeout` | One inbox write, 10,000 ms by default.                                                                                                                  |
+| `infra.noteSlotMs`       | The server's `NOTE_SLOT_MS`, 2,000 ms by default. It is part of every note's address, so a different value finds no notes and polls instead.            |
+| `infra.noteHeartbeatMs`  | The server's `NOTE_HEARTBEAT_MS`, 30,000 ms by default, which sets how far back an opening looks for a note.                                            |
 
 ## Methods
 
@@ -166,13 +167,16 @@ A message is a JSON object of at most 3,072 bytes of UTF-8, its fields in this o
 | `via`    | Who paid for the inbox write: `gateway` (the gateway's stamp) or `own-stamp` (the sender's own)              |
 | `own`    | `true` when the sender also keeps a copy of the message in its own feed                                      |
 | `idb`    | Only for a signed-in sender: its Swarm ID chat binding, `{ msg, sig }`                                       |
+| `wl`     | Only beside `idb`, for a sender who shows an ENS name: its Swarm ID wallet link, `{ msg, wsig, asig }`       |
 | `sig`    | 130 lowercase hex characters of r, s and v, with v 27 or 28 and s in the lower half                          |
 
 Characters are counted as Unicode code points, so an emoji counts once, and `countCharacters` counts the same way for
 a composer. The signed bytes are the UTF-8 of
-`JSON.stringify([8, topic, id, type, target, text, name, addr, ts, via, own, idb?.msg ?? '', idb?.sig ?? ''])`, signed
-with bee-js's `PrivateKey.sign` and checked with `Signature.recoverPublicKey`, both over the raw bytes. So `via`, `own`
-and the binding cannot be changed or taken off without breaking the signature. Every signature has a second valid
+`JSON.stringify([8, topic, id, type, target, text, name, addr, ts, via, own, idb?.msg ?? '', idb?.sig ?? ''])`, with
+`wl.msg`, `wl.wsig` and `wl.asig` appended to the array when the message carries a wallet link, signed with bee-js's
+`PrivateKey.sign` and checked with `Signature.recoverPublicKey`, both over the raw bytes. So `via`, `own`, the binding
+and the wallet link cannot be changed, added or taken off without breaking the signature. A message without a link
+has the bytes it had before links existed. Every signature has a second valid
 spelling, s replaced by n - s with v flipped, and bee-js reads any v but 27 as 28, so the check refuses all but the
 low s spelling with v 27 or 28, the one bee-js signs. One message has one valid signature.
 
@@ -198,6 +202,30 @@ only with `allowLocalHttp`), the chat address is `0x` and 40 lowercase hex chara
 milliseconds. `sig` is EIP-191 `personal_sign` over `msg`, written as the fork writes it: `0x` and 130 lowercase hex
 characters of r, s and v, v 27 or 28 and s in the lower half. Recovering it gives the account's address.
 
+### The Swarm ID wallet link
+
+Swarm ID never tells a site the wallet an account is secured with. A person who wants readers to see their ENS name
+turns on "Show my ENS name on sites" there, and Swarm ID then gives the site a wallet link: the statement, signed by the
+wallet and countersigned by the account's own key, that the two belong to the same person. Its canonical description
+is `docs/Wallet-Link.md` in the Swarm ID fork, solarpunk-id, and this library reads it exactly as the fork's
+`verifyWalletLink` does, without importing the fork. Swarm ID hands it over as
+`{ message, walletSignature, accountSignature }`, and a message carries it as `{ msg, wsig, asig }`. `msg` is four lines
+joined by `\n`:
+
+```text
+Swarm ID wallet link v1
+Account: 0x<the binding's account>
+Wallet: 0x<the wallet>
+Date: 2026-10-15T12:00:00.000Z
+```
+
+Both addresses are `0x` and 40 lowercase hex characters, and the date is ISO 8601 UTC with milliseconds. `wsig` and
+`asig` are EIP-191 `personal_sign` over `msg` by the wallet and by the account, each `0x` and 130 lowercase hex
+characters of r, s and v, v 27 or 28 and s in the lower half.
+
+A message carries a link only beside its binding, and the link counts toward the 3,072 byte cap. The largest message
+with a binding and a link is 2,285 bytes.
+
 ### Verifying
 
 `verifyChatMessage(value, { origin, allowLocalHttp? })` checks a message's shape and its signature, and then, when it
@@ -205,6 +233,13 @@ carries a binding, that the binding's text is those four lines, its chat address
 recovers an account, and its site is `origin`. It returns `{ ok: true, message, identity }`, `identity` being
 `{ account, site, date }` for a signed-in sender and `null` for a guest. A message whose binding fails is refused with
 the reason `binding` and is never shown as a guest.
+
+When the message also carries a wallet link, the link's text must be those four lines, its account the binding's
+account, its wallet signature must recover its wallet and its account signature its account. `identity` then also has
+`wallet`, the checked wallet address. A link that fails refuses the message with the reason `binding` too, its detail
+starting `wallet link:`. The check looks nothing up. A page that shows an ENS name takes `identity.wallet` to its own
+lookup, such as the fork's `resolveVerifiedEnsName`, which requires the wallet's reverse record and the name's forward
+record to agree, over an Ethereum endpoint the page names.
 
 `origin` is required, the bare origin of the site whose chat this is, such as `https://example.com`. A binding signed
 for one site therefore never passes in another site's chat because a caller left the origin out. A JavaScript caller
@@ -241,6 +276,7 @@ copy it does not have.
 | `createChatMessage(key, draft)`                                              | Builds and signs, throwing a `ChatMessageError` for anything the check would refuse. `via` is required.      |
 | `MessageType`, `MessageVia`                                                  | The values of `type` and `via`.                                                                              |
 | `checkChatBinding(binding, addr, options?)`, `chatBindingSchema`             | The binding check on its own and its shape. Its `origin` is optional, for a sender checking its own binding. |
+| `checkWalletLink(link, account)`, `walletLinkSchema`                         | The wallet link check on its own, for the binding's account, and its shape.                                  |
 | `ownFeedTopic(chatTopic)`, `OWN_FEED_TOPIC_PREFIX`                           | The topic of a sender's own feed of copies.                                                                  |
 | `chatMessageSchema`, `hasValidSignature`, `signedBytes`, `encodeChatMessage` | The parts.                                                                                                   |
 | `feedEntrySchema`, `parseFeedEntry`                                          | The feed entry, `{v, seq, at, msg, history}`.                                                                |
@@ -274,6 +310,15 @@ was stamped before the reader received it, so the reader runs at most `received 
 notes are found it trusts its own clock, moving reads earlier only when that bound proves the clock runs behind. When
 no note is found for longer than a heartbeat, it waits out the whole bound from then on, which is never early. A
 clock that runs behind sees every stamp as old as it expects, so its messages arrive as late as it runs behind.
+
+## Changes in 8.2
+
+- A message may carry the sender's Swarm ID wallet link, `wl`, beside its binding, signed with the rest. A verified
+  link puts the wallet on `identity.wallet`, and a link that fails refuses the message as `binding`. Messages without
+  one keep their bytes, and every 8.0 and 8.1 message still passes.
+- `SwarmChat` takes `user.walletLink`, `createChatMessage` takes `wl`, and `checkWalletLink` checks a link on its own.
+- A server on 8.1 or older refuses a message carrying `wl` as `shape`, since the message is a strict object. Update the
+  server before any page sends one.
 
 ## Changes in 8.1
 
