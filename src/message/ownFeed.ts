@@ -1,6 +1,6 @@
 /**
- * A sender may keep a copy of each message it sends in a feed of its own, owned by its chat address `addr`, and says
- * so with `own: true`. That feed is named by `ownFeedTopic(chatTopic)`, turned into a feed topic with
+ * A sender may keep a copy of each message it sends in a feed of its own, owned by its chat address `addr`. The
+ * message says nothing about it, so whether a copy exists is read from that feed. That feed is named by `ownFeedTopic(chatTopic)`, turned into a feed topic with
  * `Topic.fromString` as the chat's own feed is named by `chatTopic`. The prefix carries a version, so a later layout of
  * the copies takes a new topic rather than mixing with this one.
  */

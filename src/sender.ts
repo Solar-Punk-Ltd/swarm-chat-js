@@ -60,7 +60,7 @@ interface ReactionTaps {
   timer: ReturnType<typeof setTimeout>;
 }
 
-export type SendDraft = Omit<ChatMessageDraft, 'name' | 'ts' | 'id' | 'via' | 'own' | 'idb' | 'wl'>;
+export type SendDraft = Omit<ChatMessageDraft, 'name' | 'ts' | 'id' | 'via' | 'idb' | 'wl'>;
 
 /** What every message this sender signs says about who sent it and how. */
 export interface SenderProfile {
@@ -70,11 +70,6 @@ export interface SenderProfile {
   idb?: ChatBinding;
   /** The sender's Swarm ID wallet link, beside `idb`, for a sender who shows an ENS name. */
   wl?: WalletLink;
-  /**
-   * Whether the sender keeps a copy of every message in its own feed, false when left out. The library writes no copy:
-   * the `GsocWrite` that keeps one stores it from the payload it is handed, before or after the inbox write.
-   */
-  own?: boolean;
 }
 
 /**
