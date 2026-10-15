@@ -160,7 +160,7 @@ A message is a JSON object of at most 3,072 bytes of UTF-8, its fields in this o
 | `type`   | `text`, `thread` (a reply, `target` is the parent) or `reaction` (`target` is the message, `text` the emoji) |
 | `target` | The id it refers to, or `""` for a text                                                                      |
 | `text`   | 1 to 500 characters                                                                                          |
-| `name`   | 1 to 20 characters                                                                                           |
+| `name`   | 1 to 20 characters, none of them a Unicode format or control character (`\p{Cf}`, `\p{Cc}`)                  |
 | `addr`   | The sender's chat address, 40 lowercase hex characters without `0x`                                          |
 | `ts`     | The sender's clock in milliseconds                                                                           |
 | `via`    | Who paid for the inbox write: `gateway` (the gateway's stamp) or `own-stamp` (the sender's own)              |
@@ -319,6 +319,9 @@ clock that runs behind sees every stamp as old as it expects, so its messages ar
   the draft's `own` are gone with it. Whether a sender keeps a copy is read from its own feed. A message that carries
   `own`, which is every message 8.0 and 8.1 signed, is refused as `shape`, and so is a feed entry or history row that
   holds one.
+- A name with a Unicode format or control character, such as the right-to-left override U+202E or a zero width space,
+  is refused as `shape`, since it can make one name look like another. A zero width joiner is one of them, so an emoji
+  joined from several, such as a family, cannot be part of a name.
 - `SwarmChat` takes `user.walletLink`, `createChatMessage` takes `wl`, and `checkWalletLink` checks a link on its own.
 - A server on 8.x refuses a message carrying `wl`, or one without `own`, as `shape`, since the message is a
   strict object. Update the server before any page sends one.

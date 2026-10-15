@@ -289,6 +289,13 @@ describe('the shape', () => {
     ['a text of 501 characters', { text: 'x'.repeat(501) }],
     ['an empty name', { name: '' }],
     ['a name of 21 characters', { name: 'n'.repeat(21) }],
+    ['a name with a right-to-left override', { name: 'evil\u202egnp.exe' }],
+    ['a name with a left-to-right isolate', { name: '\u2066admin' }],
+    ['a name with a zero width space', { name: 'ad\u200bmin' }],
+    ['a name with a byte order mark', { name: '\ufeffadmin' }],
+    ['a name with a newline', { name: 'line\nbreak' }],
+    ['a name with a NUL', { name: 'nul\u0000' }],
+    ['a name with a DEL', { name: 'del\u007f' }],
     ['an address with 0x', { addr: `0x${TEST_ADDR.slice(2)}` }],
     ['an address in capitals', { addr: TEST_ADDR.toUpperCase() }],
     ['a fractional ts', { ts: 1.5 }],
@@ -322,6 +329,31 @@ describe('the shape', () => {
       via: MessageVia.GATEWAY,
     });
     expect(verifyChatMessage(message, AT_SITE)).toEqual({ ok: true, message, identity: null });
+  });
+});
+
+describe('the name', () => {
+  it.each(['Zoë', 'Đorđe', 'Ζωή', 'Алиса', '李雷', 'سارا', 'אורי', 'नमस्ते', 'ok 👍🏽'])('accepts %s', (name) => {
+    const { message } = createChatMessage(TEST_KEY, {
+      topic: 'chat-x',
+      type: MessageType.TEXT,
+      text: 'hi',
+      name,
+      via: MessageVia.GATEWAY,
+    });
+    expect(verifyChatMessage(message, AT_SITE)).toMatchObject({ ok: true });
+  });
+
+  it('refuses a format character before signing', () => {
+    expect(() =>
+      createChatMessage(TEST_KEY, {
+        topic: 'chat-x',
+        type: MessageType.TEXT,
+        text: 'hi',
+        name: 'evil\u202egnp.exe',
+        via: MessageVia.GATEWAY,
+      }),
+    ).toThrow(ChatMessageError);
   });
 });
 
