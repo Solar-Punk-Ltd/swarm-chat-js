@@ -64,6 +64,20 @@ function characters(min: number, max: number) {
   }, `expected ${min} to ${max} characters`);
 }
 
+/**
+ * Format and control code points draw nothing of their own yet change what is around them: a right-to-left override
+ * shows `evil\u202egnp.exe` as `evilexe.png`, and a zero width space makes two names that look the same differ. A
+ * name is how readers tell senders apart, so it carries neither.
+ */
+const INVISIBLE_CODE_POINT = /[\p{Cf}\p{Cc}]/u;
+
+function displayName(min: number, max: number) {
+  return characters(min, max).refine(
+    (value) => !INVISIBLE_CODE_POINT.test(value),
+    'expected no format or control characters',
+  );
+}
+
 const messageId = lowercaseHex(32);
 
 export const chatMessageSchema = z
@@ -74,7 +88,7 @@ export const chatMessageSchema = z
     type: z.enum([MessageType.TEXT, MessageType.THREAD, MessageType.REACTION]),
     target: z.union([z.literal(''), messageId]),
     text: characters(1, MAX_TEXT_CHARACTERS),
-    name: characters(1, MAX_NAME_CHARACTERS),
+    name: displayName(1, MAX_NAME_CHARACTERS),
     addr: lowercaseHex(40),
     ts: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
     via: z.enum([MessageVia.GATEWAY, MessageVia.OWN_STAMP]),
