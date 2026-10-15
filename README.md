@@ -282,7 +282,7 @@ copy beside the inbox write.
 | `feedEntrySchema`, `parseFeedEntry`                                          | The feed entry, `{v, seq, at, msg, history}`.                                                                |
 | `historyFileSchema`, `parseHistoryFile`                                      | The history file, `{v, topic, fromSeq, toSeq, messages, prev}`.                                              |
 
-The feed entry and the history file carry `v` 8 like the message. A feed entry, at most 4,096 bytes, holds a message at
+The feed entry and the history file carry `v` 9 like the message. A feed entry, at most 4,096 bytes, holds a message at
 the byte cap inside its largest wrapper.
 
 ## Slot notes, for servers and tools
