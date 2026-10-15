@@ -45,6 +45,12 @@ export interface ChatIdentity {
   site: string;
   /** When the account says it signed, ISO 8601 UTC. */
   date: string;
+  /**
+   * The wallet the message's Swarm ID wallet link names, `0x` and 40 lowercase hex characters, present only when the
+   * message carries a link both the wallet and this account signed. A reader looks its ENS name up itself, and the
+   * fork's `resolveVerifiedEnsName` does that with both the reverse and the forward record.
+   */
+  wallet?: string;
 }
 
 export interface BindingOptions {

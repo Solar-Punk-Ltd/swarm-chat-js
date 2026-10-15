@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { chatBindingSchema, checkChatBinding, type ChatBinding, type ChatIdentity } from './binding.js';
 import { isCanonicalSignature } from './canonicalSignature.js';
+import { checkWalletLink, walletLinkSchema, type WalletLink } from './walletLink.js';
 
 /**
  * The chat message of version 8: what a browser sends as a GSOC payload, what the server verifies before it
@@ -14,8 +15,8 @@ import { isCanonicalSignature } from './canonicalSignature.js';
 export const MESSAGE_VERSION = 8;
 
 /**
- * Measured on the UTF-8 of the whole JSON object, on top of the per-field caps. Large enough for a 500 character text
- * of two byte characters with a Swarm ID binding, at every other cap.
+ * Measured on the UTF-8 of the whole JSON object, on top of the per-field caps, wallet link included. Large enough for
+ * a 500 character text of two byte characters with a Swarm ID binding and a wallet link, at every other cap.
  */
 export const MAX_MESSAGE_BYTES = 3072;
 
@@ -80,11 +81,17 @@ export const chatMessageSchema = z
     own: z.boolean(),
     /** The sender's Swarm ID chat binding, present only for a signed-in sender. */
     idb: chatBindingSchema.optional(),
+    /** The sender's Swarm ID wallet link, present only beside a binding, for a sender who shows an ENS name. */
+    wl: walletLinkSchema.optional(),
     sig: lowercaseHex(130),
   })
   .refine((message) => (message.type === MessageType.TEXT) === (message.target === ''), {
     message: 'a text message has no target, a thread reply or a reaction names one',
     path: ['target'],
+  })
+  .refine((message) => message.wl === undefined || message.idb !== undefined, {
+    message: 'a wallet link is carried only beside a chat binding, whose account it names',
+    path: ['wl'],
   });
 
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
@@ -142,6 +149,8 @@ export function signedBytes(message: UnsignedChatMessage): Uint8Array {
       message.own,
       message.idb?.msg ?? '',
       message.idb?.sig ?? '',
+      // Appended only when there is one, so every message without a link keeps the bytes it was signed over.
+      ...(message.wl ? [message.wl.msg, message.wl.wsig, message.wl.asig] : []),
     ]),
   );
 }
@@ -161,6 +170,7 @@ export function encodeChatMessage(message: ChatMessage): Uint8Array {
     via: message.via,
     own: message.own,
     ...(message.idb ? { idb: { msg: message.idb.msg, sig: message.idb.sig } } : {}),
+    ...(message.wl ? { wl: { msg: message.wl.msg, wsig: message.wl.wsig, asig: message.wl.asig } } : {}),
     sig: message.sig,
   };
   return encoder.encode(JSON.stringify(ordered));
@@ -188,6 +198,8 @@ export interface ChatMessageDraft {
   own?: boolean;
   /** The sender's Swarm ID chat binding, given only for a signed-in sender. */
   idb?: ChatBinding;
+  /** The sender's Swarm ID wallet link, given only beside `idb`, for a sender who shows an ENS name. */
+  wl?: WalletLink;
 }
 
 export interface SignedChatMessage {
@@ -221,6 +233,7 @@ export function createChatMessage(
     via: draft.via,
     own: draft.own ?? false,
     ...(draft.idb ? { idb: draft.idb } : {}),
+    ...(draft.wl ? { wl: draft.wl } : {}),
   };
 
   // A placeholder of the signature's exact length checks the shape and measures the final payload before signing.
@@ -238,6 +251,12 @@ export function createChatMessage(
     const binding = checkChatBinding(unsigned.idb, unsigned.addr, { allowLocalHttp: true });
     if (!binding.ok) {
       throw new ChatMessageError('binding', binding.detail);
+    }
+    if (unsigned.wl) {
+      const link = checkWalletLink(unsigned.wl, binding.identity.account);
+      if (!link.ok) {
+        throw new ChatMessageError('binding', `wallet link: ${link.detail}`);
+      }
     }
   }
 
@@ -267,8 +286,10 @@ export function hasValidSignature(message: ChatMessage): boolean {
 
 /**
  * Verifies a message that arrived as an object: its shape, its signature, and, when it carries a binding, that the
- * binding is the fork's four lines for this `addr` and for `options.origin`, and recovers an account. A message whose
- * binding fails is refused as `binding`, never passed as a guest, and so is a bound message checked with no origin.
+ * binding is the fork's four lines for this `addr` and for `options.origin`, and recovers an account. When it also
+ * carries a wallet link, the link must be the fork's four lines for that account, signed by its wallet and by the
+ * account, and the identity then names the wallet. A message whose binding or link fails is refused as `binding`,
+ * never passed as a guest, and so is a bound message checked with no origin.
  * Never throws, and touches no DOM and no Node API, so a page runs it in a Web Worker as the server runs it.
  */
 export function verifyChatMessage(value: unknown, options: VerifyOptions): ChatMessageCheck {
@@ -291,7 +312,16 @@ export function verifyChatMessage(value: unknown, options: VerifyOptions): ChatM
   if (!binding.ok) {
     return { ok: false, reason: 'binding', detail: binding.detail };
   }
-  return { ok: true, message, identity: binding.identity };
+  if (!message.wl) {
+    return { ok: true, message, identity: binding.identity };
+  }
+  // Refused as the binding rather than under a reason of its own, since the link is part of who the binding says sent
+  // the message, and a server counting refusals by reason keeps its list.
+  const link = checkWalletLink(message.wl, binding.identity.account);
+  if (!link.ok) {
+    return { ok: false, reason: 'binding', detail: `wallet link: ${link.detail}` };
+  }
+  return { ok: true, message, identity: { ...binding.identity, wallet: link.wallet } };
 }
 
 /**
