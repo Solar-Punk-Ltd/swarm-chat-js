@@ -67,6 +67,11 @@ export interface SenderProfile {
   via: MessageVia;
   /** The sender's Swarm ID chat binding, for a signed-in sender only. */
   idb?: ChatBinding;
+  /**
+   * Whether the sender keeps a copy of every message in its own feed, false when left out. The library writes no copy:
+   * the `GsocWrite` that keeps one stores it from the payload it is handed, before or after the inbox write.
+   */
+  own?: boolean;
 }
 
 /**
@@ -92,8 +97,7 @@ export class Sender {
 
   /** Builds, signs and writes a message. Throws a ChatMessageError, and writes nothing, for one the server would refuse. */
   send(draft: SendDraft): ChatMessage {
-    // Own stays false, since this sender keeps no copy in an own feed.
-    const { message, bytes } = createChatMessage(this.key, { ...draft, ...this.profile, own: false });
+    const { message, bytes } = createChatMessage(this.key, { ...draft, ...this.profile });
     const outgoing: Outgoing = {
       message,
       bytes,
