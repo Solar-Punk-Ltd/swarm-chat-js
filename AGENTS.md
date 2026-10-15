@@ -23,7 +23,7 @@ scripts CI runs, by those names. `pnpm pack` builds first.
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `src/message/message.ts`      | The v8 message: its schema, its signed bytes, signing, `verifyChatMessage` and the wire check. The server imports it. |
 | `src/message/binding.ts`      | The Swarm ID chat binding: its four lines and the clean site origin.                                                  |
-| `src/message/walletLink.ts`   | The Swarm ID wallet link: its four lines, checked for the binding's account, with both signatures recovered.          |
+| `src/message/walletLink.ts`   | The Swarm ID wallet link: its five lines, checked for the binding's account, with both signatures recovered.          |
 | `src/message/personalSign.ts` | EIP-191 personal_sign recovery and the date spelling the binding and the wallet link share.                           |
 | `src/message/ownFeed.ts`      | `ownFeedTopic`, the topic of the feed where a sender keeps copies of its messages.                                    |
 | `src/message/entry.ts`        | The feed entry and the history file the server writes, shape-checked for the reader.                                  |

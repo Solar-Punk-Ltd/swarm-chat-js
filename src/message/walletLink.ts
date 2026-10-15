@@ -7,21 +7,25 @@ import { isCanonicalDate, recoverPersonalSigner } from './personalSign.js';
  * that the two belong to the same person, which lets a reader show the wallet's ENS name. The Swarm ID fork makes it
  * while the person has "Show my ENS name on sites" on, and its canonical description is `docs/Wallet-Link.md` in the
  * fork (solarpunk-id), with `verifyWalletLink` in its `lib/src/utils/wallet-link.ts`. This module reads it exactly as
- * that function does, without importing the fork: the same four lines, and both EIP-191 personal_sign signatures with
- * v 27 or 28 and a low s. It looks nothing up: a reader takes the checked wallet to its own ENS lookup.
+ * that function does, without importing the fork: the same five lines, the second of them read exactly, and both
+ * EIP-191 personal_sign signatures with v 27 or 28 and a low s. It looks nothing up: a reader takes the checked wallet to its own ENS lookup.
  */
 
 /** The first line, which also versions the wallet link format. */
 export const WALLET_LINK_TITLE = 'Swarm ID wallet link v1';
 
-/** The fork's own bound on a wallet link's text. */
-export const MAX_WALLET_LINK_CHARACTERS = 256;
+/** The second line, what the wallet's owner agrees to, which a wallet shows them before they sign. */
+export const WALLET_LINK_STATEMENT =
+  'I link this wallet to the Swarm ID account below, so sites may show my ENS name beside its messages.';
+
+/** The fork's own bound on a wallet link's text, which is 258 characters in the format it writes. */
+export const MAX_WALLET_LINK_CHARACTERS = 320;
 
 const ACCOUNT_PREFIX = 'Account: ';
 const WALLET_PREFIX = 'Wallet: ';
 const DATE_PREFIX = 'Date: ';
 const LINE_SEPARATOR = '\n';
-const LINE_COUNT = 4;
+const LINE_COUNT = 5;
 
 const ADDRESS_PATTERN = /^0x[0-9a-f]{40}$/;
 const SIGNATURE = z.string().regex(/^0x[0-9a-f]{130}$/, 'expected 0x and 130 lowercase hex characters');
@@ -57,7 +61,7 @@ function afterPrefix(line: string, prefix: string): string | null {
 
 /**
  * Reads a wallet link for `account` (`0x` and 40 lowercase hex characters), the account a verified chat binding
- * named. Refuses every text but the four lines the fork writes, a wallet signature that does not recover the wallet
+ * named. Refuses every text but the five lines the fork writes, its statement included, a wallet signature that does not recover the wallet
  * the link names, an account signature that does not recover the account it names, and a link naming any other
  * account. Never throws.
  */
@@ -69,9 +73,12 @@ export function checkWalletLink(link: WalletLink, account: string): WalletLinkCh
   if (lines.length !== LINE_COUNT || lines[0] !== WALLET_LINK_TITLE) {
     return { ok: false, detail: `not the ${LINE_COUNT} lines of a ${WALLET_LINK_TITLE}` };
   }
-  const named = afterPrefix(lines[1]!, ACCOUNT_PREFIX);
-  const wallet = afterPrefix(lines[2]!, WALLET_PREFIX);
-  const date = afterPrefix(lines[3]!, DATE_PREFIX);
+  if (lines[1] !== WALLET_LINK_STATEMENT) {
+    return { ok: false, detail: `the wallet link's second line is not the ${WALLET_LINK_TITLE} statement` };
+  }
+  const named = afterPrefix(lines[2]!, ACCOUNT_PREFIX);
+  const wallet = afterPrefix(lines[3]!, WALLET_PREFIX);
+  const date = afterPrefix(lines[4]!, DATE_PREFIX);
   if (named === null || !ADDRESS_PATTERN.test(named)) {
     return { ok: false, detail: 'the wallet link does not name an account as 0x and 40 lowercase hex characters' };
   }

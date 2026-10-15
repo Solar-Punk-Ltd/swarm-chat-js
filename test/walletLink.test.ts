@@ -8,6 +8,7 @@ import {
   MAX_WALLET_LINK_CHARACTERS,
   MessageType,
   MessageVia,
+  WALLET_LINK_STATEMENT,
   WALLET_LINK_TITLE,
   checkWalletLink,
   createChatMessage,
@@ -58,6 +59,13 @@ describe('the fork wallet link', () => {
     expect(lines[0]).toBe(WALLET_LINK_TITLE);
   });
 
+  it('says in its second line what the wallet signs', () => {
+    expect(WALLET_LINK_STATEMENT).toBe(
+      'I link this wallet to the Swarm ID account below, so sites may show my ENS name beside its messages.',
+    );
+    expect(lines[1]).toBe(WALLET_LINK_STATEMENT);
+  });
+
   it.each([
     ['its wallet signature in v 28', WALLET_LINK],
     ['its wallet signature in v 27', WALLET_LINK_FLIPPED_V],
@@ -66,7 +74,7 @@ describe('the fork wallet link', () => {
       ok: true,
       wallet: LINK_WALLET,
       account: FORK_ACCOUNT,
-      date: link.msg.split('\n')[3]!.slice('Date: '.length),
+      date: link.msg.split('\n')[4]!.slice('Date: '.length),
     });
   });
 
@@ -78,7 +86,7 @@ describe('the fork wallet link', () => {
 
 describe('checkWalletLink refuses', () => {
   it('a message changed after signing', () => {
-    const tampered = { ...WALLET_LINK, msg: WALLET_LINK.msg.replace('12:00:00', '12:00:01') };
+    const tampered = { ...WALLET_LINK, msg: WALLET_LINK.msg.replace('.000Z', '.001Z') };
     expect(checkWalletLink(tampered, FORK_ACCOUNT).ok).toBe(false);
   });
 
@@ -114,16 +122,20 @@ describe('checkWalletLink refuses', () => {
   it.each([
     ['another version', withLine(0, 'Swarm ID wallet link v2')],
     ["the chat binding's title", withLine(0, 'Swarm ID chat binding v1')],
+    ['no statement', lines.filter((_, at) => at !== 1).join('\n')],
+    ['another statement', withLine(1, 'I link this wallet to the Swarm ID account below.')],
+    ['the statement with a trailing space', withLine(1, `${lines[1]} `)],
+    ['the statement in upper case', withLine(1, lines[1]!.toUpperCase())],
     ['a trailing newline', `${WALLET_LINK.msg}\n`],
-    ['a missing line', lines.slice(0, 3).join('\n')],
+    ['a missing line', lines.slice(0, 4).join('\n')],
     ['an extra line', `${WALLET_LINK.msg}\nNote: hi`],
     ['CRLF line ends', lines.join('\r\n')],
-    ['the wallet line first', [lines[0], lines[2], lines[1], lines[3]].join('\n')],
-    ['an account in upper case', withLine(1, `Account: 0x${FORK_ACCOUNT.slice(2).toUpperCase()}`)],
-    ['a wallet in upper case', withLine(2, `Wallet: 0x${LINK_WALLET.slice(2).toUpperCase()}`)],
-    ['a wallet without 0x', withLine(2, `Wallet: ${LINK_WALLET.slice(2)}`)],
-    ['a date without milliseconds', withLine(3, 'Date: 2026-10-15T12:00:00Z')],
-    ['a date that does not exist', withLine(3, 'Date: 2026-02-30T12:00:00.000Z')],
+    ['the wallet line first', [lines[0], lines[1], lines[3], lines[2], lines[4]].join('\n')],
+    ['an account in upper case', withLine(2, `Account: 0x${FORK_ACCOUNT.slice(2).toUpperCase()}`)],
+    ['a wallet in upper case', withLine(3, `Wallet: 0x${LINK_WALLET.slice(2).toUpperCase()}`)],
+    ['a wallet without 0x', withLine(3, `Wallet: ${LINK_WALLET.slice(2)}`)],
+    ['a date without milliseconds', withLine(4, 'Date: 2026-10-15T12:00:00Z')],
+    ['a date that does not exist', withLine(4, 'Date: 2026-02-30T12:00:00.000Z')],
   ])('a message with %s, even signed by both keys', (_label, msg) => {
     expect(checkWalletLink(signedLink(msg), FORK_ACCOUNT).ok).toBe(false);
   });
@@ -264,7 +276,7 @@ describe('a message carrying a wallet link', () => {
   });
 
   it('is refused as the binding when its text was changed after signing', () => {
-    const tampered = { ...WALLET_LINK, msg: WALLET_LINK.msg.replace('12:00:00', '12:00:01') };
+    const tampered = { ...WALLET_LINK, msg: WALLET_LINK.msg.replace('.000Z', '.001Z') };
     const { sig: _sig, ...unsigned } = createChatMessage(boundKey, draft({ wl: undefined })).message;
     expect(verifyChatMessage(forged({ ...unsigned, wl: tampered }), AT_SITE)).toMatchObject({
       ok: false,
@@ -291,6 +303,9 @@ describe('a message carrying a wallet link', () => {
       idb: CHAT_BINDING,
       wl: WALLET_LINK,
     });
+    // The README gives this size. The wallet link's statement line adds 102 bytes to it, its 100 characters and the
+    // two of the escaped line break before it, and it still leaves 685 bytes under the cap.
+    expect(bytes.byteLength).toBe(2387);
     expect(bytes.byteLength).toBeLessThanOrEqual(MAX_MESSAGE_BYTES);
   });
 
