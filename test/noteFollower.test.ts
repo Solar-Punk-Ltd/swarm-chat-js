@@ -344,7 +344,7 @@ describe('the opening', () => {
     gateway.files.set(
       FILE,
       bytes({
-        v: 8,
+        v: 9,
         topic: TOPIC,
         fromSeq: 0,
         toSeq: 1,

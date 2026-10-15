@@ -6,8 +6,8 @@ that feed. The browser talks only to a Bee node or gateway, never to a web serve
 
 The library needs its server,
 [Solar-Punk-Ltd/swarm-chat-aggregator-js](https://github.com/Solar-Punk-Ltd/swarm-chat-aggregator-js), which listens on
-the inbox and writes the feed. Version 8 of the library reads and writes the v8 message format only, and a v7 message
-fails its shape check.
+the inbox and writes the feed. Version 9 of the library reads and writes the v9 message format only, and a message of any
+earlier version fails its shape check.
 
 ## How it works
 
@@ -154,7 +154,7 @@ A message is a JSON object of at most 3,072 bytes of UTF-8, its fields in this o
 
 | Field    | Meaning                                                                                                      |
 | -------- | ------------------------------------------------------------------------------------------------------------ |
-| `v`      | `8`                                                                                                          |
+| `v`      | `9`                                                                                                          |
 | `topic`  | The chat's topic, 1 to 128 characters                                                                        |
 | `id`     | A random id, 32 lowercase hex characters                                                                     |
 | `type`   | `text`, `thread` (a reply, `target` is the parent) or `reaction` (`target` is the message, `text` the emoji) |
@@ -170,7 +170,7 @@ A message is a JSON object of at most 3,072 bytes of UTF-8, its fields in this o
 
 Characters are counted as Unicode code points, so an emoji counts once, and `countCharacters` counts the same way for
 a composer. The signed bytes are the UTF-8 of
-`JSON.stringify([8, topic, id, type, target, text, name, addr, ts, via, idb?.msg ?? '', idb?.sig ?? ''])`, with
+`JSON.stringify([9, topic, id, type, target, text, name, addr, ts, via, idb?.msg ?? '', idb?.sig ?? ''])`, with
 `wl.msg`, `wl.wsig` and `wl.asig` appended to the array when the message carries a wallet link, signed with bee-js's
 `PrivateKey.sign` and checked with `Signature.recoverPublicKey`, both over the raw bytes. So `via`, the binding
 and the wallet link cannot be changed, added or taken off without breaking the signature. Every signature has a second valid
@@ -315,6 +315,10 @@ clock that runs behind sees every stamp as old as it expects, so its messages ar
 
 - A message may carry the sender's Swarm ID wallet link, `wl`, beside its binding, signed with the rest. A verified
   link puts the wallet on `identity.wallet`, and a link that fails refuses the message as `binding`.
+- The message is version 9, its `v` and the first element of its signed bytes both `9`, and so is every feed entry and
+  history file. A message, entry or history file of version 8 fails its shape check, whether or not it carries `own`,
+  so a reader and a server on 9.0 never read one that 8.x wrote, and the break shows as a version rather than as a
+  missing field.
 - The message no longer carries `own`. It is gone from the shape, the signed bytes and the payload, and `infra.own` and
   the draft's `own` are gone with it. Whether a sender keeps a copy is read from its own feed. A message that carries
   `own`, which is every message 8.0 and 8.1 signed, is refused as `shape`, and so is a feed entry or history row that
@@ -323,8 +327,7 @@ clock that runs behind sees every stamp as old as it expects, so its messages ar
   is refused as `shape`, since it can make one name look like another. A zero width joiner is one of them, so an emoji
   joined from several, such as a family, cannot be part of a name.
 - `SwarmChat` takes `user.walletLink`, `createChatMessage` takes `wl`, and `checkWalletLink` checks a link on its own.
-- A server on 8.x refuses a message carrying `wl`, or one without `own`, as `shape`, since the message is a
-  strict object. Update the server before any page sends one.
+- A server on 8.x refuses every version 9 message as `shape`. Update the server before any page sends one.
 
 ## Changes in 8.1
 

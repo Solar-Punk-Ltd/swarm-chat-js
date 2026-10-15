@@ -33,7 +33,7 @@ export function testMessage(text: string, topic = TOPIC): ChatMessage {
 }
 
 export function entryAt(seq: number, history: HistoryLink | null = null, text = `message ${seq}`): FeedEntry {
-  return { v: 8, seq, at: 1759140000000 + seq, msg: testMessage(text), history };
+  return { v: 9, seq, at: 1759140000000 + seq, msg: testMessage(text), history };
 }
 
 /**

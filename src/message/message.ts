@@ -6,13 +6,13 @@ import { isCanonicalSignature } from './canonicalSignature.js';
 import { checkWalletLink, walletLinkSchema, type WalletLink } from './walletLink.js';
 
 /**
- * The chat message of version 8: what a browser sends as a GSOC payload, what the server verifies before it
+ * The chat message of version 9: what a browser sends as a GSOC payload, what the server verifies before it
  * publishes, and what every feed entry carries back as `msg`. This module is the only place its bytes are built,
  * signed, checked and read, and the server imports it from here rather than keeping a copy. A message of any other
  * version fails the shape check.
  */
 
-export const MESSAGE_VERSION = 8;
+export const MESSAGE_VERSION = 9;
 
 /**
  * Measured on the UTF-8 of the whole JSON object, on top of the per-field caps, wallet link included. Large enough for
