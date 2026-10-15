@@ -311,7 +311,7 @@ notes are found it trusts its own clock, moving reads earlier only when that bou
 no note is found for longer than a heartbeat, it waits out the whole bound from then on, which is never early. A
 clock that runs behind sees every stamp as old as it expects, so its messages arrive as late as it runs behind.
 
-## Changes in 8.2
+## Changes in 9.0
 
 - A message may carry the sender's Swarm ID wallet link, `wl`, beside its binding, signed with the rest. A verified
   link puts the wallet on `identity.wallet`, and a link that fails refuses the message as `binding`.
@@ -320,7 +320,7 @@ clock that runs behind sees every stamp as old as it expects, so its messages ar
   `own`, which is every message 8.0 and 8.1 signed, is refused as `shape`, and so is a feed entry or history row that
   holds one.
 - `SwarmChat` takes `user.walletLink`, `createChatMessage` takes `wl`, and `checkWalletLink` checks a link on its own.
-- A server on 8.1 or older refuses a message carrying `wl`, or one without `own`, as `shape`, since the message is a
+- A server on 8.x refuses a message carrying `wl`, or one without `own`, as `shape`, since the message is a
   strict object. Update the server before any page sends one.
 
 ## Changes in 8.1
