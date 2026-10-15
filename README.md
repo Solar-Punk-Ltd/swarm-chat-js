@@ -84,7 +84,6 @@ await chat.stop();
 | `infra.writeUrl`         | Optional. The Bee node or gateway the inbox writes go through, such as a write gateway that stamps them, when they go somewhere other than the reads.   |
 | `infra.stamp`            | The batch the inbox writes are stamped with. Left out for a gateway that stamps writes itself.                                                          |
 | `infra.via`              | Required. Who pays for the inbox writes, `MessageVia.GATEWAY` or `MessageVia.OWN_STAMP`, as every message says in `via`.                                |
-| `infra.own`              | Optional, `false` by default. Whether the sender keeps a copy of every message in its own feed, as every message says in `own`. See the own feed.       |
 | `infra.gsocTopic`        | The inbox's identifier string, the same for every chat.                                                                                                 |
 | `infra.gsocResourceId`   | The mined key every sender signs inbox writes with. The server's operator mines it.                                                                     |
 | `infra.chatTopic`        | The chat's topic, which every message carries and the feed is named by.                                                                                 |
@@ -135,7 +134,7 @@ follow `MESSAGE_REQUEST_ERROR` for the same `id`, and a viewer settles on the re
 A `MessageData` has `id`, `type`, `message` (the text or emoji), `username`, `address`, `timestamp` (the server's
 receive time, or the sender's clock while pending), `targetMessageId` for a reply or reaction, `index` (the feed index,
 -1 while pending) and `signedMessage`, the message exactly as its sender signed it. Everything else the message says,
-its topic, its signature, the sender's clock, `via`, `own` and the binding, is read from `signedMessage`, and a page
+its topic, its signature, the sender's clock, `via` and the binding, is read from `signedMessage`, and a page
 that shows who sent it hands `signedMessage` to `verifyChatMessage`. See [Verifying](#verifying).
 
 ## The message, for servers and tools
@@ -165,18 +164,16 @@ A message is a JSON object of at most 3,072 bytes of UTF-8, its fields in this o
 | `addr`   | The sender's chat address, 40 lowercase hex characters without `0x`                                          |
 | `ts`     | The sender's clock in milliseconds                                                                           |
 | `via`    | Who paid for the inbox write: `gateway` (the gateway's stamp) or `own-stamp` (the sender's own)              |
-| `own`    | `true` when the sender also keeps a copy of the message in its own feed                                      |
 | `idb`    | Only for a signed-in sender: its Swarm ID chat binding, `{ msg, sig }`                                       |
 | `wl`     | Only beside `idb`, for a sender who shows an ENS name: its Swarm ID wallet link, `{ msg, wsig, asig }`       |
 | `sig`    | 130 lowercase hex characters of r, s and v, with v 27 or 28 and s in the lower half                          |
 
 Characters are counted as Unicode code points, so an emoji counts once, and `countCharacters` counts the same way for
 a composer. The signed bytes are the UTF-8 of
-`JSON.stringify([8, topic, id, type, target, text, name, addr, ts, via, own, idb?.msg ?? '', idb?.sig ?? ''])`, with
+`JSON.stringify([8, topic, id, type, target, text, name, addr, ts, via, idb?.msg ?? '', idb?.sig ?? ''])`, with
 `wl.msg`, `wl.wsig` and `wl.asig` appended to the array when the message carries a wallet link, signed with bee-js's
-`PrivateKey.sign` and checked with `Signature.recoverPublicKey`, both over the raw bytes. So `via`, `own`, the binding
-and the wallet link cannot be changed, added or taken off without breaking the signature. A message without a link
-has the bytes it had before links existed. Every signature has a second valid
+`PrivateKey.sign` and checked with `Signature.recoverPublicKey`, both over the raw bytes. So `via`, the binding
+and the wallet link cannot be changed, added or taken off without breaking the signature. Every signature has a second valid
 spelling, s replaced by n - s with v flipped, and bee-js reads any v but 27 as 28, so the check refuses all but the
 low s spelling with v 27 or 28, the one bee-js signs. One message has one valid signature.
 
@@ -227,7 +224,7 @@ UTC with milliseconds. `wsig` and
 characters of r, s and v, v 27 or 28 and s in the lower half.
 
 A message carries a link only beside its binding, and the link counts toward the 3,072 byte cap. The largest message
-with a binding and a link is 2,387 bytes.
+with a binding and a link is 2,376 bytes.
 
 ### Verifying
 
@@ -262,15 +259,15 @@ entry's `msg` or, while pending, the message as it was signed. It never throws, 
 
 ### The own feed
 
-A sender that also keeps a copy of each message it sends says so with `own: true`. The copies live in a feed owned by
-the sender's chat address `addr`, under the topic `ownFeedTopic(chatTopic)`, which is `swarm-chat-own-feed-v1:` and the
-chat's topic, turned into a feed topic with `Topic.fromString` as the chat's own feed is.
+A sender may also keep a copy of each message it sends in a feed of its own, so anyone can compare that feed with the
+chat. The copies live in a feed owned by the sender's chat address `addr`, under the topic `ownFeedTopic(chatTopic)`,
+which is `swarm-chat-own-feed-v1:` and the chat's topic, turned into a feed topic with `Topic.fromString` as the chat's
+own feed is. A copy is the signed payload itself. The message says nothing about a copy, so whether one exists is read
+from that feed.
 
-`SwarmChat` signs `own: true` when `infra.own` is `true`, once per message, so the pending message a page shows and every
-resend carry it too. The library does not write the copy itself. A page that keeps copies passes its own inbox write,
-a `GsocWrite`, as `new SwarmChat(settings, { write })`. It is handed the signed payload, the same bytes on every resend.
-A write that stores the copy from those bytes before it writes them to the inbox never sends a message that claims a
-copy it does not have.
+The library does not write the copy. A page that keeps copies passes its own inbox write, a `GsocWrite`, as
+`new SwarmChat(settings, { write })`. It is handed the signed payload, the same bytes on every resend, and writes the
+copy beside the inbox write.
 
 | Export                                                                       | Use                                                                                                          |
 | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
@@ -317,11 +314,14 @@ clock that runs behind sees every stamp as old as it expects, so its messages ar
 ## Changes in 8.2
 
 - A message may carry the sender's Swarm ID wallet link, `wl`, beside its binding, signed with the rest. A verified
-  link puts the wallet on `identity.wallet`, and a link that fails refuses the message as `binding`. Messages without
-  one keep their bytes, and every 8.0 and 8.1 message still passes.
+  link puts the wallet on `identity.wallet`, and a link that fails refuses the message as `binding`.
+- The message no longer carries `own`. It is gone from the shape, the signed bytes and the payload, and `infra.own` and
+  the draft's `own` are gone with it. Whether a sender keeps a copy is read from its own feed. A message that carries
+  `own`, which is every message 8.0 and 8.1 signed, is refused as `shape`, and so is a feed entry or history row that
+  holds one.
 - `SwarmChat` takes `user.walletLink`, `createChatMessage` takes `wl`, and `checkWalletLink` checks a link on its own.
-- A server on 8.1 or older refuses a message carrying `wl` as `shape`, since the message is a strict object. Update the
-  server before any page sends one.
+- A server on 8.1 or older refuses a message carrying `wl`, or one without `own`, as `shape`, since the message is a
+  strict object. Update the server before any page sends one.
 
 ## Changes in 8.1
 
