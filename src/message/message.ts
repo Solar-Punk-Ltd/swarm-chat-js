@@ -67,9 +67,11 @@ function characters(min: number, max: number) {
 /**
  * Format and control code points draw nothing of their own yet change what is around them: a right-to-left override
  * shows `evil\u202egnp.exe` as `evilexe.png`, and a zero width space makes two names that look the same differ. A
- * name is how readers tell senders apart, so it carries neither.
+ * name is how readers tell senders apart, so it carries neither. The zero width non-joiner U+200C and joiner U+200D
+ * are the two exceptions: Persian and the Indic scripts spell words with them, and a joined emoji such as a family is
+ * built from them, while neither can reorder text.
  */
-const INVISIBLE_CODE_POINT = /[\p{Cf}\p{Cc}]/u;
+const INVISIBLE_CODE_POINT = /(?![\u200c\u200d])[\p{Cf}\p{Cc}]/u;
 
 function displayName(min: number, max: number) {
   return characters(min, max).refine(
