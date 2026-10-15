@@ -7,6 +7,7 @@ import {
   MessageType,
   MessageVia,
   countCharacters,
+  displayNameProblem,
   createChatMessage,
   encodeChatMessage,
   hasValidSignature,
@@ -402,6 +403,26 @@ describe('the name', () => {
         via: MessageVia.GATEWAY,
       }),
     ).toThrow(ChatMessageError);
+  });
+});
+
+describe('displayNameProblem', () => {
+  it.each(['Zoë', 'ok 👍🏽', 'می\u200cخواهم', '\u{1F468}\u200d\u{1F469}', 'a'.repeat(20), '👍'.repeat(20)])(
+    'finds no problem with %s',
+    (name) => {
+      expect(displayNameProblem(name)).toBeNull();
+    },
+  );
+
+  it.each([
+    ['an empty name', '', 'length'],
+    ['21 characters', 'a'.repeat(21), 'length'],
+    ['21 emoji', '👍'.repeat(21), 'length'],
+    ['a right-to-left override', 'evil\u202egnp.exe', 'invisible'],
+    ['a zero width space', 'a\u200bb', 'invisible'],
+    ['a control character', 'a\u0007b', 'invisible'],
+  ])('says %s is a %s problem', (_, name, problem) => {
+    expect(displayNameProblem(name)).toBe(problem);
   });
 });
 

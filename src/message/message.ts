@@ -80,6 +80,21 @@ function displayName(min: number, max: number) {
   );
 }
 
+/** Why a name is refused: `length` is outside 1 to {@link MAX_NAME_CHARACTERS} characters, `invisible` holds a format or control character. */
+export type DisplayNameProblem = 'length' | 'invisible';
+
+/**
+ * Whether `name` is one a message may carry, as the message check reads it, and why not when it is not. A composer
+ * calls this on the name as it will be sent, so it and the check agree.
+ */
+export function displayNameProblem(name: string): DisplayNameProblem | null {
+  const length = countCharacters(name);
+  if (length < 1 || length > MAX_NAME_CHARACTERS) {
+    return 'length';
+  }
+  return INVISIBLE_CODE_POINT.test(name) ? 'invisible' : null;
+}
+
 const messageId = lowercaseHex(32);
 
 export const chatMessageSchema = z
