@@ -269,18 +269,19 @@ The library does not write the copy. A page that keeps copies passes its own inb
 `new SwarmChat(settings, { write })`. It is handed the signed payload, the same bytes on every resend, and writes the
 copy beside the inbox write.
 
-| Export                                                                       | Use                                                                                                          |
-| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `parseChatMessage(bytes, { origin })`                                        | The server's check of a raw payload: byte cap, UTF-8, JSON, then `verifyChatMessage`. Never throws.          |
-| `verifyChatMessage(value, { origin })`                                       | Shape, signature and binding of a parsed object, with the sender's identity. Never throws.                   |
-| `createChatMessage(key, draft)`                                              | Builds and signs, throwing a `ChatMessageError` for anything the check would refuse. `via` is required.      |
-| `MessageType`, `MessageVia`                                                  | The values of `type` and `via`.                                                                              |
-| `checkChatBinding(binding, addr, options?)`, `chatBindingSchema`             | The binding check on its own and its shape. Its `origin` is optional, for a sender checking its own binding. |
-| `checkWalletLink(link, account)`, `walletLinkSchema`                         | The wallet link check on its own, for the binding's account, and its shape.                                  |
-| `ownFeedTopic(chatTopic)`, `OWN_FEED_TOPIC_PREFIX`                           | The topic of a sender's own feed of copies.                                                                  |
-| `chatMessageSchema`, `hasValidSignature`, `signedBytes`, `encodeChatMessage` | The parts.                                                                                                   |
-| `feedEntrySchema`, `parseFeedEntry`                                          | The feed entry, `{v, seq, at, msg, history}`.                                                                |
-| `historyFileSchema`, `parseHistoryFile`                                      | The history file, `{v, topic, fromSeq, toSeq, messages, prev}`.                                              |
+| Export                                                                       | Use                                                                                                                               |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `parseChatMessage(bytes, { origin })`                                        | The server's check of a raw payload: byte cap, UTF-8, JSON, then `verifyChatMessage`. Never throws.                               |
+| `verifyChatMessage(value, { origin })`                                       | Shape, signature and binding of a parsed object, with the sender's identity. Never throws.                                        |
+| `displayNameProblem(name)`                                                   | `null` for a name a message may carry, else `'length'` (not 1 to 20 characters) or `'invisible'` (a format or control character). |
+| `createChatMessage(key, draft)`                                              | Builds and signs, throwing a `ChatMessageError` for anything the check would refuse. `via` is required.                           |
+| `MessageType`, `MessageVia`                                                  | The values of `type` and `via`.                                                                                                   |
+| `checkChatBinding(binding, addr, options?)`, `chatBindingSchema`             | The binding check on its own and its shape. Its `origin` is optional, for a sender checking its own binding.                      |
+| `checkWalletLink(link, account)`, `walletLinkSchema`                         | The wallet link check on its own, for the binding's account, and its shape.                                                       |
+| `ownFeedTopic(chatTopic)`, `OWN_FEED_TOPIC_PREFIX`                           | The topic of a sender's own feed of copies.                                                                                       |
+| `chatMessageSchema`, `hasValidSignature`, `signedBytes`, `encodeChatMessage` | The parts.                                                                                                                        |
+| `feedEntrySchema`, `parseFeedEntry`                                          | The feed entry, `{v, seq, at, msg, history}`.                                                                                     |
+| `historyFileSchema`, `parseHistoryFile`                                      | The history file, `{v, topic, fromSeq, toSeq, messages, prev}`.                                                                   |
 
 The feed entry and the history file carry `v` 9 like the message. A feed entry, at most 4,096 bytes, holds a message at
 the byte cap inside its largest wrapper.
