@@ -2,7 +2,7 @@ import { PrivateKey } from '@ethersphere/bee-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ChatMessageError, MessageType, MessageVia, parseChatMessage, type ChatMessage } from '../src/message';
-import { DEFAULT_SENDER_SETTINGS, Sender, type GsocWrite, type SenderEvents } from '../src/sender';
+import { DEFAULT_SENDER_SETTINGS, Sender, type GsocWrite, type SenderEvents, type SenderProfile } from '../src/sender';
 
 import { AT_SITE } from './bindingVectors';
 
@@ -18,7 +18,9 @@ interface Harness {
 }
 
 /** A sender whose writes resolve at once, unless `hold` is set, when each waits for `answer`. */
-function harness(options: { hold?: boolean; fail?: boolean; isLive?: () => boolean } = {}): Harness {
+function harness(
+  options: { hold?: boolean; fail?: boolean; isLive?: () => boolean; profile?: Partial<SenderProfile> } = {},
+): Harness {
   const writes: Uint8Array[] = [];
   const waiting: { resolve: () => void; reject: (error: Error) => void }[] = [];
   const write: GsocWrite = (payload) => {
@@ -34,7 +36,7 @@ function harness(options: { hold?: boolean; fail?: boolean; isLive?: () => boole
   const events: Harness['events'] = { pending: [], written: [], failed: [], confirmed: [] };
   const sender = new Sender(
     TEST_KEY,
-    { name: 'tester', via: MessageVia.GATEWAY },
+    { name: 'tester', via: MessageVia.GATEWAY, ...options.profile },
     write,
     {
       pending: (message) => events.pending.push(message),
@@ -75,6 +77,28 @@ describe('Sender.send', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(events.written).toEqual([message]);
     expect(sender.isPending(message.id)).toBe(true);
+  });
+
+  it('signs own false when its profile says nothing of an own copy', () => {
+    const { sender, writes } = harness();
+    const message = sender.send({ topic: TOPIC, type: MessageType.TEXT, text: 'hello' });
+
+    expect(message.own).toBe(false);
+    const check = parseChatMessage(writes[0]!, AT_SITE);
+    expect(check.ok && check.message.own).toBe(false);
+  });
+
+  it('signs own true once for a profile that keeps an own copy, in the pending message and every resend', async () => {
+    const { sender, writes, events } = harness({ profile: { own: true } });
+    const message = sender.send({ topic: TOPIC, type: MessageType.TEXT, text: 'hello' });
+
+    expect(message.own).toBe(true);
+    expect(events.pending).toEqual([message]);
+    expect(parseChatMessage(writes[0]!, AT_SITE)).toEqual({ ok: true, message, identity: null });
+
+    await vi.advanceTimersByTimeAsync(DEFAULT_SENDER_SETTINGS.resendAfterMs);
+    expect(writes).toHaveLength(2);
+    expect(writes[1]).toEqual(writes[0]);
   });
 
   it('refuses a message the server would refuse, writing nothing', () => {
