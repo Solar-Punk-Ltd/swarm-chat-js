@@ -1,7 +1,6 @@
-import { publicKeyToAddress, recoverPublicKey } from '@ethersphere/core-sdk/crypto';
 import { z } from 'zod';
 
-import { isCanonicalSignature } from './canonicalSignature.js';
+import { isCanonicalDate, recoverPersonalSigner } from './personalSign.js';
 
 /**
  * The Swarm ID chat binding: the account's statement, signed with its own key, that a chat address on one site is its
@@ -22,12 +21,7 @@ const DATE_PREFIX = 'Date: ';
 const LINE_SEPARATOR = '\n';
 const LINE_COUNT = 4;
 
-const PERSONAL_MESSAGE_PREFIX = '\x19Ethereum Signed Message:\n';
-const RECOVERY_IDS = new Set([27, 28]);
-
 const CHAT_ADDRESS_PATTERN = /^0x[0-9a-f]{40}$/;
-/** `Date.prototype.toISOString` exactly: UTC, milliseconds and a `Z`. */
-const ISO_UTC_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 /** DNS labels in punycode joined by single dots, which keeps out `*`, `_` and empty labels a URL parser lets through. */
 const DNS_HOST_PATTERN = /^[a-z0-9-]+(\.[a-z0-9-]+)*$/;
 const LOCAL_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]']);
@@ -62,8 +56,6 @@ export interface BindingOptions {
 
 export type BindingCheck = { ok: true; identity: ChatIdentity } | { ok: false; detail: string };
 
-const encoder = new TextEncoder();
-
 /** Whether `value` is a bare origin in the one spelling a browser reports, as the fork's `isCleanSiteOrigin` asks. */
 function isCleanSiteOrigin(value: string, allowLocalHttp: boolean): boolean {
   let url: URL;
@@ -83,51 +75,8 @@ function isCleanSiteOrigin(value: string, allowLocalHttp: boolean): boolean {
   return url.host !== '' && url.username === '' && url.password === '' && url.origin === value;
 }
 
-function isCanonicalDate(text: string): boolean {
-  if (!ISO_UTC_PATTERN.test(text)) {
-    return false;
-  }
-  const time = Date.parse(text);
-  return !Number.isNaN(time) && new Date(time).toISOString() === text;
-}
-
 function afterPrefix(line: string, prefix: string): string | null {
   return line.startsWith(prefix) ? line.slice(prefix.length) : null;
-}
-
-/** The bytes whose keccak256 personal_sign signs: the prefix, the text's UTF-8 length in decimal, then the text. */
-function personalMessage(text: string): Uint8Array {
-  const body = encoder.encode(text);
-  const prefix = encoder.encode(`${PERSONAL_MESSAGE_PREFIX}${body.length}`);
-  const whole = new Uint8Array(prefix.length + body.length);
-  whole.set(prefix);
-  whole.set(body, prefix.length);
-  return whole;
-}
-
-function toHex(bytes: Uint8Array): string {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
-/** The account that made `sig` over `text`, or null for a signature the fork would refuse or nothing recovers from. */
-function recoverAccount(text: string, sig: string): string | null {
-  const rHex = sig.slice(2, 66);
-  const sHex = sig.slice(66, 130);
-  const v = parseInt(sig.slice(130), 16);
-  if (!RECOVERY_IDS.has(v) || !isCanonicalSignature(rHex, sHex)) {
-    return null;
-  }
-  try {
-    const point = recoverPublicKey(
-      personalMessage(text),
-      BigInt(`0x${rHex}`),
-      BigInt(`0x${sHex}`),
-      BigInt(v) as 27n | 28n,
-    );
-    return `0x${toHex(publicKeyToAddress(point))}`;
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -161,7 +110,7 @@ export function checkChatBinding(binding: ChatBinding, addr: string, options: Bi
   if (options.origin !== undefined && site !== options.origin) {
     return { ok: false, detail: `the binding is for ${site}, not ${options.origin}` };
   }
-  const account = recoverAccount(binding.msg, binding.sig);
+  const account = recoverPersonalSigner(binding.msg, binding.sig);
   if (account === null) {
     return { ok: false, detail: 'the binding signature recovers no account' };
   }
