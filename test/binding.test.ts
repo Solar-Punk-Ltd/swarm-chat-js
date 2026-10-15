@@ -60,7 +60,6 @@ function signedWith(key: string, idb: ChatBinding | undefined): ChatMessage {
     addr: new PrivateKey(key).publicKey().address().toHex(),
     ts: 1759140004000,
     via: MessageVia.OWN_STAMP,
-    own: false,
     ...(idb ? { idb } : {}),
   };
   return { ...unsigned, sig: new PrivateKey(key).sign(signedBytes(unsigned)).toHex() };

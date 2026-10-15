@@ -229,7 +229,6 @@ describe('a message carrying a wallet link', () => {
       'addr',
       'ts',
       'via',
-      'own',
       'idb',
       'wl',
       'sig',
@@ -247,7 +246,7 @@ describe('a message carrying a wallet link', () => {
       WALLET_LINK.asig,
     ]);
     const { wl: _wl, ...withoutLink } = message;
-    expect(JSON.parse(decoder.decode(signedBytes(withoutLink))) as unknown[]).toHaveLength(13);
+    expect(JSON.parse(decoder.decode(signedBytes(withoutLink))) as unknown[]).toHaveLength(12);
   });
 
   it('is refused on its signature when it is taken off, or put on a message signed without it', () => {
@@ -299,13 +298,12 @@ describe('a message carrying a wallet link', () => {
       name: 'n'.repeat(20),
       ts: Number.MAX_SAFE_INTEGER,
       via: MessageVia.OWN_STAMP,
-      own: true,
       idb: CHAT_BINDING,
       wl: WALLET_LINK,
     });
     // The README gives this size. The wallet link's statement line adds 102 bytes to it, its 100 characters and the
-    // two of the escaped line break before it, and it still leaves 685 bytes under the cap.
-    expect(bytes.byteLength).toBe(2387);
+    // two of the escaped line break before it, and it still leaves 696 bytes under the cap.
+    expect(bytes.byteLength).toBe(2376);
     expect(bytes.byteLength).toBeLessThanOrEqual(MAX_MESSAGE_BYTES);
   });
 

@@ -47,14 +47,13 @@ const VECTORS: Vector[] = [
       addr: TEST_ADDR,
       ts: 1759140000000,
       via: 'gateway',
-      own: false,
-      sig: '1daf01a06e3ce691ba8dd6f6e949ae0ee96005288529ec112f4851dd18ed9c3d4832b4e6b0ddcda6eac97154f466eac291d14a6d049f1131edf8588c782858561c',
+      sig: 'f143f81be739f3e17f4c941680423b552fe52dcd264ea834cbd578c3a818c7011e20d08f2cd394348a8cb055a608cbe767c36129bd9e46364a5d82facf0fafc11c',
     },
     signed:
-      '[8,"chat-devcon-main","a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","text","","hello from the test vector","tester","19e7e376e7c213b7e7e7e46cc70a5dd086daff2a",1759140000000,"gateway",false,"",""]',
+      '[8,"chat-devcon-main","a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","text","","hello from the test vector","tester","19e7e376e7c213b7e7e7e46cc70a5dd086daff2a",1759140000000,"gateway","",""]',
   },
   {
-    label: 'a thread reply on its own stamp, kept in its own feed',
+    label: 'a thread reply on its own stamp',
     message: {
       v: 8,
       topic: 'chat-devcon-main',
@@ -66,11 +65,10 @@ const VECTORS: Vector[] = [
       addr: TEST_ADDR,
       ts: 1759140001000,
       via: 'own-stamp',
-      own: true,
-      sig: '2251fedc8ee7361939bc5b1dcec97940f10faf82ef3efd64170049740e709c7c5c70be9bd16a818ff628546e0681f6ed0ed8de77c6d0e76d16ead165dc66f3681b',
+      sig: '1b05a53fe3a95f30751b4197c2256939f47317be50cc54072f82a6d9bc9bb8d3762aeca4e698fa9a1d6cda0d640b3c69b804a05965a383ca51604ba974f8de011b',
     },
     signed:
-      '[8,"chat-devcon-main","b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2","thread","a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","a reply, with ünïcödé","tester","19e7e376e7c213b7e7e7e46cc70a5dd086daff2a",1759140001000,"own-stamp",true,"",""]',
+      '[8,"chat-devcon-main","b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2","thread","a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","a reply, with ünïcödé","tester","19e7e376e7c213b7e7e7e46cc70a5dd086daff2a",1759140001000,"own-stamp","",""]',
   },
   {
     label: 'a reaction',
@@ -85,11 +83,10 @@ const VECTORS: Vector[] = [
       addr: TEST_ADDR,
       ts: 1759140002000,
       via: 'gateway',
-      own: false,
-      sig: '3fb5837f0bde6860b090f3afac5b5600437e75ef61c3deff1211fa3aaa4d9ea959dcac831ea9ff8ad76d69b310a71338cf17886ad5a786508851b81c49c514e71c',
+      sig: 'a7bcf25a4f8fef14658ad2d689d8b46693f78e6185e3e4773236ac3163e47f65669ed8cdb45bf52d83f0aaba7875bbb0c4d1bff6b4c8dfed473b994bb11a2f781b',
     },
     signed:
-      '[8,"chat-devcon-main","c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3","reaction","a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","👍","tester","19e7e376e7c213b7e7e7e46cc70a5dd086daff2a",1759140002000,"gateway",false,"",""]',
+      '[8,"chat-devcon-main","c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3","reaction","a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","👍","tester","19e7e376e7c213b7e7e7e46cc70a5dd086daff2a",1759140002000,"gateway","",""]',
   },
   {
     label: 'a text by a signed-in sender',
@@ -104,12 +101,11 @@ const VECTORS: Vector[] = [
       addr: BOUND_CHAT_ADDR,
       ts: 1759140003000,
       via: 'own-stamp',
-      own: true,
       idb: CHAT_BINDING,
-      sig: '93e497f15181b14486f1ebf0396baef7fa562c9bbc2d8a5d45cb212838a406c953dceb64206519b8feb4d8c2ec56bd90039e92eba2730553ff4eeb8b4138fa911c',
+      sig: '331445c2bb29c2c99c1ffc90ae7b2037117d0d298d429bba5d355efd31fa290575e099e98f0de07339ff85ddd651ed0cda384516bcdf20a249fb77d7583cbc2f1b',
     },
     signed:
-      '[8,"chat-devcon-main","d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4","text","","signed in with Swarm ID","tester","c6b7cb635534a22fbc368643cc40355545f666dc",1759140003000,"own-stamp",true,"Swarm ID chat binding v1\\nSite: https://example.com\\nChat address: 0xc6b7cb635534a22fbc368643cc40355545f666dc\\nDate: 2026-10-14T12:00:00.000Z","0xee2151a66fcdb0852b1bff2a03578aff9556f893e4c6d2aef2d484b4ada153804a7b1c97f40eac18fbd5f75674c918c48a761800e8122b7eae7af45393d9a24d1b"]',
+      '[8,"chat-devcon-main","d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4","text","","signed in with Swarm ID","tester","c6b7cb635534a22fbc368643cc40355545f666dc",1759140003000,"own-stamp","Swarm ID chat binding v1\\nSite: https://example.com\\nChat address: 0xc6b7cb635534a22fbc368643cc40355545f666dc\\nDate: 2026-10-14T12:00:00.000Z","0xee2151a66fcdb0852b1bff2a03578aff9556f893e4c6d2aef2d484b4ada153804a7b1c97f40eac18fbd5f75674c918c48a761800e8122b7eae7af45393d9a24d1b"]',
   },
 ];
 
@@ -155,7 +151,6 @@ describe.each(VECTORS)('the vector of $label', ({ message, signed }) => {
       id: message.id,
       ts: message.ts,
       via: message.via,
-      own: message.own,
       ...(message.idb ? { idb: message.idb } : {}),
     });
     expect(made).toEqual(message);
@@ -164,7 +159,7 @@ describe.each(VECTORS)('the vector of $label', ({ message, signed }) => {
 
   it('emits its fields in the contract order', () => {
     const keys = Object.keys(JSON.parse(decoder.decode(encodeChatMessage(message))) as object);
-    const order = ['v', 'topic', 'id', 'type', 'target', 'text', 'name', 'addr', 'ts', 'via', 'own', 'idb', 'sig'];
+    const order = ['v', 'topic', 'id', 'type', 'target', 'text', 'name', 'addr', 'ts', 'via', 'idb', 'sig'];
     expect(keys).toEqual(order.filter((key) => key !== 'idb' || message.idb));
   });
 
@@ -190,7 +185,6 @@ describe.each(VECTORS)('the vector of $label', ({ message, signed }) => {
     ['addr', { addr: '22'.repeat(20) }],
     ['ts', { ts: message.ts + 1 }],
     ['via', { via: message.via === MessageVia.GATEWAY ? MessageVia.OWN_STAMP : MessageVia.GATEWAY }],
-    ['own', { own: !message.own }],
     ['sig', { sig: flipLastHex(message.sig.slice(0, 128)) + message.sig.slice(128) }],
   ];
   // A text message's type and target cannot change without breaking its shape, which the next block covers.
@@ -240,8 +234,34 @@ describe('a version 7 message', () => {
     expect(verifyChatMessage(v7, AT_SITE)).toMatchObject({ ok: false, reason: 'shape' });
   });
 
-  it('is refused on its shape with v raised to 8, since it lacks via and own', () => {
+  it('is refused on its shape with v raised to 8, since it lacks via', () => {
     expect(verifyChatMessage({ ...v7, v: 8 }, AT_SITE)).toMatchObject({ ok: false, reason: 'shape' });
+  });
+});
+
+describe('a message as 8.1 signed it, with own', () => {
+  // The first vector of the 8.1.0 suite, exactly as 8.1 signed and sent it, its signature valid over its own bytes.
+  const signedBy81 = {
+    v: 8,
+    topic: 'chat-devcon-main',
+    id: 'a1'.repeat(16),
+    type: 'text',
+    target: '',
+    text: 'hello from the test vector',
+    name: 'tester',
+    addr: TEST_ADDR,
+    ts: 1759140000000,
+    via: 'gateway',
+    own: false,
+    sig: '1daf01a06e3ce691ba8dd6f6e949ae0ee96005288529ec112f4851dd18ed9c3d4832b4e6b0ddcda6eac97154f466eac291d14a6d049f1131edf8588c782858561c',
+  };
+
+  it('is refused on its shape, on the wire and as an object', () => {
+    expect(parseChatMessage(encoder.encode(JSON.stringify(signedBy81)), AT_SITE)).toMatchObject({
+      ok: false,
+      reason: 'shape',
+    });
+    expect(verifyChatMessage(signedBy81, AT_SITE)).toMatchObject({ ok: false, reason: 'shape' });
   });
 });
 
@@ -276,8 +296,7 @@ describe('the shape', () => {
     ['a ts as a string', { ts: '1759140000000' }],
     ['an unknown via', { via: 'free' }],
     ['no via', { via: undefined }],
-    ['own as a string', { own: 'false' }],
-    ['no own', { own: undefined }],
+    ['the own field 8.1 signed', { own: false }],
     ['a binding with a field nobody signed', { idb: { msg, sig, extra: 1 } }],
     ['a binding signature without 0x', { idb: { msg, sig: sig.slice(2) } }],
     ['a binding signature in capitals', { idb: { msg, sig: `0x${sig.slice(2).toUpperCase()}` } }],
@@ -327,7 +346,6 @@ describe('the byte cap', () => {
       name: 'n'.repeat(20),
       ts: Number.MAX_SAFE_INTEGER,
       via: MessageVia.OWN_STAMP,
-      own: true,
       idb: CHAT_BINDING,
     });
     expect(bytes.byteLength).toBeLessThanOrEqual(MAX_MESSAGE_BYTES);
@@ -413,7 +431,7 @@ describe('the signature', () => {
 });
 
 describe('createChatMessage', () => {
-  it('fills the address from the key, a fresh id, the time, and own as false', () => {
+  it('fills the address from the key, a fresh id and the time', () => {
     const before = Date.now();
     const { message } = createChatMessage(TEST_KEY, {
       topic: 'chat-x',
@@ -426,7 +444,7 @@ describe('createChatMessage', () => {
     expect(message.id).toMatch(/^[0-9a-f]{32}$/);
     expect(message.ts).toBeGreaterThanOrEqual(before);
     expect(message.target).toBe('');
-    expect(message.own).toBe(false);
+    expect('own' in message).toBe(false);
     expect('idb' in message).toBe(false);
     expect(hasValidSignature(message)).toBe(true);
   });

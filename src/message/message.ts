@@ -17,7 +17,7 @@ export const MESSAGE_VERSION = 8;
 /**
  * Measured on the UTF-8 of the whole JSON object, on top of the per-field caps, wallet link included. Large enough for
  * a 500 character text of two byte characters with a Swarm ID binding and a wallet link, at every other cap, which
- * comes to 2,387 bytes.
+ * comes to 2,376 bytes.
  */
 export const MAX_MESSAGE_BYTES = 3072;
 
@@ -78,8 +78,6 @@ export const chatMessageSchema = z
     addr: lowercaseHex(40),
     ts: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
     via: z.enum([MessageVia.GATEWAY, MessageVia.OWN_STAMP]),
-    /** Whether the sender also keeps a copy of this message in its own feed, named by `ownFeedTopic`. */
-    own: z.boolean(),
     /** The sender's Swarm ID chat binding, present only for a signed-in sender. */
     idb: chatBindingSchema.optional(),
     /** The sender's Swarm ID wallet link, present only beside a binding, for a sender who shows an ENS name. */
@@ -147,7 +145,6 @@ export function signedBytes(message: UnsignedChatMessage): Uint8Array {
       message.addr,
       message.ts,
       message.via,
-      message.own,
       message.idb?.msg ?? '',
       message.idb?.sig ?? '',
       // Appended only when there is one, so every message without a link keeps the bytes it was signed over.
@@ -169,7 +166,6 @@ export function encodeChatMessage(message: ChatMessage): Uint8Array {
     addr: message.addr,
     ts: message.ts,
     via: message.via,
-    own: message.own,
     ...(message.idb ? { idb: { msg: message.idb.msg, sig: message.idb.sig } } : {}),
     ...(message.wl ? { wl: { msg: message.wl.msg, wsig: message.wl.wsig, asig: message.wl.asig } } : {}),
     sig: message.sig,
@@ -195,8 +191,6 @@ export interface ChatMessageDraft {
   ts?: number;
   /** Who pays for the inbox write. Required, since nothing can tell from here. */
   via: MessageVia;
-  /** Whether the sender also keeps a copy in its own feed, false when left out. */
-  own?: boolean;
   /** The sender's Swarm ID chat binding, given only for a signed-in sender. */
   idb?: ChatBinding;
   /** The sender's Swarm ID wallet link, given only beside `idb`, for a sender who shows an ENS name. */
@@ -232,7 +226,6 @@ export function createChatMessage(
     addr: signer.publicKey().address().toHex(),
     ts: draft.ts ?? Date.now(),
     via: draft.via,
-    own: draft.own ?? false,
     ...(draft.idb ? { idb: draft.idb } : {}),
     ...(draft.wl ? { wl: draft.wl } : {}),
   };

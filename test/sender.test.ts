@@ -79,26 +79,16 @@ describe('Sender.send', () => {
     expect(sender.isPending(message.id)).toBe(true);
   });
 
-  it('signs own false when its profile says nothing of an own copy', () => {
+  it('signs no own field, pending or resent', async () => {
     const { sender, writes } = harness();
     const message = sender.send({ topic: TOPIC, type: MessageType.TEXT, text: 'hello' });
 
-    expect(message.own).toBe(false);
-    const check = parseChatMessage(writes[0]!, AT_SITE);
-    expect(check.ok && check.message.own).toBe(false);
-  });
-
-  it('signs own true once for a profile that keeps an own copy, in the pending message and every resend', async () => {
-    const { sender, writes, events } = harness({ profile: { own: true } });
-    const message = sender.send({ topic: TOPIC, type: MessageType.TEXT, text: 'hello' });
-
-    expect(message.own).toBe(true);
-    expect(events.pending).toEqual([message]);
-    expect(parseChatMessage(writes[0]!, AT_SITE)).toEqual({ ok: true, message, identity: null });
-
+    expect('own' in message).toBe(false);
     await vi.advanceTimersByTimeAsync(DEFAULT_SENDER_SETTINGS.resendAfterMs);
     expect(writes).toHaveLength(2);
-    expect(writes[1]).toEqual(writes[0]);
+    for (const write of writes) {
+      expect('own' in (JSON.parse(new TextDecoder().decode(write)) as object)).toBe(false);
+    }
   });
 
   it('refuses a message the server would refuse, writing nothing', () => {
