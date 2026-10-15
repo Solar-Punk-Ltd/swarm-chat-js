@@ -209,22 +209,25 @@ turns on "Show my ENS name on sites" there, and Swarm ID then gives the site a w
 wallet and countersigned by the account's own key, that the two belong to the same person. Its canonical description
 is `docs/Wallet-Link.md` in the Swarm ID fork, solarpunk-id, and this library reads it exactly as the fork's
 `verifyWalletLink` does, without importing the fork. Swarm ID hands it over as
-`{ message, walletSignature, accountSignature }`, and a message carries it as `{ msg, wsig, asig }`. `msg` is four lines
+`{ message, walletSignature, accountSignature }`, and a message carries it as `{ msg, wsig, asig }`. `msg` is five lines
 joined by `\n`:
 
 ```text
 Swarm ID wallet link v1
+I link this wallet to the Swarm ID account below, so sites may show my ENS name beside its messages.
 Account: 0x<the binding's account>
 Wallet: 0x<the wallet>
 Date: 2026-10-15T12:00:00.000Z
 ```
 
-Both addresses are `0x` and 40 lowercase hex characters, and the date is ISO 8601 UTC with milliseconds. `wsig` and
+The second line is read exactly. It is there because a wallet shows the person only the text it signs, so the sentence
+tells them what the signature does. Both addresses are `0x` and 40 lowercase hex characters, and the date is ISO 8601
+UTC with milliseconds. `wsig` and
 `asig` are EIP-191 `personal_sign` over `msg` by the wallet and by the account, each `0x` and 130 lowercase hex
 characters of r, s and v, v 27 or 28 and s in the lower half.
 
 A message carries a link only beside its binding, and the link counts toward the 3,072 byte cap. The largest message
-with a binding and a link is 2,285 bytes.
+with a binding and a link is 2,387 bytes.
 
 ### Verifying
 
@@ -234,7 +237,7 @@ recovers an account, and its site is `origin`. It returns `{ ok: true, message, 
 `{ account, site, date }` for a signed-in sender and `null` for a guest. A message whose binding fails is refused with
 the reason `binding` and is never shown as a guest.
 
-When the message also carries a wallet link, the link's text must be those four lines, its account the binding's
+When the message also carries a wallet link, the link's text must be those five lines, its account the binding's
 account, its wallet signature must recover its wallet and its account signature its account. `identity` then also has
 `wallet`, the checked wallet address. A link that fails refuses the message with the reason `binding` too, its detail
 starting `wallet link:`. The check looks nothing up. A page that shows an ENS name takes `identity.wallet` to its own
