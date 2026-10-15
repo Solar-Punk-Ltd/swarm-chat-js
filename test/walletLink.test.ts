@@ -1,8 +1,25 @@
+import { PrivateKey } from '@ethersphere/bee-js';
 import { signMessage } from '@ethersphere/core-sdk/crypto';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
-import { MAX_WALLET_LINK_CHARACTERS, WALLET_LINK_TITLE, checkWalletLink, type WalletLink } from '../src/message';
-import { FORK_ACCOUNT, FORK_ACCOUNT_KEY } from './bindingVectors';
+import {
+  ChatMessageError,
+  MAX_MESSAGE_BYTES,
+  MAX_WALLET_LINK_CHARACTERS,
+  MessageType,
+  MessageVia,
+  WALLET_LINK_TITLE,
+  checkWalletLink,
+  createChatMessage,
+  parseChatMessage,
+  signedBytes,
+  verifyChatMessage,
+  type ChatMessage,
+  type ChatMessageDraft,
+  type UnsignedChatMessage,
+  type WalletLink,
+} from '../src/message';
+import { AT_SITE, BOUND_SITE, CHAT_BINDING, chatKeyFor, FORK_ACCOUNT, FORK_ACCOUNT_KEY } from './bindingVectors';
 import {
   LINK_WALLET,
   LINK_WALLET_KEY,
@@ -14,6 +31,7 @@ import {
 
 const SECP256K1_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
 const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 
 /** personal_sign over `text` with `key`, spelled as the fork spells a signature. */
 function personalSign(text: string, key: string): string {
@@ -139,5 +157,152 @@ describe('checkWalletLink refuses', () => {
     expect(checkWalletLink({ ...WALLET_LINK, note: 'x' } as WalletLink, FORK_ACCOUNT).ok).toBe(false);
     const long = { ...WALLET_LINK, msg: 'x'.repeat(MAX_WALLET_LINK_CHARACTERS + 1) };
     expect(checkWalletLink(long, FORK_ACCOUNT).ok).toBe(false);
+  });
+});
+
+describe('a message carrying a wallet link', () => {
+  let boundKey: string;
+
+  beforeAll(async () => {
+    boundKey = await chatKeyFor(BOUND_SITE);
+  });
+
+  const draft = (overrides: Partial<ChatMessageDraft> = {}): ChatMessageDraft => ({
+    topic: 'chat-devcon-main',
+    type: MessageType.TEXT,
+    text: 'hello',
+    name: 'tester',
+    ts: 1760529600000,
+    via: MessageVia.GATEWAY,
+    idb: CHAT_BINDING,
+    wl: WALLET_LINK,
+    ...overrides,
+  });
+
+  /** Signs `unsigned` by hand, whatever it carries, the way a forger would reach the verifier. */
+  function forged(unsigned: UnsignedChatMessage): ChatMessage {
+    return { ...unsigned, sig: new PrivateKey(boundKey).sign(signedBytes(unsigned)).toHex() } as ChatMessage;
+  }
+
+  it('passes beside its binding, and the identity names the checked wallet', () => {
+    const { message, bytes } = createChatMessage(boundKey, draft());
+    const check = parseChatMessage(bytes, AT_SITE);
+    expect(check).toEqual({
+      ok: true,
+      message,
+      identity: { account: FORK_ACCOUNT, site: BOUND_SITE, date: '2026-10-14T12:00:00.000Z', wallet: LINK_WALLET },
+    });
+  });
+
+  it('gives a bound message without one an identity with no wallet', () => {
+    const { bytes } = createChatMessage(boundKey, draft({ wl: undefined }));
+    const check = parseChatMessage(bytes, AT_SITE);
+    expect(check.ok && check.identity).toEqual({
+      account: FORK_ACCOUNT,
+      site: BOUND_SITE,
+      date: '2026-10-14T12:00:00.000Z',
+    });
+  });
+
+  it('is written after the binding and before the signature', () => {
+    const { bytes } = createChatMessage(boundKey, draft());
+    expect(Object.keys(JSON.parse(decoder.decode(bytes)))).toEqual([
+      'v',
+      'topic',
+      'id',
+      'type',
+      'target',
+      'text',
+      'name',
+      'addr',
+      'ts',
+      'via',
+      'own',
+      'idb',
+      'wl',
+      'sig',
+    ]);
+  });
+
+  it('is signed: its three fields end the signed bytes, and a message without one keeps the bytes it had', () => {
+    const { message } = createChatMessage(boundKey, draft());
+    const signed = JSON.parse(decoder.decode(signedBytes(message))) as unknown[];
+    expect(signed.slice(-5)).toEqual([
+      CHAT_BINDING.msg,
+      CHAT_BINDING.sig,
+      WALLET_LINK.msg,
+      WALLET_LINK.wsig,
+      WALLET_LINK.asig,
+    ]);
+    const { wl: _wl, ...withoutLink } = message;
+    expect(JSON.parse(decoder.decode(signedBytes(withoutLink))) as unknown[]).toHaveLength(13);
+  });
+
+  it('is refused on its signature when it is taken off, or put on a message signed without it', () => {
+    const { message } = createChatMessage(boundKey, draft());
+    const { wl: _wl, ...stripped } = message;
+    expect(verifyChatMessage(stripped, AT_SITE)).toMatchObject({ ok: false, reason: 'signature' });
+    const { message: plain } = createChatMessage(boundKey, draft({ wl: undefined }));
+    expect(verifyChatMessage({ ...plain, wl: WALLET_LINK }, AT_SITE)).toMatchObject({ ok: false, reason: 'signature' });
+  });
+
+  it('is refused on its shape without a binding, by the sender and by the verifier', () => {
+    expect(() => createChatMessage(boundKey, draft({ idb: undefined }))).toThrow(/wallet link/);
+    const { idb: _idb, sig: _sig, ...rest } = createChatMessage(boundKey, draft()).message;
+    expect(verifyChatMessage(forged(rest), AT_SITE)).toMatchObject({ ok: false, reason: 'shape' });
+  });
+
+  it("is refused as the binding when it is another account's", () => {
+    expect(() => createChatMessage(boundKey, draft({ wl: OTHER_ACCOUNT_WALLET_LINK }))).toThrow(ChatMessageError);
+    const { sig: _sig, ...unsigned } = createChatMessage(boundKey, draft({ wl: undefined })).message;
+    const check = verifyChatMessage(forged({ ...unsigned, wl: OTHER_ACCOUNT_WALLET_LINK }), AT_SITE);
+    expect(check).toEqual({
+      ok: false,
+      reason: 'binding',
+      detail: `wallet link: the wallet link is for ${OTHER_LINK_ACCOUNT}, not the binding's account ${FORK_ACCOUNT}`,
+    });
+  });
+
+  it('is refused as the binding when its text was changed after signing', () => {
+    const tampered = { ...WALLET_LINK, msg: WALLET_LINK.msg.replace('12:00:00', '12:00:01') };
+    const { sig: _sig, ...unsigned } = createChatMessage(boundKey, draft({ wl: undefined })).message;
+    expect(verifyChatMessage(forged({ ...unsigned, wl: tampered }), AT_SITE)).toMatchObject({
+      ok: false,
+      reason: 'binding',
+    });
+  });
+
+  it('counts toward the byte cap', () => {
+    const without = createChatMessage(boundKey, draft({ wl: undefined })).bytes.byteLength;
+    const withLink = createChatMessage(boundKey, draft()).bytes.byteLength;
+    expect(withLink - without).toBe(encoder.encode(`,"wl":${JSON.stringify(WALLET_LINK)}`).byteLength);
+  });
+
+  it('holds a 500 character text of two byte characters with a binding and a wallet link, at every other cap', () => {
+    const { bytes } = createChatMessage(boundKey, {
+      topic: 't'.repeat(128),
+      type: MessageType.THREAD,
+      target: 'a1'.repeat(16),
+      text: 'ü'.repeat(500),
+      name: 'n'.repeat(20),
+      ts: Number.MAX_SAFE_INTEGER,
+      via: MessageVia.OWN_STAMP,
+      own: true,
+      idb: CHAT_BINDING,
+      wl: WALLET_LINK,
+    });
+    expect(bytes.byteLength).toBeLessThanOrEqual(MAX_MESSAGE_BYTES);
+  });
+
+  it('refuses a draft whose payload the wallet link takes over the byte cap', () => {
+    // A control character is written as six bytes of JSON escape, so a text of them fills the payload in steps of six.
+    const escapedBytes = 6;
+    const oneCharacter = createChatMessage(boundKey, draft({ wl: undefined, text: 'a' })).bytes.byteLength;
+    const count = Math.floor((MAX_MESSAGE_BYTES - (oneCharacter - 1)) / escapedBytes);
+    const text = '\u0001'.repeat(count);
+    expect(createChatMessage(boundKey, draft({ wl: undefined, text })).bytes.byteLength).toBeLessThanOrEqual(
+      MAX_MESSAGE_BYTES,
+    );
+    expect(() => createChatMessage(boundKey, draft({ text }))).toThrow(/too-large/);
   });
 });
