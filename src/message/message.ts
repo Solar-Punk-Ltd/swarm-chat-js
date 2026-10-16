@@ -81,8 +81,7 @@ const INVISIBLE_CODE_POINT = /(?![\u200c\u200d])[\p{Cf}\p{Cc}\u2800\u115f\u1160\
 /**
  * What a reader cannot see in a name: the Default_Ignorable_Code_Point set (variation selectors, the joiners, the
  * Hangul fillers, the Mongolian selectors and the rest), the braille blank U+2800, and the nonspacing and enclosing
- * marks, which sit on the letter before them and leave its shape. Spacing marks (`\p{Mc}`) draw a glyph of their
- * own, such as the musical augmentation dot U+1D16D, so they stay and count as a separator.
+ * marks, which sit on the letter before them and leave its shape.
  */
 const UNSEEN = /[\p{Default_Ignorable_Code_Point}\p{Mn}\p{Me}\u2800]/gu;
 
@@ -109,26 +108,23 @@ const CONFUSABLE_LETTERS: Readonly<Record<string, string>> = Object.fromEntries(
 const CONFUSABLE_LETTER = new RegExp(`[${Object.keys(CONFUSABLE_LETTERS).join('')}]`, 'gu');
 
 /**
- * Spaces, dots and the marks that draw as a dot, after the last label. They only decide what a trailing run looks
- * like: inside a name any character but a Latin letter or a digit before `eth` already counts as the dot. NFKD has
- * folded the fullwidth, small and halfwidth full stops and the one dot leader to `.`, and the Greek ano teleia to the
- * middle dot U+00B7. The ideographic full stop U+3002 it leaves, yet ENS and IDNA read it as a dot.
+ * The characters Unicode's confusables data (confusables.txt of 2026-08-06, type MA) maps to the full stop `.` that
+ * NFKD leaves alone, among them the Arabic-Indic zeros, the Syriac full stops and the musical augmentation dot, and the
+ * ideographic full stop U+3002, which ENS and IDNA read as a dot. NFKD has already folded the fullwidth and small full
+ * stops and the one dot leader to `.`, and the halfwidth ideographic full stop to U+3002. Some of these are marks, so
+ * they are read as a dot before marks are dropped.
  */
-const TRAILING_DOTS_AND_SPACES =
-  /[\p{Z}.\u3002\u00b7\u0660\u06f0\u0701\u0702\u2e31\u30fb\ua4f8\ua60e\ua78f\u{10a50}\u{1d16d}]+$/u;
+const DOT_LOOK_ALIKE = /[\u3002\u0660\u06f0\u0701\u0702\ua4f8\ua60e\uabec\u{10a50}\u{1d16d}\u{1ecae}]/gu;
 
-const ENS_LABEL = 'eth';
+const TRAILING_DOTS_AND_SPACES = /[\p{Z}.]+$/u;
 
-/**
- * A Latin letter or an ASCII digit before `eth` makes it part of a word, as in `Kenneth` or `Seth`. U+A78F, the Latin
- * sinological dot, is a Latin letter drawn as a middle dot, so it does not count.
- */
-const WORD_CHARACTER = /^(?!\ua78f)[\p{Script=Latin}0-9]$/u;
+const ENS_SUFFIX = '.eth';
 
-/** The name as a reader sees it, with everything that does not change its look taken out. */
+/** The name as a reader sees it, with every dot spelled `.` and everything that does not change its look taken out. */
 function skeleton(name: string): string {
   return name
     .normalize('NFKD')
+    .replace(DOT_LOOK_ALIKE, '.')
     .replace(UNSEEN, '')
     .replace(CONFUSABLE_LETTER, (letter) => CONFUSABLE_LETTERS[letter] ?? letter)
     .toLowerCase()
@@ -138,23 +134,17 @@ function skeleton(name: string): string {
 
 /**
  * A verified ENS name is shown in place of a sender's chosen name, so a chosen name that reads as one would pass for
- * it. A name reads as one when its {@link skeleton} ends in `eth` and the character before that `eth` is anything but
- * a Latin letter or a digit. That one test covers the dot and every look-alike of it in any script, a space or a
- * hyphen, and the bare `.eth`, without a list of dots that could fall behind. A name that is `eth` alone passes.
+ * it. A name reads as one when its {@link skeleton} ends in `.eth`, the dot being any character that reads as one. A
+ * space, a hyphen, an underscore or a middle dot before `eth` does not make an ENS name, so those names pass.
  */
 function looksLikeEnsName(name: string): boolean {
-  const seen = skeleton(name);
-  if (!seen.endsWith(ENS_LABEL)) {
-    return false;
-  }
-  const before = [...seen.slice(0, -ENS_LABEL.length)].at(-1);
-  return before !== undefined && !WORD_CHARACTER.test(before);
+  return skeleton(name).endsWith(ENS_SUFFIX);
 }
 
 function displayName(min: number, max: number) {
   return characters(min, max)
     .refine((value) => !INVISIBLE_CODE_POINT.test(value), 'expected no format or control characters')
-    .refine((value) => !looksLikeEnsName(value), 'expected a name not ending in .eth, which ENS names keep');
+    .refine((value) => !looksLikeEnsName(value), `expected a name not ending in ${ENS_SUFFIX}, which ENS names keep`);
 }
 
 /**
