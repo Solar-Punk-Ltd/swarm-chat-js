@@ -476,7 +476,6 @@ describe('displayNameProblem', () => {
     ['an ENS name ending in a no-break space', 'vitalik.eth\u00a0', 'ens-like'],
     ['an ENS name ending in an ogham space', 'vitalik.eth\u1680', 'ens-like'],
     ['an ENS name ending in an ideographic space', 'vitalik.eth\u3000', 'ens-like'],
-    ['an ENS name ending in a middle dot', 'vitalik.eth\u00b7', 'ens-like'],
     ['an Arabic-Indic zero for the dot', 'vitalik\u0660eth', 'ens-like'],
     ['an extended Arabic-Indic zero for the dot', 'vitalik\u06f0eth', 'ens-like'],
     ['a Syriac supralinear full stop for the dot', 'vitalik\u0701eth', 'ens-like'],
@@ -485,11 +484,10 @@ describe('displayNameProblem', () => {
     ['a Vai full stop for the dot', 'vitalik\ua60eeth', 'ens-like'],
     ['a Kharoshthi dot for the dot', 'vitalik\u{10a50}eth', 'ens-like'],
     ['a musical augmentation dot for the dot', 'vitalik\u{1d16d}eth', 'ens-like'],
-    ['a middle dot for the dot', 'vitalik\u00b7eth', 'ens-like'],
-    ['a Latin sinological dot for the dot', 'vitalik\ua78feth', 'ens-like'],
-    ['a space for the dot', 'vitalik eth', 'ens-like'],
-    ['a hyphen for the dot', 'vitalik-eth', 'ens-like'],
     ['a dot that is not the last label', 'J.Eth', 'ens-like'],
+    ['a Meetei Mayek lum iyek for the dot', 'vitalik\uabeceth', 'ens-like'],
+    ['an Indic Siyaq one half for the dot', 'vitalik\u{1ecae}eth', 'ens-like'],
+    ['an ENS name ending in a Syriac full stop', 'vitalik.eth\u0701', 'ens-like'],
     ['an ENS name with a Cyrillic en for the h', 'vitalik.et\u043d', 'ens-like'],
     ['an ENS name with a Cyrillic te for the t', 'vitalik.e\u0442h', 'ens-like'],
   ])('says %s is a %s problem', (_, name, problem) => {
@@ -509,6 +507,12 @@ describe('displayNameProblem', () => {
     'E.T.H.',
     'misha.\u0435\u0442\u0445',
     'vitalik.xyz',
+    'vitalik eth',
+    'vitalik-eth',
+    'vitalik_eth',
+    'vitalik\u00b7eth',
+    'vitalik.eth\u00b7',
+    'vitalik\ua78feth',
   ])('lets %s through', (name) => {
     expect(displayNameProblem(name)).toBeNull();
   });
