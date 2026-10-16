@@ -434,11 +434,30 @@ describe('displayNameProblem', () => {
     ['an ENS name ending in a joiner', 'vitalik.eth\u200d', 'ens-like'],
     ['an ENS name with a non-joiner inside', 'vitalik.e\u200cth', 'ens-like'],
     ['the bare suffix', '.eth', 'ens-like'],
+    ['an ENS name with a trailing dot', 'vitalik.eth.', 'ens-like'],
+    ['an ENS name with several trailing dots', 'vitalik.eth...', 'ens-like'],
+    ['an ENS name with a trailing ideographic full stop', 'vitalik.eth\u3002', 'ens-like'],
+    ['an ENS name with a Cyrillic e', 'vitalik.\u0435th', 'ens-like'],
+    ['an ENS name with a Cyrillic capital E', 'vitalik.\u0415TH', 'ens-like'],
+    ['an ENS name with a Cyrillic capital T', 'vitalik.e\u0422h', 'ens-like'],
+    ['an ENS name with a Cyrillic shha', 'vitalik.et\u04bb', 'ens-like'],
+    ['an ENS name with an Armenian ho', 'vitalik.et\u0570', 'ens-like'],
+    ['an ENS name with Greek capitals', 'vitalik.\u0395\u03a4\u0397', 'ens-like'],
+    ['an ENS name with several confusable letters', 'vitalik.\u0435\u0422\u04bb.', 'ens-like'],
   ])('says %s is a %s problem', (_, name, problem) => {
     expect(displayNameProblem(name)).toBe(problem);
   });
 
-  it.each(['eth', 'ethan', 'vitalik.ethereum', 'vitalik eth', 'vitalik.eth!'])('lets %s through', (name) => {
+  it.each([
+    'eth',
+    'ethan',
+    'vitalik.ethereum',
+    'vitalik eth',
+    'vitalik.eth!',
+    'vitalik.eth.x',
+    'vitalik.\u0435tx',
+    'a.b.',
+  ])('lets %s through', (name) => {
     expect(displayNameProblem(name)).toBeNull();
   });
 
