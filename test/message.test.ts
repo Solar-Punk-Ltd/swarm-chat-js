@@ -330,6 +330,8 @@ describe('the shape', () => {
     ['a name with a left-to-right mark', { name: 'ad\u200emin' }],
     ['a name with a word joiner', { name: 'ad\u2060min' }],
     ['a name with a soft hyphen', { name: 'ad\u00admin' }],
+    ['a name ending in .eth', { name: 'vitalik.eth' }],
+    ['a fullwidth name ending in .eth', { name: '\uff36\uff29\uff34\uff21\uff2c\uff29\uff2b\uff0e\uff25\uff34\uff28' }],
     ['an address with 0x', { addr: `0x${TEST_ADDR.slice(2)}` }],
     ['an address in capitals', { addr: TEST_ADDR.toUpperCase() }],
     ['a fractional ts', { ts: 1.5 }],
@@ -421,8 +423,35 @@ describe('displayNameProblem', () => {
     ['a right-to-left override', 'evil\u202egnp.exe', 'invisible'],
     ['a zero width space', 'a\u200bb', 'invisible'],
     ['a control character', 'a\u0007b', 'invisible'],
+    ['an ENS name', 'vitalik.eth', 'ens-like'],
+    ['an uppercase ENS name', 'Vitalik.ETH', 'ens-like'],
+    ['an ENS name with a trailing space', 'vitalik.eth ', 'ens-like'],
+    ['a fullwidth ENS name', '\uff36\uff29\uff34\uff21\uff2c\uff29\uff2b\uff0e\uff25\uff34\uff28', 'ens-like'],
+    ['an ENS name with the one dot leader', 'vitalik\u2024eth', 'ens-like'],
+    ['an ENS name with the small full stop', 'vitalik\ufe52eth', 'ens-like'],
+    ['an ENS name with the ideographic full stop', 'vitalik\u3002eth', 'ens-like'],
+    ['an ENS name with the halfwidth ideographic full stop', 'vitalik\uff61eth', 'ens-like'],
+    ['an ENS name ending in a joiner', 'vitalik.eth\u200d', 'ens-like'],
+    ['an ENS name with a non-joiner inside', 'vitalik.e\u200cth', 'ens-like'],
+    ['the bare suffix', '.eth', 'ens-like'],
   ])('says %s is a %s problem', (_, name, problem) => {
     expect(displayNameProblem(name)).toBe(problem);
+  });
+
+  it.each(['eth', 'ethan', 'vitalik.ethereum', 'vitalik eth', 'vitalik.eth!'])('lets %s through', (name) => {
+    expect(displayNameProblem(name)).toBeNull();
+  });
+
+  it('refuses an ENS-like name before signing', () => {
+    expect(() =>
+      createChatMessage(TEST_KEY, {
+        topic: 'chat-x',
+        type: MessageType.TEXT,
+        text: 'hi',
+        name: 'Vitalik.ETH',
+        via: MessageVia.GATEWAY,
+      }),
+    ).toThrow(ChatMessageError);
   });
 });
 

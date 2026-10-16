@@ -77,7 +77,7 @@ await chat.stop();
 | Setting                  | Meaning                                                                                                                                                 |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `user.privateKey`        | Signs every message. A viewer that only reads may pass any key.                                                                                         |
-| `user.nickname`          | The name on every message, 1 to 20 characters. Nothing can be sent without one.                                                                         |
+| `user.nickname`          | The name on every message, 1 to 20 characters, not ending in `.eth`. Nothing can be sent without one.                                                   |
 | `user.binding`           | Optional. A signed-in viewer's Swarm ID chat binding, `{ msg, sig }`, for the chat address of `user.privateKey`. Every message then carries it.         |
 | `user.walletLink`        | Optional, only with `user.binding`. The viewer's Swarm ID wallet link, `{ msg, wsig, asig }`, for the binding's account. Every message then carries it. |
 | `infra.beeUrl`           | The Bee node or gateway the chat is read through, and written through when `infra.writeUrl` is not set.                                                 |
@@ -152,21 +152,21 @@ else count(check.reason);
 
 A message is a JSON object of at most 3,072 bytes of UTF-8, its fields in this order:
 
-| Field    | Meaning                                                                                                      |
-| -------- | ------------------------------------------------------------------------------------------------------------ |
-| `v`      | `9`                                                                                                          |
-| `topic`  | The chat's topic, 1 to 128 characters                                                                        |
-| `id`     | A random id, 32 lowercase hex characters                                                                     |
-| `type`   | `text`, `thread` (a reply, `target` is the parent) or `reaction` (`target` is the message, `text` the emoji) |
-| `target` | The id it refers to, or `""` for a text                                                                      |
-| `text`   | 1 to 500 characters                                                                                          |
-| `name`   | 1 to 20 characters, none a Unicode format or control character (`\p{Cf}`, `\p{Cc}`) but U+200C and U+200D    |
-| `addr`   | The sender's chat address, 40 lowercase hex characters without `0x`                                          |
-| `ts`     | The sender's clock in milliseconds                                                                           |
-| `via`    | Who paid for the inbox write: `gateway` (the gateway's stamp) or `own-stamp` (the sender's own)              |
-| `idb`    | Only for a signed-in sender: its Swarm ID chat binding, `{ msg, sig }`                                       |
-| `wl`     | Only beside `idb`, for a sender who shows an ENS name: its Swarm ID wallet link, `{ msg, wsig, asig }`       |
-| `sig`    | 130 lowercase hex characters of r, s and v, with v 27 or 28 and s in the lower half                          |
+| Field    | Meaning                                                                                                                         |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `v`      | `9`                                                                                                                             |
+| `topic`  | The chat's topic, 1 to 128 characters                                                                                           |
+| `id`     | A random id, 32 lowercase hex characters                                                                                        |
+| `type`   | `text`, `thread` (a reply, `target` is the parent) or `reaction` (`target` is the message, `text` the emoji)                    |
+| `target` | The id it refers to, or `""` for a text                                                                                         |
+| `text`   | 1 to 500 characters                                                                                                             |
+| `name`   | 1 to 20 characters, none a Unicode format or control character (`\p{Cf}`, `\p{Cc}`) but U+200C and U+200D, not ending in `.eth` |
+| `addr`   | The sender's chat address, 40 lowercase hex characters without `0x`                                                             |
+| `ts`     | The sender's clock in milliseconds                                                                                              |
+| `via`    | Who paid for the inbox write: `gateway` (the gateway's stamp) or `own-stamp` (the sender's own)                                 |
+| `idb`    | Only for a signed-in sender: its Swarm ID chat binding, `{ msg, sig }`                                                          |
+| `wl`     | Only beside `idb`, for a sender who shows an ENS name: its Swarm ID wallet link, `{ msg, wsig, asig }`                          |
+| `sig`    | 130 lowercase hex characters of r, s and v, with v 27 or 28 and s in the lower half                                             |
 
 Characters are counted as Unicode code points, so an emoji counts once, and `countCharacters` counts the same way for
 a composer. The signed bytes are the UTF-8 of
@@ -269,19 +269,19 @@ The library does not write the copy. A page that keeps copies passes its own inb
 `new SwarmChat(settings, { write })`. It is handed the signed payload, the same bytes on every resend, and writes the
 copy beside the inbox write.
 
-| Export                                                                       | Use                                                                                                                               |
-| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `parseChatMessage(bytes, { origin })`                                        | The server's check of a raw payload: byte cap, UTF-8, JSON, then `verifyChatMessage`. Never throws.                               |
-| `verifyChatMessage(value, { origin })`                                       | Shape, signature and binding of a parsed object, with the sender's identity. Never throws.                                        |
-| `displayNameProblem(name)`                                                   | `null` for a name a message may carry, else `'length'` (not 1 to 20 characters) or `'invisible'` (a format or control character). |
-| `createChatMessage(key, draft)`                                              | Builds and signs, throwing a `ChatMessageError` for anything the check would refuse. `via` is required.                           |
-| `MessageType`, `MessageVia`                                                  | The values of `type` and `via`.                                                                                                   |
-| `checkChatBinding(binding, addr, options?)`, `chatBindingSchema`             | The binding check on its own and its shape. Its `origin` is optional, for a sender checking its own binding.                      |
-| `checkWalletLink(link, account)`, `walletLinkSchema`                         | The wallet link check on its own, for the binding's account, and its shape.                                                       |
-| `ownFeedTopic(chatTopic)`, `OWN_FEED_TOPIC_PREFIX`                           | The topic of a sender's own feed of copies.                                                                                       |
-| `chatMessageSchema`, `hasValidSignature`, `signedBytes`, `encodeChatMessage` | The parts.                                                                                                                        |
-| `feedEntrySchema`, `parseFeedEntry`                                          | The feed entry, `{v, seq, at, msg, history}`.                                                                                     |
-| `historyFileSchema`, `parseHistoryFile`                                      | The history file, `{v, topic, fromSeq, toSeq, messages, prev}`.                                                                   |
+| Export                                                                       | Use                                                                                                                                                              |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `parseChatMessage(bytes, { origin })`                                        | The server's check of a raw payload: byte cap, UTF-8, JSON, then `verifyChatMessage`. Never throws.                                                              |
+| `verifyChatMessage(value, { origin })`                                       | Shape, signature and binding of a parsed object, with the sender's identity. Never throws.                                                                       |
+| `displayNameProblem(name)`                                                   | `null` for a name a message may carry, else `'length'` (not 1 to 20 characters), `'invisible'` (a format or control character) or `'ens-like'` (ends in `.eth`). |
+| `createChatMessage(key, draft)`                                              | Builds and signs, throwing a `ChatMessageError` for anything the check would refuse. `via` is required.                                                          |
+| `MessageType`, `MessageVia`                                                  | The values of `type` and `via`.                                                                                                                                  |
+| `checkChatBinding(binding, addr, options?)`, `chatBindingSchema`             | The binding check on its own and its shape. Its `origin` is optional, for a sender checking its own binding.                                                     |
+| `checkWalletLink(link, account)`, `walletLinkSchema`                         | The wallet link check on its own, for the binding's account, and its shape.                                                                                      |
+| `ownFeedTopic(chatTopic)`, `OWN_FEED_TOPIC_PREFIX`                           | The topic of a sender's own feed of copies.                                                                                                                      |
+| `chatMessageSchema`, `hasValidSignature`, `signedBytes`, `encodeChatMessage` | The parts.                                                                                                                                                       |
+| `feedEntrySchema`, `parseFeedEntry`                                          | The feed entry, `{v, seq, at, msg, history}`.                                                                                                                    |
+| `historyFileSchema`, `parseHistoryFile`                                      | The history file, `{v, topic, fromSeq, toSeq, messages, prev}`.                                                                                                  |
 
 The feed entry and the history file carry `v` 9 like the message. A feed entry, at most 4,096 bytes, holds a message at
 the byte cap inside its largest wrapper.
@@ -327,6 +327,11 @@ clock that runs behind sees every stamp as old as it expects, so its messages ar
 - A name with a Unicode format or control character, such as the right-to-left override U+202E or a zero width space,
   is refused as `shape`, since it can make one name look like another. The zero width non-joiner U+200C and the zero
   width joiner U+200D are allowed, because Persian and Indic names and joined emoji such as a family need them.
+- A name ending in `.eth` is refused as `shape`, since a page shows a verified ENS name where the chosen name would be
+  and a chosen one could pass for it. The name is read as a reader sees it: NFKC normalised, so fullwidth letters and
+  the fullwidth, one dot leader and small full stops count as a dot, with the ideographic full stop U+3002 counted as
+  a dot too since ENS reads it as one, the joiners U+200C and U+200D dropped, lower-cased and trimmed. So
+  `Vitalik.ETH`, `vitalik.eth ` and `ＶＩＴＡＬＩＫ．ＥＴＨ` are all refused.
 - `SwarmChat` takes `user.walletLink`, `createChatMessage` takes `wl`, and `checkWalletLink` checks a link on its own.
 - A server on 8.x refuses every version 9 message as `shape`. Update the server before any page sends one.
 
