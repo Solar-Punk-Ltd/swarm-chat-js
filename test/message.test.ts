@@ -409,12 +409,21 @@ describe('the name', () => {
 });
 
 describe('displayNameProblem', () => {
-  it.each(['Zoë', 'ok 👍🏽', 'می\u200cخواهم', '\u{1F468}\u200d\u{1F469}', 'a'.repeat(20), '👍'.repeat(20)])(
-    'finds no problem with %s',
-    (name) => {
-      expect(displayNameProblem(name)).toBeNull();
-    },
-  );
+  it.each([
+    'Zoë',
+    'ok 👍🏽',
+    'می\u200cخواهم',
+    '\u{1F468}\u200d\u{1F469}',
+    'a'.repeat(20),
+    '👍'.repeat(20),
+    'love \u2764\ufe0f',
+    'Kenneth',
+    'Seth',
+    'Ethan',
+    'J.Ethan',
+  ])('finds no problem with %s', (name) => {
+    expect(displayNameProblem(name)).toBeNull();
+  });
 
   it.each([
     ['an empty name', '', 'length'],
@@ -458,6 +467,31 @@ describe('displayNameProblem', () => {
     ['an ENS name ending in a Hangul choseong filler', 'vitalik.eth\u115f', 'invisible'],
     ['an ENS name ending in a combining grapheme joiner', 'vitalik.eth\u034f', 'invisible'],
     ['an ENS name ending in a Khmer inherent aq', 'vitalik.eth\u17b4', 'invisible'],
+    ['an ENS name ending in variation selector 16', 'vitalik.eth\ufe0f', 'ens-like'],
+    ['an ENS name with variation selector 16 inside', 'vitalik.e\ufe0fth', 'ens-like'],
+    ['an ENS name ending in a Mongolian variation selector', 'vitalik.eth\u180b', 'ens-like'],
+    ['an ENS name ending in variation selector 17', 'vitalik.eth\u{e0100}', 'ens-like'],
+    ['an ENS name ending in a combining dot below', 'vitalik.et\u0068\u0323', 'ens-like'],
+    ['an ENS name ending in a precomposed h with dot below', 'vitalik.et\u1e25', 'ens-like'],
+    ['an ENS name ending in a no-break space', 'vitalik.eth\u00a0', 'ens-like'],
+    ['an ENS name ending in an ogham space', 'vitalik.eth\u1680', 'ens-like'],
+    ['an ENS name ending in an ideographic space', 'vitalik.eth\u3000', 'ens-like'],
+    ['an ENS name ending in a middle dot', 'vitalik.eth\u00b7', 'ens-like'],
+    ['an Arabic-Indic zero for the dot', 'vitalik\u0660eth', 'ens-like'],
+    ['an extended Arabic-Indic zero for the dot', 'vitalik\u06f0eth', 'ens-like'],
+    ['a Syriac supralinear full stop for the dot', 'vitalik\u0701eth', 'ens-like'],
+    ['a Syriac sublinear full stop for the dot', 'vitalik\u0702eth', 'ens-like'],
+    ['a Lisu tone mark for the dot', 'vitalik\ua4f8eth', 'ens-like'],
+    ['a Vai full stop for the dot', 'vitalik\ua60eeth', 'ens-like'],
+    ['a Kharoshthi dot for the dot', 'vitalik\u{10a50}eth', 'ens-like'],
+    ['a musical augmentation dot for the dot', 'vitalik\u{1d16d}eth', 'ens-like'],
+    ['a middle dot for the dot', 'vitalik\u00b7eth', 'ens-like'],
+    ['a Latin sinological dot for the dot', 'vitalik\ua78feth', 'ens-like'],
+    ['a space for the dot', 'vitalik eth', 'ens-like'],
+    ['a hyphen for the dot', 'vitalik-eth', 'ens-like'],
+    ['a dot that is not the last label', 'J.Eth', 'ens-like'],
+    ['an ENS name with a Cyrillic en for the h', 'vitalik.et\u043d', 'ens-like'],
+    ['an ENS name with a Cyrillic te for the t', 'vitalik.e\u0442h', 'ens-like'],
   ])('says %s is a %s problem', (_, name, problem) => {
     expect(displayNameProblem(name)).toBe(problem);
   });
@@ -466,11 +500,15 @@ describe('displayNameProblem', () => {
     'eth',
     'ethan',
     'vitalik.ethereum',
-    'vitalik eth',
     'vitalik.eth!',
     'vitalik.eth.x',
     'vitalik.\u0435tx',
     'a.b.',
+    'Beth',
+    'Dr. Seth',
+    'E.T.H.',
+    'misha.\u0435\u0442\u0445',
+    'vitalik.xyz',
   ])('lets %s through', (name) => {
     expect(displayNameProblem(name)).toBeNull();
   });

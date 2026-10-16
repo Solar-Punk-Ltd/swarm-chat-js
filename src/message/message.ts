@@ -78,59 +78,83 @@ function characters(min: number, max: number) {
  */
 const INVISIBLE_CODE_POINT = /(?![\u200c\u200d])[\p{Cf}\p{Cc}\u2800\u115f\u1160\u3164\uffa0]|\u034f|\u17b4|\u17b5/u;
 
-const ENS_SUFFIX = '.eth';
-
 /**
- * NFKC already folds the fullwidth full stop U+FF0E, the one dot leader U+2024, the small full stop U+FE52 and the
- * halfwidth ideographic full stop U+FF61, which becomes this one. The ideographic full stop U+3002 it leaves alone,
- * yet ENS normalisation and IDNA read it as a dot, so a name spelled with it would resolve as the ENS name it mimics.
+ * What a reader cannot see in a name: the Default_Ignorable_Code_Point set (variation selectors, the joiners, the
+ * Hangul fillers, the Mongolian selectors and the rest), the braille blank U+2800, and the nonspacing and enclosing
+ * marks, which sit on the letter before them and leave its shape. Spacing marks (`\p{Mc}`) draw a glyph of their
+ * own, such as the musical augmentation dot U+1D16D, so they stay and count as a separator.
  */
-const UNFOLDED_FULL_STOP = /\u3002/gu;
-
-const JOINER = /[\u200c\u200d]/gu;
+const UNSEEN = /[\p{Default_Ignorable_Code_Point}\p{Mn}\p{Me}\u2800]/gu;
 
 /**
  * Letters that Unicode's confusables data (confusables.txt, Security Mechanisms, type MA) maps to `e`, `t` or `h` and
- * that NFKC leaves alone, such as Cyrillic `е`, Armenian `հ` and the Greek capitals `Ε`, `Τ` and `Η`. The capitals are
- * listed because NFKC and lower-casing would otherwise turn them into small Greek letters the data does not list.
- * Only the code points the data maps to those three letters are here.
+ * that NFKD leaves alone, such as Cyrillic `е`, Armenian `հ` and the Greek capitals `Ε`, `Τ` and `Η`. The capitals are
+ * listed because NFKD and lower-casing would otherwise turn them into small Greek letters the data does not list.
+ * Cyrillic small `н` and `т` are not in that data, which pairs them with small capital H and T, yet most fonts draw
+ * them as `h` and `t` in italics and many in upright text too, so they are read as those letters here.
  */
 const CONFUSABLE_LETTERS: Readonly<Record<string, string>> = Object.fromEntries([
   ...[...'\u212e\uab32\u0435\u04bd\u22ff\u0395\u0415\u2d39\u13ac\ua5cb\ua4f0\u{118a6}\u{118ae}\u{10286}\u{1df81}'].map(
     (letter) => [letter, 'e'],
   ),
   ...[
-    ...'\u22a4\u27d9\u{1f768}\u{1d373}\u03a4\u2ca6\u0422\u07e0\u13a2\ua50b\u3112\ua4d4\u{16f0a}\u{118bc}\u{10297}\u{102b1}\u{10315}\u4e05',
+    ...'\u22a4\u27d9\u{1f768}\u{1d373}\u03a4\u2ca6\u0422\u0442\u07e0\u13a2\ua50b\u3112\ua4d4\u{16f0a}\u{118bc}\u{10297}\u{102b1}\u{10315}\u4e05',
   ].map((letter) => [letter, 't']),
-  ...[...'\u04bb\u04ba\u10b9\u0570\u13c2\u0397\u2c8e\u041d\u13bb\u157c\ua4e7\u{102cf}'].map((letter) => [letter, 'h']),
+  ...[...'\u04bb\u04ba\u10b9\u0570\u13c2\u0397\u2c8e\u041d\u043d\u13bb\u157c\ua4e7\u{102cf}'].map((letter) => [
+    letter,
+    'h',
+  ]),
 ]);
 
 const CONFUSABLE_LETTER = new RegExp(`[${Object.keys(CONFUSABLE_LETTERS).join('')}]`, 'gu');
 
-const TRAILING_DOTS = /\.+$/u;
+/**
+ * Spaces, dots and the marks that draw as a dot, after the last label. They only decide what a trailing run looks
+ * like: inside a name any character but a Latin letter or a digit before `eth` already counts as the dot. NFKD has
+ * folded the fullwidth, small and halfwidth full stops and the one dot leader to `.`, and the Greek ano teleia to the
+ * middle dot U+00B7. The ideographic full stop U+3002 it leaves, yet ENS and IDNA read it as a dot.
+ */
+const TRAILING_DOTS_AND_SPACES =
+  /[\p{Z}.\u3002\u00b7\u0660\u06f0\u0701\u0702\u2e31\u30fb\ua4f8\ua60e\ua78f\u{10a50}\u{1d16d}]+$/u;
+
+const ENS_LABEL = 'eth';
 
 /**
- * A verified ENS name is shown in place of a sender's chosen name, so a chosen name that reads as one would pass for
- * it. The name is compared as a reader sees it: NFKC folds fullwidth and other compatibility forms, look-alikes of
- * `e`, `t` and `h` count as those letters, the joiners the invisible rule allows draw nothing, letter case, the spaces
- * around it and dots after the last label do not show.
+ * A Latin letter or an ASCII digit before `eth` makes it part of a word, as in `Kenneth` or `Seth`. U+A78F, the Latin
+ * sinological dot, is a Latin letter drawn as a middle dot, so it does not count.
  */
-function looksLikeEnsName(name: string): boolean {
-  const seen = name
-    .normalize('NFKC')
-    .replace(UNFOLDED_FULL_STOP, '.')
-    .replace(JOINER, '')
+const WORD_CHARACTER = /^(?!\ua78f)[\p{Script=Latin}0-9]$/u;
+
+/** The name as a reader sees it, with everything that does not change its look taken out. */
+function skeleton(name: string): string {
+  return name
+    .normalize('NFKD')
+    .replace(UNSEEN, '')
     .replace(CONFUSABLE_LETTER, (letter) => CONFUSABLE_LETTERS[letter] ?? letter)
     .toLowerCase()
     .trim()
-    .replace(TRAILING_DOTS, '');
-  return seen.endsWith(ENS_SUFFIX);
+    .replace(TRAILING_DOTS_AND_SPACES, '');
+}
+
+/**
+ * A verified ENS name is shown in place of a sender's chosen name, so a chosen name that reads as one would pass for
+ * it. A name reads as one when its {@link skeleton} ends in `eth` and the character before that `eth` is anything but
+ * a Latin letter or a digit. That one test covers the dot and every look-alike of it in any script, a space or a
+ * hyphen, and the bare `.eth`, without a list of dots that could fall behind. A name that is `eth` alone passes.
+ */
+function looksLikeEnsName(name: string): boolean {
+  const seen = skeleton(name);
+  if (!seen.endsWith(ENS_LABEL)) {
+    return false;
+  }
+  const before = [...seen.slice(0, -ENS_LABEL.length)].at(-1);
+  return before !== undefined && !WORD_CHARACTER.test(before);
 }
 
 function displayName(min: number, max: number) {
   return characters(min, max)
     .refine((value) => !INVISIBLE_CODE_POINT.test(value), 'expected no format or control characters')
-    .refine((value) => !looksLikeEnsName(value), `expected a name not ending in ${ENS_SUFFIX}, which ENS names keep`);
+    .refine((value) => !looksLikeEnsName(value), 'expected a name not ending in .eth, which ENS names keep');
 }
 
 /**
