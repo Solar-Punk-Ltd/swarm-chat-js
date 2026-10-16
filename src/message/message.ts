@@ -73,15 +73,38 @@ function characters(min: number, max: number) {
  */
 const INVISIBLE_CODE_POINT = /(?![\u200c\u200d])[\p{Cf}\p{Cc}]/u;
 
-function displayName(min: number, max: number) {
-  return characters(min, max).refine(
-    (value) => !INVISIBLE_CODE_POINT.test(value),
-    'expected no format or control characters',
-  );
+const ENS_SUFFIX = '.eth';
+
+/**
+ * NFKC already folds the fullwidth full stop U+FF0E, the one dot leader U+2024, the small full stop U+FE52 and the
+ * halfwidth ideographic full stop U+FF61, which becomes this one. The ideographic full stop U+3002 it leaves alone,
+ * yet ENS normalisation and IDNA read it as a dot, so a name spelled with it would resolve as the ENS name it mimics.
+ */
+const UNFOLDED_FULL_STOP = /\u3002/gu;
+
+const JOINER = /[\u200c\u200d]/gu;
+
+/**
+ * A verified ENS name is shown in place of a sender's chosen name, so a chosen name that reads as one would pass for
+ * it. The name is compared as a reader sees it: NFKC folds fullwidth and other compatibility forms, the joiners the
+ * invisible rule allows draw nothing, letter case and the spaces around it do not show.
+ */
+function looksLikeEnsName(name: string): boolean {
+  const seen = name.normalize('NFKC').replace(UNFOLDED_FULL_STOP, '.').replace(JOINER, '').toLowerCase().trim();
+  return seen.endsWith(ENS_SUFFIX);
 }
 
-/** Why a name is refused: `length` is outside 1 to {@link MAX_NAME_CHARACTERS} characters, `invisible` holds a format or control character. */
-export type DisplayNameProblem = 'length' | 'invisible';
+function displayName(min: number, max: number) {
+  return characters(min, max)
+    .refine((value) => !INVISIBLE_CODE_POINT.test(value), 'expected no format or control characters')
+    .refine((value) => !looksLikeEnsName(value), `expected a name not ending in ${ENS_SUFFIX}, which ENS names keep`);
+}
+
+/**
+ * Why a name is refused: `length` is outside 1 to {@link MAX_NAME_CHARACTERS} characters, `invisible` holds a format
+ * or control character, `ens-like` ends in `.eth` as a reader sees it, which only a verified ENS name may show.
+ */
+export type DisplayNameProblem = 'length' | 'invisible' | 'ens-like';
 
 /**
  * Whether `name` is one a message may carry, as the message check reads it, and why not when it is not. A composer
@@ -92,7 +115,10 @@ export function displayNameProblem(name: string): DisplayNameProblem | null {
   if (length < 1 || length > MAX_NAME_CHARACTERS) {
     return 'length';
   }
-  return INVISIBLE_CODE_POINT.test(name) ? 'invisible' : null;
+  if (INVISIBLE_CODE_POINT.test(name)) {
+    return 'invisible';
+  }
+  return looksLikeEnsName(name) ? 'ens-like' : null;
 }
 
 const messageId = lowercaseHex(32);
