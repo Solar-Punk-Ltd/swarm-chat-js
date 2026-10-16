@@ -152,21 +152,21 @@ else count(check.reason);
 
 A message is a JSON object of at most 3,072 bytes of UTF-8, its fields in this order:
 
-| Field    | Meaning                                                                                                                         |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `v`      | `9`                                                                                                                             |
-| `topic`  | The chat's topic, 1 to 128 characters                                                                                           |
-| `id`     | A random id, 32 lowercase hex characters                                                                                        |
-| `type`   | `text`, `thread` (a reply, `target` is the parent) or `reaction` (`target` is the message, `text` the emoji)                    |
-| `target` | The id it refers to, or `""` for a text                                                                                         |
-| `text`   | 1 to 500 characters                                                                                                             |
-| `name`   | 1 to 20 characters, none a Unicode format or control character (`\p{Cf}`, `\p{Cc}`) but U+200C and U+200D, not ending in `.eth` |
-| `addr`   | The sender's chat address, 40 lowercase hex characters without `0x`                                                             |
-| `ts`     | The sender's clock in milliseconds                                                                                              |
-| `via`    | Who paid for the inbox write: `gateway` (the gateway's stamp) or `own-stamp` (the sender's own)                                 |
-| `idb`    | Only for a signed-in sender: its Swarm ID chat binding, `{ msg, sig }`                                                          |
-| `wl`     | Only beside `idb`, for a sender who shows an ENS name: its Swarm ID wallet link, `{ msg, wsig, asig }`                          |
-| `sig`    | 130 lowercase hex characters of r, s and v, with v 27 or 28 and s in the lower half                                             |
+| Field    | Meaning                                                                                                                                          |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `v`      | `9`                                                                                                                                              |
+| `topic`  | The chat's topic, 1 to 128 characters                                                                                                            |
+| `id`     | A random id, 32 lowercase hex characters                                                                                                         |
+| `type`   | `text`, `thread` (a reply, `target` is the parent) or `reaction` (`target` is the message, `text` the emoji)                                     |
+| `target` | The id it refers to, or `""` for a text                                                                                                          |
+| `text`   | 1 to 500 characters                                                                                                                              |
+| `name`   | 1 to 20 characters, none a Unicode format or control character (`\p{Cf}`, `\p{Cc}`) but U+200C and U+200D, no blank letter, not ending in `.eth` |
+| `addr`   | The sender's chat address, 40 lowercase hex characters without `0x`                                                                              |
+| `ts`     | The sender's clock in milliseconds                                                                                                               |
+| `via`    | Who paid for the inbox write: `gateway` (the gateway's stamp) or `own-stamp` (the sender's own)                                                  |
+| `idb`    | Only for a signed-in sender: its Swarm ID chat binding, `{ msg, sig }`                                                                           |
+| `wl`     | Only beside `idb`, for a sender who shows an ENS name: its Swarm ID wallet link, `{ msg, wsig, asig }`                                           |
+| `sig`    | 130 lowercase hex characters of r, s and v, with v 27 or 28 and s in the lower half                                                              |
 
 Characters are counted as Unicode code points, so an emoji counts once, and `countCharacters` counts the same way for
 a composer. The signed bytes are the UTF-8 of
@@ -326,7 +326,10 @@ clock that runs behind sees every stamp as old as it expects, so its messages ar
   holds one.
 - A name with a Unicode format or control character, such as the right-to-left override U+202E or a zero width space,
   is refused as `shape`, since it can make one name look like another. The zero width non-joiner U+200C and the zero
-  width joiner U+200D are allowed, because Persian and Indic names and joined emoji such as a family need them.
+  width joiner U+200D are allowed, because Persian and Indic names and joined emoji such as a family need them. The
+  blank letters and marks are refused with them, since they show as nothing and have no honest use in a name: the
+  braille blank U+2800, the Hangul fillers U+115F, U+1160, U+3164 and U+FFA0, the combining grapheme joiner U+034F and
+  the Khmer inherent vowels U+17B4 and U+17B5. Variation selectors such as U+FE0F stay allowed, since emoji need them.
 - A name ending in `.eth` is refused as `shape`, since a page shows a verified ENS name where the chosen name would be
   and a chosen one could pass for it. The name is read as a reader sees it: NFKC normalised, so fullwidth letters and
   the fullwidth, one dot leader and small full stops count as a dot, with the ideographic full stop U+3002 counted as

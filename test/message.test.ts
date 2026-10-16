@@ -444,6 +444,20 @@ describe('displayNameProblem', () => {
     ['an ENS name with an Armenian ho', 'vitalik.et\u0570', 'ens-like'],
     ['an ENS name with Greek capitals', 'vitalik.\u0395\u03a4\u0397', 'ens-like'],
     ['an ENS name with several confusable letters', 'vitalik.\u0435\u0422\u04bb.', 'ens-like'],
+    ['a braille blank', 'a\u2800b', 'invisible'],
+    ['a Hangul choseong filler', 'a\u115fb', 'invisible'],
+    ['a Hangul jungseong filler', 'a\u1160b', 'invisible'],
+    ['a Hangul filler', 'a\u3164b', 'invisible'],
+    ['a halfwidth Hangul filler', 'a\uffa0b', 'invisible'],
+    ['a combining grapheme joiner', 'a\u034fb', 'invisible'],
+    ['a Khmer inherent aq', 'a\u17b4b', 'invisible'],
+    ['a Khmer inherent aa', 'a\u17b5b', 'invisible'],
+    ['an ENS name ending in a braille blank', 'vitalik.eth\u2800', 'invisible'],
+    ['an ENS name ending in a Hangul filler', 'vitalik.eth\u3164', 'invisible'],
+    ['an ENS name ending in a Hangul jungseong filler', 'vitalik.eth\u1160', 'invisible'],
+    ['an ENS name ending in a Hangul choseong filler', 'vitalik.eth\u115f', 'invisible'],
+    ['an ENS name ending in a combining grapheme joiner', 'vitalik.eth\u034f', 'invisible'],
+    ['an ENS name ending in a Khmer inherent aq', 'vitalik.eth\u17b4', 'invisible'],
   ])('says %s is a %s problem', (_, name, problem) => {
     expect(displayNameProblem(name)).toBe(problem);
   });

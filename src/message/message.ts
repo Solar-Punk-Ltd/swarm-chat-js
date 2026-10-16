@@ -70,8 +70,13 @@ function characters(min: number, max: number) {
  * name is how readers tell senders apart, so it carries neither. The zero width non-joiner U+200C and joiner U+200D
  * are the two exceptions: Persian and the Indic scripts spell words with them, and a joined emoji such as a family is
  * built from them, while neither can reorder text.
+ *
+ * The blank letters and marks have no honest use in a name either, so they are refused with them: the braille blank
+ * U+2800, the Hangul fillers U+115F, U+1160, U+3164 and U+FFA0, the combining grapheme joiner U+034F and the Khmer
+ * inherent vowels U+17B4 and U+17B5, which Unicode itself says not to use. Each is a letter or a mark that shows as
+ * nothing. Variation selectors stay allowed, since an emoji such as a red heart needs U+FE0F.
  */
-const INVISIBLE_CODE_POINT = /(?![\u200c\u200d])[\p{Cf}\p{Cc}]/u;
+const INVISIBLE_CODE_POINT = /(?![\u200c\u200d])[\p{Cf}\p{Cc}\u2800\u115f\u1160\u3164\uffa0]|\u034f|\u17b4|\u17b5/u;
 
 const ENS_SUFFIX = '.eth';
 
