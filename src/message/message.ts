@@ -85,12 +85,40 @@ const UNFOLDED_FULL_STOP = /\u3002/gu;
 const JOINER = /[\u200c\u200d]/gu;
 
 /**
+ * Letters that Unicode's confusables data (confusables.txt, Security Mechanisms, type MA) maps to `e`, `t` or `h` and
+ * that NFKC leaves alone, such as Cyrillic `е`, Armenian `հ` and the Greek capitals `Ε`, `Τ` and `Η`. The capitals are
+ * listed because NFKC and lower-casing would otherwise turn them into small Greek letters the data does not list.
+ * Only the code points the data maps to those three letters are here.
+ */
+const CONFUSABLE_LETTERS: Readonly<Record<string, string>> = Object.fromEntries([
+  ...[...'\u212e\uab32\u0435\u04bd\u22ff\u0395\u0415\u2d39\u13ac\ua5cb\ua4f0\u{118a6}\u{118ae}\u{10286}\u{1df81}'].map(
+    (letter) => [letter, 'e'],
+  ),
+  ...[
+    ...'\u22a4\u27d9\u{1f768}\u{1d373}\u03a4\u2ca6\u0422\u07e0\u13a2\ua50b\u3112\ua4d4\u{16f0a}\u{118bc}\u{10297}\u{102b1}\u{10315}\u4e05',
+  ].map((letter) => [letter, 't']),
+  ...[...'\u04bb\u04ba\u10b9\u0570\u13c2\u0397\u2c8e\u041d\u13bb\u157c\ua4e7\u{102cf}'].map((letter) => [letter, 'h']),
+]);
+
+const CONFUSABLE_LETTER = new RegExp(`[${Object.keys(CONFUSABLE_LETTERS).join('')}]`, 'gu');
+
+const TRAILING_DOTS = /\.+$/u;
+
+/**
  * A verified ENS name is shown in place of a sender's chosen name, so a chosen name that reads as one would pass for
- * it. The name is compared as a reader sees it: NFKC folds fullwidth and other compatibility forms, the joiners the
- * invisible rule allows draw nothing, letter case and the spaces around it do not show.
+ * it. The name is compared as a reader sees it: NFKC folds fullwidth and other compatibility forms, look-alikes of
+ * `e`, `t` and `h` count as those letters, the joiners the invisible rule allows draw nothing, letter case, the spaces
+ * around it and dots after the last label do not show.
  */
 function looksLikeEnsName(name: string): boolean {
-  const seen = name.normalize('NFKC').replace(UNFOLDED_FULL_STOP, '.').replace(JOINER, '').toLowerCase().trim();
+  const seen = name
+    .normalize('NFKC')
+    .replace(UNFOLDED_FULL_STOP, '.')
+    .replace(JOINER, '')
+    .replace(CONFUSABLE_LETTER, (letter) => CONFUSABLE_LETTERS[letter] ?? letter)
+    .toLowerCase()
+    .trim()
+    .replace(TRAILING_DOTS, '');
   return seen.endsWith(ENS_SUFFIX);
 }
 

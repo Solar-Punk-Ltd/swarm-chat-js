@@ -330,8 +330,10 @@ clock that runs behind sees every stamp as old as it expects, so its messages ar
 - A name ending in `.eth` is refused as `shape`, since a page shows a verified ENS name where the chosen name would be
   and a chosen one could pass for it. The name is read as a reader sees it: NFKC normalised, so fullwidth letters and
   the fullwidth, one dot leader and small full stops count as a dot, with the ideographic full stop U+3002 counted as
-  a dot too since ENS reads it as one, the joiners U+200C and U+200D dropped, lower-cased and trimmed. So
-  `Vitalik.ETH`, `vitalik.eth ` and `ＶＩＴＡＬＩＫ．ＥＴＨ` are all refused.
+  a dot too since ENS reads it as one, the joiners U+200C and U+200D dropped, the letters Unicode's confusables data
+  maps to `e`, `t` or `h` read as those letters (Cyrillic `е` and `Т`, Armenian `հ` and Greek `Ε`, `Τ`, `Η` among
+  them), lower-cased, trimmed and stripped of trailing dots. So `Vitalik.ETH`, `vitalik.eth `, `vitalik.eth.`,
+  `vitalik.еth` (Cyrillic `е`) and `ＶＩＴＡＬＩＫ．ＥＴＨ` are all refused.
 - `SwarmChat` takes `user.walletLink`, `createChatMessage` takes `wl`, and `checkWalletLink` checks a link on its own.
 - A server on 8.x refuses every version 9 message as `shape`. Update the server before any page sends one.
 
