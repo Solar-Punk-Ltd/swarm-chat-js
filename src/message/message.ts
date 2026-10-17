@@ -3,19 +3,21 @@ import { z } from 'zod';
 
 import { chatBindingSchema, checkChatBinding, type ChatBinding, type ChatIdentity } from './binding.js';
 import { isCanonicalSignature } from './canonicalSignature.js';
+import { checkWalletLink, walletLinkSchema, type WalletLink } from './walletLink.js';
 
 /**
- * The chat message of version 8: what a browser sends as a GSOC payload, what the server verifies before it
+ * The chat message of version 9: what a browser sends as a GSOC payload, what the server verifies before it
  * publishes, and what every feed entry carries back as `msg`. This module is the only place its bytes are built,
  * signed, checked and read, and the server imports it from here rather than keeping a copy. A message of any other
  * version fails the shape check.
  */
 
-export const MESSAGE_VERSION = 8;
+export const MESSAGE_VERSION = 9;
 
 /**
- * Measured on the UTF-8 of the whole JSON object, on top of the per-field caps. Large enough for a 500 character text
- * of two byte characters with a Swarm ID binding, at every other cap.
+ * Measured on the UTF-8 of the whole JSON object, on top of the per-field caps, wallet link included. Large enough for
+ * a 500 character text of two byte characters with a Swarm ID binding and a wallet link, at every other cap, which
+ * comes to 2,376 bytes.
  */
 export const MAX_MESSAGE_BYTES = 3072;
 
@@ -62,6 +64,110 @@ function characters(min: number, max: number) {
   }, `expected ${min} to ${max} characters`);
 }
 
+/**
+ * Format and control code points draw nothing of their own yet change what is around them: a right-to-left override
+ * shows `evil\u202egnp.exe` as `evilexe.png`, and a zero width space makes two names that look the same differ. A
+ * name is how readers tell senders apart, so it carries neither. The zero width non-joiner U+200C and joiner U+200D
+ * are the two exceptions: Persian and the Indic scripts spell words with them, and a joined emoji such as a family is
+ * built from them, while neither can reorder text.
+ *
+ * The blank letters and marks have no honest use in a name either, so they are refused with them: the braille blank
+ * U+2800, the Hangul fillers U+115F, U+1160, U+3164 and U+FFA0, the combining grapheme joiner U+034F and the Khmer
+ * inherent vowels U+17B4 and U+17B5, which Unicode itself says not to use. Each is a letter or a mark that shows as
+ * nothing. Variation selectors stay allowed, since an emoji such as a red heart needs U+FE0F.
+ */
+const INVISIBLE_CODE_POINT = /(?![\u200c\u200d])[\p{Cf}\p{Cc}\u2800\u115f\u1160\u3164\uffa0]|\u034f|\u17b4|\u17b5/u;
+
+/**
+ * What a reader cannot see in a name: the Default_Ignorable_Code_Point set (variation selectors, the joiners, the
+ * Hangul fillers, the Mongolian selectors and the rest), the braille blank U+2800, and the nonspacing and enclosing
+ * marks, which sit on the letter before them and leave its shape.
+ */
+const UNSEEN = /[\p{Default_Ignorable_Code_Point}\p{Mn}\p{Me}\u2800]/gu;
+
+/**
+ * Letters that Unicode's confusables data (confusables.txt, Security Mechanisms, type MA) maps to `e`, `t` or `h` and
+ * that NFKD leaves alone, such as Cyrillic `е`, Armenian `հ` and the Greek capitals `Ε`, `Τ` and `Η`. The capitals are
+ * listed because NFKD and lower-casing would otherwise turn them into small Greek letters the data does not list.
+ * Cyrillic small `н` and `т` are not in that data, which pairs them with small capital H and T, yet most fonts draw
+ * them as `h` and `t` in italics and many in upright text too, so they are read as those letters here.
+ */
+const CONFUSABLE_LETTERS: Readonly<Record<string, string>> = Object.fromEntries([
+  ...[...'\u212e\uab32\u0435\u04bd\u22ff\u0395\u0415\u2d39\u13ac\ua5cb\ua4f0\u{118a6}\u{118ae}\u{10286}\u{1df81}'].map(
+    (letter) => [letter, 'e'],
+  ),
+  ...[
+    ...'\u22a4\u27d9\u{1f768}\u{1d373}\u03a4\u2ca6\u0422\u0442\u07e0\u13a2\ua50b\u3112\ua4d4\u{16f0a}\u{118bc}\u{10297}\u{102b1}\u{10315}\u4e05',
+  ].map((letter) => [letter, 't']),
+  ...[...'\u04bb\u04ba\u10b9\u0570\u13c2\u0397\u2c8e\u041d\u043d\u13bb\u157c\ua4e7\u{102cf}'].map((letter) => [
+    letter,
+    'h',
+  ]),
+]);
+
+const CONFUSABLE_LETTER = new RegExp(`[${Object.keys(CONFUSABLE_LETTERS).join('')}]`, 'gu');
+
+/**
+ * The characters Unicode's confusables data (confusables.txt of 2026-08-06, type MA) maps to the full stop `.` that
+ * NFKD leaves alone, among them the Arabic-Indic zeros, the Syriac full stops and the musical augmentation dot, and the
+ * ideographic full stop U+3002, which ENS and IDNA read as a dot. NFKD has already folded the fullwidth and small full
+ * stops and the one dot leader to `.`, and the halfwidth ideographic full stop to U+3002. Some of these are marks, so
+ * they are read as a dot before marks are dropped.
+ */
+const DOT_LOOK_ALIKE = /[\u3002\u0660\u06f0\u0701\u0702\ua4f8\ua60e\uabec\u{10a50}\u{1d16d}\u{1ecae}]/gu;
+
+const TRAILING_DOTS_AND_SPACES = /[\p{Z}.]+$/u;
+
+const ENS_SUFFIX = '.eth';
+
+/** The name as a reader sees it, with every dot spelled `.` and everything that does not change its look taken out. */
+function skeleton(name: string): string {
+  return name
+    .normalize('NFKD')
+    .replace(DOT_LOOK_ALIKE, '.')
+    .replace(UNSEEN, '')
+    .replace(CONFUSABLE_LETTER, (letter) => CONFUSABLE_LETTERS[letter] ?? letter)
+    .toLowerCase()
+    .trim()
+    .replace(TRAILING_DOTS_AND_SPACES, '');
+}
+
+/**
+ * A verified ENS name is shown in place of a sender's chosen name, so a chosen name that reads as one would pass for
+ * it. A name reads as one when its {@link skeleton} ends in `.eth`, the dot being any character that reads as one. A
+ * space, a hyphen, an underscore or a middle dot before `eth` does not make an ENS name, so those names pass.
+ */
+function looksLikeEnsName(name: string): boolean {
+  return skeleton(name).endsWith(ENS_SUFFIX);
+}
+
+function displayName(min: number, max: number) {
+  return characters(min, max)
+    .refine((value) => !INVISIBLE_CODE_POINT.test(value), 'expected no format or control characters')
+    .refine((value) => !looksLikeEnsName(value), `expected a name not ending in ${ENS_SUFFIX}, which ENS names keep`);
+}
+
+/**
+ * Why a name is refused: `length` is outside 1 to {@link MAX_NAME_CHARACTERS} characters, `invisible` holds a format
+ * or control character, `ens-like` ends in `.eth` as a reader sees it, which only a verified ENS name may show.
+ */
+export type DisplayNameProblem = 'length' | 'invisible' | 'ens-like';
+
+/**
+ * Whether `name` is one a message may carry, as the message check reads it, and why not when it is not. A composer
+ * calls this on the name as it will be sent, so it and the check agree.
+ */
+export function displayNameProblem(name: string): DisplayNameProblem | null {
+  const length = countCharacters(name);
+  if (length < 1 || length > MAX_NAME_CHARACTERS) {
+    return 'length';
+  }
+  if (INVISIBLE_CODE_POINT.test(name)) {
+    return 'invisible';
+  }
+  return looksLikeEnsName(name) ? 'ens-like' : null;
+}
+
 const messageId = lowercaseHex(32);
 
 export const chatMessageSchema = z
@@ -72,19 +178,23 @@ export const chatMessageSchema = z
     type: z.enum([MessageType.TEXT, MessageType.THREAD, MessageType.REACTION]),
     target: z.union([z.literal(''), messageId]),
     text: characters(1, MAX_TEXT_CHARACTERS),
-    name: characters(1, MAX_NAME_CHARACTERS),
+    name: displayName(1, MAX_NAME_CHARACTERS),
     addr: lowercaseHex(40),
     ts: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
     via: z.enum([MessageVia.GATEWAY, MessageVia.OWN_STAMP]),
-    /** Whether the sender also keeps a copy of this message in its own feed, named by `ownFeedTopic`. */
-    own: z.boolean(),
     /** The sender's Swarm ID chat binding, present only for a signed-in sender. */
     idb: chatBindingSchema.optional(),
+    /** The sender's Swarm ID wallet link, present only beside a binding, for a sender who shows an ENS name. */
+    wl: walletLinkSchema.optional(),
     sig: lowercaseHex(130),
   })
   .refine((message) => (message.type === MessageType.TEXT) === (message.target === ''), {
     message: 'a text message has no target, a thread reply or a reaction names one',
     path: ['target'],
+  })
+  .refine((message) => message.wl === undefined || message.idb !== undefined, {
+    message: 'a wallet link is carried only beside a chat binding, whose account it names',
+    path: ['wl'],
   });
 
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
@@ -139,9 +249,10 @@ export function signedBytes(message: UnsignedChatMessage): Uint8Array {
       message.addr,
       message.ts,
       message.via,
-      message.own,
       message.idb?.msg ?? '',
       message.idb?.sig ?? '',
+      // Appended only when there is one, so every message without a link keeps the bytes it was signed over.
+      ...(message.wl ? [message.wl.msg, message.wl.wsig, message.wl.asig] : []),
     ]),
   );
 }
@@ -159,8 +270,8 @@ export function encodeChatMessage(message: ChatMessage): Uint8Array {
     addr: message.addr,
     ts: message.ts,
     via: message.via,
-    own: message.own,
     ...(message.idb ? { idb: { msg: message.idb.msg, sig: message.idb.sig } } : {}),
+    ...(message.wl ? { wl: { msg: message.wl.msg, wsig: message.wl.wsig, asig: message.wl.asig } } : {}),
     sig: message.sig,
   };
   return encoder.encode(JSON.stringify(ordered));
@@ -184,10 +295,10 @@ export interface ChatMessageDraft {
   ts?: number;
   /** Who pays for the inbox write. Required, since nothing can tell from here. */
   via: MessageVia;
-  /** Whether the sender also keeps a copy in its own feed, false when left out. */
-  own?: boolean;
   /** The sender's Swarm ID chat binding, given only for a signed-in sender. */
   idb?: ChatBinding;
+  /** The sender's Swarm ID wallet link, given only beside `idb`, for a sender who shows an ENS name. */
+  wl?: WalletLink;
 }
 
 export interface SignedChatMessage {
@@ -219,8 +330,8 @@ export function createChatMessage(
     addr: signer.publicKey().address().toHex(),
     ts: draft.ts ?? Date.now(),
     via: draft.via,
-    own: draft.own ?? false,
     ...(draft.idb ? { idb: draft.idb } : {}),
+    ...(draft.wl ? { wl: draft.wl } : {}),
   };
 
   // A placeholder of the signature's exact length checks the shape and measures the final payload before signing.
@@ -238,6 +349,12 @@ export function createChatMessage(
     const binding = checkChatBinding(unsigned.idb, unsigned.addr, { allowLocalHttp: true });
     if (!binding.ok) {
       throw new ChatMessageError('binding', binding.detail);
+    }
+    if (unsigned.wl) {
+      const link = checkWalletLink(unsigned.wl, binding.identity.account);
+      if (!link.ok) {
+        throw new ChatMessageError('binding', `wallet link: ${link.detail}`);
+      }
     }
   }
 
@@ -267,8 +384,10 @@ export function hasValidSignature(message: ChatMessage): boolean {
 
 /**
  * Verifies a message that arrived as an object: its shape, its signature, and, when it carries a binding, that the
- * binding is the fork's four lines for this `addr` and for `options.origin`, and recovers an account. A message whose
- * binding fails is refused as `binding`, never passed as a guest, and so is a bound message checked with no origin.
+ * binding is the fork's four lines for this `addr` and for `options.origin`, and recovers an account. When it also
+ * carries a wallet link, the link must be the fork's five lines for that account, signed by its wallet and by the
+ * account, and the identity then names the wallet. A message whose binding or link fails is refused as `binding`,
+ * never passed as a guest, and so is a bound message checked with no origin.
  * Never throws, and touches no DOM and no Node API, so a page runs it in a Web Worker as the server runs it.
  */
 export function verifyChatMessage(value: unknown, options: VerifyOptions): ChatMessageCheck {
@@ -291,7 +410,16 @@ export function verifyChatMessage(value: unknown, options: VerifyOptions): ChatM
   if (!binding.ok) {
     return { ok: false, reason: 'binding', detail: binding.detail };
   }
-  return { ok: true, message, identity: binding.identity };
+  if (!message.wl) {
+    return { ok: true, message, identity: binding.identity };
+  }
+  // Refused as the binding rather than under a reason of its own, since the link is part of who the binding says sent
+  // the message, and a server counting refusals by reason keeps its list.
+  const link = checkWalletLink(message.wl, binding.identity.account);
+  if (!link.ok) {
+    return { ok: false, reason: 'binding', detail: `wallet link: ${link.detail}` };
+  }
+  return { ok: true, message, identity: { ...binding.identity, wallet: link.wallet } };
 }
 
 /**

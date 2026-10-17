@@ -7,6 +7,7 @@ import {
   type ChatMessage,
   type ChatMessageDraft,
   type MessageVia,
+  type WalletLink,
 } from './message/index.js';
 
 /** Writes one payload to the chat's GSOC address. Rejects when the write did not reach the node. */
@@ -59,7 +60,7 @@ interface ReactionTaps {
   timer: ReturnType<typeof setTimeout>;
 }
 
-export type SendDraft = Omit<ChatMessageDraft, 'name' | 'ts' | 'id' | 'via' | 'own' | 'idb'>;
+export type SendDraft = Omit<ChatMessageDraft, 'name' | 'ts' | 'id' | 'via' | 'idb' | 'wl'>;
 
 /** What every message this sender signs says about who sent it and how. */
 export interface SenderProfile {
@@ -67,11 +68,8 @@ export interface SenderProfile {
   via: MessageVia;
   /** The sender's Swarm ID chat binding, for a signed-in sender only. */
   idb?: ChatBinding;
-  /**
-   * Whether the sender keeps a copy of every message in its own feed, false when left out. The library writes no copy:
-   * the `GsocWrite` that keeps one stores it from the payload it is handed, before or after the inbox write.
-   */
-  own?: boolean;
+  /** The sender's Swarm ID wallet link, beside `idb`, for a sender who shows an ENS name. */
+  wl?: WalletLink;
 }
 
 /**

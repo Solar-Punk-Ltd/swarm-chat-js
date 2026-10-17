@@ -15,6 +15,7 @@ import type { ChatParts, ChatSettings } from '../src/chat';
 import { DEFAULT_MISSING_READ_SPACING_MS } from '../src/pacer';
 
 import { AT_SITE, BOUND_SITE, CHAT_BINDING, chatKeyFor, FORK_ACCOUNT } from './bindingVectors';
+import { LINK_WALLET, WALLET_LINK } from './walletLinkVectors';
 import { bytes, entryAt, FakeGateway, TEST_KEY, TOPIC } from './fakeGateway';
 
 const POLL_MS = 500;
@@ -56,7 +57,7 @@ class FakeServer {
     }
     this.published.add(check.message.id);
     const seq = this.gateway.slots.size;
-    this.gateway.writeRaw(seq, bytes({ v: 8, seq, at: 1759150000000 + seq, msg: check.message, history: null }));
+    this.gateway.writeRaw(seq, bytes({ v: 9, seq, at: 1759150000000 + seq, msg: check.message, history: null }));
   };
 }
 
@@ -178,9 +179,9 @@ describe('start', () => {
   it('never shows one message twice, even when two history files overlap', async () => {
     const gateway = new FakeGateway();
     const row = (seq: number) => ({ seq, at: seq, msg: entryAt(seq).msg });
-    const older = { v: 8, topic: TOPIC, fromSeq: 0, toSeq: 1, messages: [row(0), row(1)], prev: null };
+    const older = { v: 9, topic: TOPIC, fromSeq: 0, toSeq: 1, messages: [row(0), row(1)], prev: null };
     const newest = {
-      v: 8,
+      v: 9,
       topic: TOPIC,
       fromSeq: 1,
       toSeq: 2,
@@ -277,7 +278,7 @@ describe('sendMessage', () => {
     expect(check.ok && check.message).toMatchObject({ type: 'thread', target: 'a1'.repeat(16) });
   });
 
-  it('says in every message who paid, as its settings name, and keeps no own copy', async () => {
+  it('says in every message who paid, as its settings name, and signs no own field', async () => {
     const { chat, server } = harness(new FakeGateway(), {
       ...SETTINGS,
       infra: { ...SETTINGS.infra, via: MessageVia.OWN_STAMP },
@@ -285,36 +286,9 @@ describe('sendMessage', () => {
     await chat.start();
     await chat.sendMessage('hello', MessageType.TEXT);
     const check = parseChatMessage(server.writes[0]!, AT_SITE);
-    expect(check.ok && check.message).toMatchObject({ via: MessageVia.OWN_STAMP, own: false });
+    expect(check.ok && check.message).toMatchObject({ via: MessageVia.OWN_STAMP });
+    expect(check.ok && 'own' in check.message).toBe(false);
     expect(check.ok && 'idb' in check.message).toBe(false);
-  });
-
-  it('signs own true when its settings keep an own copy, so a write can store the copy first from the same bytes', async () => {
-    const gateway = new FakeGateway();
-    const server = new FakeServer(gateway);
-    const copies: Uint8Array[] = [];
-    const { chat, events, received } = harness(
-      gateway,
-      { ...SETTINGS, infra: { ...SETTINGS.infra, via: MessageVia.OWN_STAMP, own: true } },
-      {
-        write: async (payload) => {
-          copies.push(payload);
-          await server.write(payload);
-        },
-      },
-    );
-    await chat.start();
-    const pending = await chat.sendMessage('hello', MessageType.TEXT);
-    await vi.advanceTimersByTimeAsync(DEFAULT_MISSING_READ_SPACING_MS + POLL_MS);
-
-    expect(copies).toEqual(server.writes);
-    const check = parseChatMessage(server.writes[0]!, AT_SITE);
-    expect(check.ok && check.message).toMatchObject({ id: pending!.id, via: MessageVia.OWN_STAMP, own: true });
-    const [initiated] = events[EVENTS.MESSAGE_REQUEST_INITIATED] as MessageData[];
-    const [published] = received();
-    for (const data of [pending!, initiated!, published!]) {
-      expect(data.signedMessage).toEqual(check.ok && check.message);
-    }
   });
 
   it("carries a signed-in viewer's binding, which the check reads as the account", async () => {
@@ -330,6 +304,32 @@ describe('sendMessage', () => {
       message: { idb: CHAT_BINDING },
       identity: { account: FORK_ACCOUNT, site: BOUND_SITE },
     });
+  });
+
+  it("carries a signed-in viewer's wallet link beside the binding, which the check reads as the wallet", async () => {
+    const privateKey = await chatKeyFor(BOUND_SITE);
+    const { chat, server } = harness(new FakeGateway(), {
+      ...SETTINGS,
+      user: { ...SETTINGS.user, privateKey, binding: CHAT_BINDING, walletLink: WALLET_LINK },
+    });
+    await chat.start();
+    await chat.sendMessage('hello', MessageType.TEXT);
+    expect(parseChatMessage(server.writes[0]!, { origin: BOUND_SITE })).toMatchObject({
+      ok: true,
+      message: { idb: CHAT_BINDING, wl: WALLET_LINK },
+      identity: { account: FORK_ACCOUNT, wallet: LINK_WALLET },
+    });
+  });
+
+  it('refuses, sending nothing, a wallet link without a binding', async () => {
+    const privateKey = await chatKeyFor(BOUND_SITE);
+    const { chat, server } = harness(new FakeGateway(), {
+      ...SETTINGS,
+      user: { ...SETTINGS.user, privateKey, walletLink: WALLET_LINK },
+    });
+    await chat.start();
+    await expect(chat.sendMessage('hello', MessageType.TEXT)).rejects.toMatchObject({ reason: 'shape' });
+    expect(server.writes).toHaveLength(0);
   });
 
   it('hands a page the signed message in every MessageData, pending and published, for it to verify', async () => {
@@ -439,7 +439,7 @@ describe('fetchPreviousMessages', () => {
   it('shows the file before the oldest shown, and says when there is no more', async () => {
     const gateway = new FakeGateway();
     const older = {
-      v: 8,
+      v: 9,
       topic: TOPIC,
       fromSeq: 0,
       toSeq: 0,
@@ -447,7 +447,7 @@ describe('fetchPreviousMessages', () => {
       prev: null,
     };
     const newest = {
-      v: 8,
+      v: 9,
       topic: TOPIC,
       fromSeq: 1,
       toSeq: 1,

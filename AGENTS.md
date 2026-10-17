@@ -19,21 +19,23 @@ scripts CI runs, by those names. `pnpm pack` builds first.
 
 ## Layout
 
-| File                     | What it holds                                                                                                         |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| `src/message/message.ts` | The v8 message: its schema, its signed bytes, signing, `verifyChatMessage` and the wire check. The server imports it. |
-| `src/message/binding.ts` | The Swarm ID chat binding: its four lines, the clean site origin, and EIP-191 recovery of the account.                |
-| `src/message/ownFeed.ts` | `ownFeedTopic`, the topic of the feed where a sender keeps copies of its messages.                                    |
-| `src/message/entry.ts`   | The feed entry and the history file the server writes, shape-checked for the reader.                                  |
-| `src/sender.ts`          | One inbox write per message, resends of the identical bytes, reaction merging.                                        |
-| `src/message/note.ts`    | The slot note: slot arithmetic, identifier and address, payload. The server imports it.                               |
-| `src/notes.ts`           | Reading notes: one slot, a look back over several, and the clock correction.                                          |
-| `src/follower.ts`        | Follows the feed by explicit slots, led by notes: the walk, the retry list, backoff, status, polling fallback.        |
-| `src/pacer.ts`           | The spacing of reads of an address that came back missing, and why Bee needs it.                                      |
-| `src/history.ts`         | Opening from the newest history file, and loading older files by click.                                               |
-| `src/swarm.ts`           | Everything that touches bee-js: slot, head and file reads, and the inbox write.                                       |
-| `src/chat.ts`            | `SwarmChat`, which wires the parts together.                                                                          |
-| `src/events.ts`          | `EVENTS`, `MessageData` and the emitter.                                                                              |
+| File                          | What it holds                                                                                                         |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `src/message/message.ts`      | The v9 message: its schema, its signed bytes, signing, `verifyChatMessage` and the wire check. The server imports it. |
+| `src/message/binding.ts`      | The Swarm ID chat binding: its four lines and the clean site origin.                                                  |
+| `src/message/walletLink.ts`   | The Swarm ID wallet link: its five lines, checked for the binding's account, with both signatures recovered.          |
+| `src/message/personalSign.ts` | EIP-191 personal_sign recovery and the date spelling the binding and the wallet link share.                           |
+| `src/message/ownFeed.ts`      | `ownFeedTopic`, the topic of the feed where a sender keeps copies of its messages.                                    |
+| `src/message/entry.ts`        | The feed entry and the history file the server writes, shape-checked for the reader.                                  |
+| `src/sender.ts`               | One inbox write per message, resends of the identical bytes, reaction merging.                                        |
+| `src/message/note.ts`         | The slot note: slot arithmetic, identifier and address, payload. The server imports it.                               |
+| `src/notes.ts`                | Reading notes: one slot, a look back over several, and the clock correction.                                          |
+| `src/follower.ts`             | Follows the feed by explicit slots, led by notes: the walk, the retry list, backoff, status, polling fallback.        |
+| `src/pacer.ts`                | The spacing of reads of an address that came back missing, and why Bee needs it.                                      |
+| `src/history.ts`              | Opening from the newest history file, and loading older files by click.                                               |
+| `src/swarm.ts`                | Everything that touches bee-js: slot, head and file reads, and the inbox write.                                       |
+| `src/chat.ts`                 | `SwarmChat`, which wires the parts together.                                                                          |
+| `src/events.ts`               | `EVENTS`, `MessageData` and the emitter.                                                                              |
 
 The package has two entries: the root, and `./message`, which the server uses and which loads none of the reader.
 
@@ -50,8 +52,13 @@ The package has two entries: the root, and `./message`, which the server uses an
   holds bindings the fork made on its `feat/site-chat-key` branch. Their chat address is the fork's per-site chat key,
   and `chatKeyFor` there derives it the way the fork's `deriveChatKey` does, so when the fork changes that derivation
   the vectors are made again from its built code. That signature is EIP-191 `personal_sign` over the text itself, which bee-js's
-  `Signature` cannot recover, so `binding.ts` recovers through `@ethersphere/core-sdk/crypto` and passes v as a bigint.
+  `Signature` cannot recover, so `personalSign.ts` recovers through `@ethersphere/core-sdk/crypto` and passes v as a bigint.
   A binding that fails is refused as `binding`, never shown as a guest.
+- **The wallet link is the fork's too, and travels only beside a binding.** Its text and both signatures follow
+  `verifyWalletLink` in solarpunk-id's `lib/src/utils/wallet-link.ts`, described in its `docs/Wallet-Link.md`, and
+  `test/walletLinkVectors.ts` holds links the fork made. Its account must be the binding's, and a link that fails is
+  refused as `binding`. Its fields are appended to the signed bytes only when it is there, so the earlier vectors keep
+  their bytes. The library never looks an ENS name up: it hands the checked wallet to the reader.
 - **`verifyChatMessage` runs in a Web Worker.** It never throws and uses no DOM and no Node API, since a page verifies
   identities off its main thread. It gets the message from `MessageData.signedMessage`, so every event that carries a
   `MessageData` carries the message exactly as signed. A value `signedMessage` already carries gets no field of its own

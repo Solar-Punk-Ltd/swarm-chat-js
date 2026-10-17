@@ -6,8 +6,8 @@ that feed. The browser talks only to a Bee node or gateway, never to a web serve
 
 The library needs its server,
 [Solar-Punk-Ltd/swarm-chat-aggregator-js](https://github.com/Solar-Punk-Ltd/swarm-chat-aggregator-js), which listens on
-the inbox and writes the feed. Version 8 of the library reads and writes the v8 message format only, and a v7 message
-fails its shape check.
+the inbox and writes the feed. Version 9 of the library reads and writes the v9 message format only, and a message of any
+earlier version fails its shape check.
 
 ## How it works
 
@@ -74,26 +74,26 @@ await chat.stop();
 
 ## Settings
 
-| Setting                  | Meaning                                                                                                                                               |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `user.privateKey`        | Signs every message. A viewer that only reads may pass any key.                                                                                       |
-| `user.nickname`          | The name on every message, 1 to 20 characters. Nothing can be sent without one.                                                                       |
-| `user.binding`           | Optional. A signed-in viewer's Swarm ID chat binding, `{ msg, sig }`, for the chat address of `user.privateKey`. Every message then carries it.       |
-| `infra.beeUrl`           | The Bee node or gateway the chat is read through, and written through when `infra.writeUrl` is not set.                                               |
-| `infra.writeUrl`         | Optional. The Bee node or gateway the inbox writes go through, such as a write gateway that stamps them, when they go somewhere other than the reads. |
-| `infra.stamp`            | The batch the inbox writes are stamped with. Left out for a gateway that stamps writes itself.                                                        |
-| `infra.via`              | Required. Who pays for the inbox writes, `MessageVia.GATEWAY` or `MessageVia.OWN_STAMP`, as every message says in `via`.                              |
-| `infra.own`              | Optional, `false` by default. Whether the sender keeps a copy of every message in its own feed, as every message says in `own`. See the own feed.     |
-| `infra.gsocTopic`        | The inbox's identifier string, the same for every chat.                                                                                               |
-| `infra.gsocResourceId`   | The mined key every sender signs inbox writes with. The server's operator mines it.                                                                   |
-| `infra.chatTopic`        | The chat's topic, which every message carries and the feed is named by.                                                                               |
-| `infra.chatAddress`      | The server's feed owner address.                                                                                                                      |
-| `infra.pollingInterval`  | The shortest wait between two polls, and the first wait after the gateway failed, 1,000 ms by default.                                                |
-| `infra.socReadTimeout`   | One feed slot read, 5,000 ms by default.                                                                                                              |
-| `infra.feedReadTimeout`  | The head lookup and a history file download, 15,000 ms by default. A head lookup that runs out of time reads the chat from slot 0.                    |
-| `infra.gsocWriteTimeout` | One inbox write, 10,000 ms by default.                                                                                                                |
-| `infra.noteSlotMs`       | The server's `NOTE_SLOT_MS`, 2,000 ms by default. It is part of every note's address, so a different value finds no notes and polls instead.          |
-| `infra.noteHeartbeatMs`  | The server's `NOTE_HEARTBEAT_MS`, 30,000 ms by default, which sets how far back an opening looks for a note.                                          |
+| Setting                  | Meaning                                                                                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `user.privateKey`        | Signs every message. A viewer that only reads may pass any key.                                                                                         |
+| `user.nickname`          | The name on every message, 1 to 20 characters, not ending in `.eth` as a reader sees it. Nothing can be sent without one.                               |
+| `user.binding`           | Optional. A signed-in viewer's Swarm ID chat binding, `{ msg, sig }`, for the chat address of `user.privateKey`. Every message then carries it.         |
+| `user.walletLink`        | Optional, only with `user.binding`. The viewer's Swarm ID wallet link, `{ msg, wsig, asig }`, for the binding's account. Every message then carries it. |
+| `infra.beeUrl`           | The Bee node or gateway the chat is read through, and written through when `infra.writeUrl` is not set.                                                 |
+| `infra.writeUrl`         | Optional. The Bee node or gateway the inbox writes go through, such as a write gateway that stamps them, when they go somewhere other than the reads.   |
+| `infra.stamp`            | The batch the inbox writes are stamped with. Left out for a gateway that stamps writes itself.                                                          |
+| `infra.via`              | Required. Who pays for the inbox writes, `MessageVia.GATEWAY` or `MessageVia.OWN_STAMP`, as every message says in `via`.                                |
+| `infra.gsocTopic`        | The inbox's identifier string, the same for every chat.                                                                                                 |
+| `infra.gsocResourceId`   | The mined key every sender signs inbox writes with. The server's operator mines it.                                                                     |
+| `infra.chatTopic`        | The chat's topic, which every message carries and the feed is named by.                                                                                 |
+| `infra.chatAddress`      | The server's feed owner address.                                                                                                                        |
+| `infra.pollingInterval`  | The shortest wait between two polls, and the first wait after the gateway failed, 1,000 ms by default.                                                  |
+| `infra.socReadTimeout`   | One feed slot read, 5,000 ms by default.                                                                                                                |
+| `infra.feedReadTimeout`  | The head lookup and a history file download, 15,000 ms by default. A head lookup that runs out of time reads the chat from slot 0.                      |
+| `infra.gsocWriteTimeout` | One inbox write, 10,000 ms by default.                                                                                                                  |
+| `infra.noteSlotMs`       | The server's `NOTE_SLOT_MS`, 2,000 ms by default. It is part of every note's address, so a different value finds no notes and polls instead.            |
+| `infra.noteHeartbeatMs`  | The server's `NOTE_HEARTBEAT_MS`, 30,000 ms by default, which sets how far back an opening looks for a note.                                            |
 
 ## Methods
 
@@ -134,7 +134,7 @@ follow `MESSAGE_REQUEST_ERROR` for the same `id`, and a viewer settles on the re
 A `MessageData` has `id`, `type`, `message` (the text or emoji), `username`, `address`, `timestamp` (the server's
 receive time, or the sender's clock while pending), `targetMessageId` for a reply or reaction, `index` (the feed index,
 -1 while pending) and `signedMessage`, the message exactly as its sender signed it. Everything else the message says,
-its topic, its signature, the sender's clock, `via`, `own` and the binding, is read from `signedMessage`, and a page
+its topic, its signature, the sender's clock, `via` and the binding, is read from `signedMessage`, and a page
 that shows who sent it hands `signedMessage` to `verifyChatMessage`. See [Verifying](#verifying).
 
 ## The message, for servers and tools
@@ -152,27 +152,28 @@ else count(check.reason);
 
 A message is a JSON object of at most 3,072 bytes of UTF-8, its fields in this order:
 
-| Field    | Meaning                                                                                                      |
-| -------- | ------------------------------------------------------------------------------------------------------------ |
-| `v`      | `8`                                                                                                          |
-| `topic`  | The chat's topic, 1 to 128 characters                                                                        |
-| `id`     | A random id, 32 lowercase hex characters                                                                     |
-| `type`   | `text`, `thread` (a reply, `target` is the parent) or `reaction` (`target` is the message, `text` the emoji) |
-| `target` | The id it refers to, or `""` for a text                                                                      |
-| `text`   | 1 to 500 characters                                                                                          |
-| `name`   | 1 to 20 characters                                                                                           |
-| `addr`   | The sender's chat address, 40 lowercase hex characters without `0x`                                          |
-| `ts`     | The sender's clock in milliseconds                                                                           |
-| `via`    | Who paid for the inbox write: `gateway` (the gateway's stamp) or `own-stamp` (the sender's own)              |
-| `own`    | `true` when the sender also keeps a copy of the message in its own feed                                      |
-| `idb`    | Only for a signed-in sender: its Swarm ID chat binding, `{ msg, sig }`                                       |
-| `sig`    | 130 lowercase hex characters of r, s and v, with v 27 or 28 and s in the lower half                          |
+| Field    | Meaning                                                                                                                                                              |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `v`      | `9`                                                                                                                                                                  |
+| `topic`  | The chat's topic, 1 to 128 characters                                                                                                                                |
+| `id`     | A random id, 32 lowercase hex characters                                                                                                                             |
+| `type`   | `text`, `thread` (a reply, `target` is the parent) or `reaction` (`target` is the message, `text` the emoji)                                                         |
+| `target` | The id it refers to, or `""` for a text                                                                                                                              |
+| `text`   | 1 to 500 characters                                                                                                                                                  |
+| `name`   | 1 to 20 characters, none a Unicode format or control character (`\p{Cf}`, `\p{Cc}`) but U+200C and U+200D, no blank letter, not ending in `.eth` as a reader sees it |
+| `addr`   | The sender's chat address, 40 lowercase hex characters without `0x`                                                                                                  |
+| `ts`     | The sender's clock in milliseconds                                                                                                                                   |
+| `via`    | Who paid for the inbox write: `gateway` (the gateway's stamp) or `own-stamp` (the sender's own)                                                                      |
+| `idb`    | Only for a signed-in sender: its Swarm ID chat binding, `{ msg, sig }`                                                                                               |
+| `wl`     | Only beside `idb`, for a sender who shows an ENS name: its Swarm ID wallet link, `{ msg, wsig, asig }`                                                               |
+| `sig`    | 130 lowercase hex characters of r, s and v, with v 27 or 28 and s in the lower half                                                                                  |
 
 Characters are counted as Unicode code points, so an emoji counts once, and `countCharacters` counts the same way for
 a composer. The signed bytes are the UTF-8 of
-`JSON.stringify([8, topic, id, type, target, text, name, addr, ts, via, own, idb?.msg ?? '', idb?.sig ?? ''])`, signed
-with bee-js's `PrivateKey.sign` and checked with `Signature.recoverPublicKey`, both over the raw bytes. So `via`, `own`
-and the binding cannot be changed or taken off without breaking the signature. Every signature has a second valid
+`JSON.stringify([9, topic, id, type, target, text, name, addr, ts, via, idb?.msg ?? '', idb?.sig ?? ''])`, with
+`wl.msg`, `wl.wsig` and `wl.asig` appended to the array when the message carries a wallet link, signed with bee-js's
+`PrivateKey.sign` and checked with `Signature.recoverPublicKey`, both over the raw bytes. So `via`, the binding
+and the wallet link cannot be changed, added or taken off without breaking the signature. Every signature has a second valid
 spelling, s replaced by n - s with v flipped, and bee-js reads any v but 27 as 28, so the check refuses all but the
 low s spelling with v 27 or 28, the one bee-js signs. One message has one valid signature.
 
@@ -198,6 +199,33 @@ only with `allowLocalHttp`), the chat address is `0x` and 40 lowercase hex chara
 milliseconds. `sig` is EIP-191 `personal_sign` over `msg`, written as the fork writes it: `0x` and 130 lowercase hex
 characters of r, s and v, v 27 or 28 and s in the lower half. Recovering it gives the account's address.
 
+### The Swarm ID wallet link
+
+Swarm ID never tells a site the wallet an account is secured with. A person who wants readers to see their ENS name
+turns on "Show my ENS name on sites" there, and Swarm ID then gives the site a wallet link: the statement, signed by the
+wallet and countersigned by the account's own key, that the two belong to the same person. Its canonical description
+is `docs/Wallet-Link.md` in the Swarm ID fork, solarpunk-id, and this library reads it exactly as the fork's
+`verifyWalletLink` does, without importing the fork. Swarm ID hands it over as
+`{ message, walletSignature, accountSignature }`, and a message carries it as `{ msg, wsig, asig }`. `msg` is five lines
+joined by `\n`:
+
+```text
+Swarm ID wallet link v1
+I link this wallet to the Swarm ID account below, so sites may show my ENS name beside its messages.
+Account: 0x<the binding's account>
+Wallet: 0x<the wallet>
+Date: 2026-10-15T12:00:00.000Z
+```
+
+The second line is read exactly. It is there because a wallet shows the person only the text it signs, so the sentence
+tells them what the signature does. Both addresses are `0x` and 40 lowercase hex characters, and the date is ISO 8601
+UTC with milliseconds. `wsig` and
+`asig` are EIP-191 `personal_sign` over `msg` by the wallet and by the account, each `0x` and 130 lowercase hex
+characters of r, s and v, v 27 or 28 and s in the lower half.
+
+A message carries a link only beside its binding, and the link counts toward the 3,072 byte cap. The largest message
+with a binding and a link is 2,376 bytes.
+
 ### Verifying
 
 `verifyChatMessage(value, { origin, allowLocalHttp? })` checks a message's shape and its signature, and then, when it
@@ -205,6 +233,13 @@ carries a binding, that the binding's text is those four lines, its chat address
 recovers an account, and its site is `origin`. It returns `{ ok: true, message, identity }`, `identity` being
 `{ account, site, date }` for a signed-in sender and `null` for a guest. A message whose binding fails is refused with
 the reason `binding` and is never shown as a guest.
+
+When the message also carries a wallet link, the link's text must be those five lines, its account the binding's
+account, its wallet signature must recover its wallet and its account signature its account. `identity` then also has
+`wallet`, the checked wallet address. A link that fails refuses the message with the reason `binding` too, its detail
+starting `wallet link:`. The check looks nothing up. A page that shows an ENS name takes `identity.wallet` to its own
+lookup, such as the fork's `resolveVerifiedEnsName`, which requires the wallet's reverse record and the name's forward
+record to agree, over an Ethereum endpoint the page names.
 
 `origin` is required, the bare origin of the site whose chat this is, such as `https://example.com`. A binding signed
 for one site therefore never passes in another site's chat because a caller left the origin out. A JavaScript caller
@@ -224,29 +259,31 @@ entry's `msg` or, while pending, the message as it was signed. It never throws, 
 
 ### The own feed
 
-A sender that also keeps a copy of each message it sends says so with `own: true`. The copies live in a feed owned by
-the sender's chat address `addr`, under the topic `ownFeedTopic(chatTopic)`, which is `swarm-chat-own-feed-v1:` and the
-chat's topic, turned into a feed topic with `Topic.fromString` as the chat's own feed is.
+A sender may also keep a copy of each message it sends in a feed of its own, so anyone can compare that feed with the
+chat. The copies live in a feed owned by the sender's chat address `addr`, under the topic `ownFeedTopic(chatTopic)`,
+which is `swarm-chat-own-feed-v1:` and the chat's topic, turned into a feed topic with `Topic.fromString` as the chat's
+own feed is. A copy is the signed payload itself. The message says nothing about a copy, so whether one exists is read
+from that feed.
 
-`SwarmChat` signs `own: true` when `infra.own` is `true`, once per message, so the pending message a page shows and every
-resend carry it too. The library does not write the copy itself. A page that keeps copies passes its own inbox write,
-a `GsocWrite`, as `new SwarmChat(settings, { write })`. It is handed the signed payload, the same bytes on every resend.
-A write that stores the copy from those bytes before it writes them to the inbox never sends a message that claims a
-copy it does not have.
+The library does not write the copy. A page that keeps copies passes its own inbox write, a `GsocWrite`, as
+`new SwarmChat(settings, { write })`. It is handed the signed payload, the same bytes on every resend, and writes the
+copy beside the inbox write.
 
-| Export                                                                       | Use                                                                                                          |
-| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `parseChatMessage(bytes, { origin })`                                        | The server's check of a raw payload: byte cap, UTF-8, JSON, then `verifyChatMessage`. Never throws.          |
-| `verifyChatMessage(value, { origin })`                                       | Shape, signature and binding of a parsed object, with the sender's identity. Never throws.                   |
-| `createChatMessage(key, draft)`                                              | Builds and signs, throwing a `ChatMessageError` for anything the check would refuse. `via` is required.      |
-| `MessageType`, `MessageVia`                                                  | The values of `type` and `via`.                                                                              |
-| `checkChatBinding(binding, addr, options?)`, `chatBindingSchema`             | The binding check on its own and its shape. Its `origin` is optional, for a sender checking its own binding. |
-| `ownFeedTopic(chatTopic)`, `OWN_FEED_TOPIC_PREFIX`                           | The topic of a sender's own feed of copies.                                                                  |
-| `chatMessageSchema`, `hasValidSignature`, `signedBytes`, `encodeChatMessage` | The parts.                                                                                                   |
-| `feedEntrySchema`, `parseFeedEntry`                                          | The feed entry, `{v, seq, at, msg, history}`.                                                                |
-| `historyFileSchema`, `parseHistoryFile`                                      | The history file, `{v, topic, fromSeq, toSeq, messages, prev}`.                                              |
+| Export                                                                       | Use                                                                                                                                                                         |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `parseChatMessage(bytes, { origin })`                                        | The server's check of a raw payload: byte cap, UTF-8, JSON, then `verifyChatMessage`. Never throws.                                                                         |
+| `verifyChatMessage(value, { origin })`                                       | Shape, signature and binding of a parsed object, with the sender's identity. Never throws.                                                                                  |
+| `displayNameProblem(name)`                                                   | `null` for a name a message may carry, else `'length'` (not 1 to 20 characters), `'invisible'` (a format or control character) or `'ens-like'` (reads as ending in `.eth`). |
+| `createChatMessage(key, draft)`                                              | Builds and signs, throwing a `ChatMessageError` for anything the check would refuse. `via` is required.                                                                     |
+| `MessageType`, `MessageVia`                                                  | The values of `type` and `via`.                                                                                                                                             |
+| `checkChatBinding(binding, addr, options?)`, `chatBindingSchema`             | The binding check on its own and its shape. Its `origin` is optional, for a sender checking its own binding.                                                                |
+| `checkWalletLink(link, account)`, `walletLinkSchema`                         | The wallet link check on its own, for the binding's account, and its shape.                                                                                                 |
+| `ownFeedTopic(chatTopic)`, `OWN_FEED_TOPIC_PREFIX`                           | The topic of a sender's own feed of copies.                                                                                                                                 |
+| `chatMessageSchema`, `hasValidSignature`, `signedBytes`, `encodeChatMessage` | The parts.                                                                                                                                                                  |
+| `feedEntrySchema`, `parseFeedEntry`                                          | The feed entry, `{v, seq, at, msg, history}`.                                                                                                                               |
+| `historyFileSchema`, `parseHistoryFile`                                      | The history file, `{v, topic, fromSeq, toSeq, messages, prev}`.                                                                                                             |
 
-The feed entry and the history file carry `v` 8 like the message. A feed entry, at most 4,096 bytes, holds a message at
+The feed entry and the history file carry `v` 9 like the message. A feed entry, at most 4,096 bytes, holds a message at
 the byte cap inside its largest wrapper.
 
 ## Slot notes, for servers and tools
@@ -274,6 +311,39 @@ was stamped before the reader received it, so the reader runs at most `received 
 notes are found it trusts its own clock, moving reads earlier only when that bound proves the clock runs behind. When
 no note is found for longer than a heartbeat, it waits out the whole bound from then on, which is never early. A
 clock that runs behind sees every stamp as old as it expects, so its messages arrive as late as it runs behind.
+
+## Changes in 9.0
+
+- A message may carry the sender's Swarm ID wallet link, `wl`, beside its binding, signed with the rest. A verified
+  link puts the wallet on `identity.wallet`, and a link that fails refuses the message as `binding`.
+- The message is version 9, its `v` and the first element of its signed bytes both `9`, and so is every feed entry and
+  history file. A message, entry or history file of version 8 fails its shape check, whether or not it carries `own`,
+  so a reader and a server on 9.0 never read one that 8.x wrote, and the break shows as a version rather than as a
+  missing field.
+- The message no longer carries `own`. It is gone from the shape, the signed bytes and the payload, and `infra.own` and
+  the draft's `own` are gone with it. Whether a sender keeps a copy is read from its own feed. A message that carries
+  `own`, which is every message 8.0 and 8.1 signed, is refused as `shape`, and so is a feed entry or history row that
+  holds one.
+- A name with a Unicode format or control character, such as the right-to-left override U+202E or a zero width space,
+  is refused as `shape`, since it can make one name look like another. The zero width non-joiner U+200C and the zero
+  width joiner U+200D are allowed, because Persian and Indic names and joined emoji such as a family need them. The
+  blank letters and marks are refused with them, since they show as nothing and have no honest use in a name: the
+  braille blank U+2800, the Hangul fillers U+115F, U+1160, U+3164 and U+FFA0, the combining grapheme joiner U+034F and
+  the Khmer inherent vowels U+17B4 and U+17B5. Variation selectors such as U+FE0F stay allowed, since emoji need them.
+- A name that reads as ending in `.eth` is refused as `shape`, since a page shows a verified ENS name where the
+  chosen name would be and a chosen one could pass for it. The check reads a skeleton of the name, the name as a
+  reader sees it: NFKD normalised, so fullwidth and other compatibility forms fold and an accented letter loses its
+  accent, with every character Unicode's confusables data maps to the full stop read as `.` (the Arabic-Indic zeros,
+  the Syriac full stops and the musical augmentation dot among them) and the ideographic full stop U+3002 too, since
+  ENS reads it as one, without the Unicode default ignorable code points, the braille blank or any nonspacing or
+  enclosing mark, with the letters the confusables data maps to `e`, `t` or `h` read as those letters (Cyrillic `е`,
+  `т`, `н` and `Т`, Armenian `հ` and Greek `Ε`, `Τ`, `Η` among them), lower-cased, trimmed, and stripped of trailing
+  spaces and dots. The name is refused when that skeleton ends in `.eth`. So `vitalik.eth`, `Vitalik.ETH`,
+  `vitalik.eth.`, `vitalik.еth` (Cyrillic `е`), `vitalik٠eth` (Arabic-Indic zero), `vitalik.eth` followed by U+FE0F,
+  `J.Eth` and `ＶＩＴＡＬＩＫ．ＥＴＨ` are all refused, while `vitalik eth`, `vitalik-eth`, `vitalik_eth`, `vitalik·eth`,
+  `Kenneth`, `Seth`, `Ethan` and `J.Ethan` pass.
+- `SwarmChat` takes `user.walletLink`, `createChatMessage` takes `wl`, and `checkWalletLink` checks a link on its own.
+- A server on 8.x refuses every version 9 message as `shape`. Update the server before any page sends one.
 
 ## Changes in 8.1
 
