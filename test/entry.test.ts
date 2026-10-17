@@ -29,7 +29,7 @@ function bytes(value: unknown): Uint8Array {
 
 describe('parseFeedEntry', () => {
   const msg = message('hello');
-  const entry = { v: 8, seq: 4, at: 1759140000000, msg, history: { ref: REF, toSeq: 2 } };
+  const entry = { v: 9, seq: 4, at: 1759140000000, msg, history: { ref: REF, toSeq: 2 } };
 
   it('reads an entry at its own index', () => {
     expect(parseFeedEntry(bytes(entry), 4, TOPIC)).toEqual({ ok: true, value: entry });
@@ -79,7 +79,7 @@ describe('parseFeedEntry', () => {
 
 describe('parseHistoryFile', () => {
   const rows = [0, 1, 2].map((seq) => ({ seq, at: 1759140000000 + seq, msg: message(`message ${seq}`) }));
-  const file = { v: 8, topic: TOPIC, fromSeq: 0, toSeq: 2, messages: rows, prev: null };
+  const file = { v: 9, topic: TOPIC, fromSeq: 0, toSeq: 2, messages: rows, prev: null };
   const link = { ref: REF, toSeq: 2 };
 
   it('reads the file its link names', () => {
@@ -125,7 +125,7 @@ describe('parseHistoryFile', () => {
 describe('MAX_ENTRY_BYTES', () => {
   it('holds a message at the byte cap inside the largest entry wrapper', () => {
     const largest = Number.MAX_SAFE_INTEGER;
-    const wrapper = { v: 8, seq: largest, at: largest, msg: {}, history: { ref: 'cd'.repeat(64), toSeq: largest } };
+    const wrapper = { v: 9, seq: largest, at: largest, msg: {}, history: { ref: 'cd'.repeat(64), toSeq: largest } };
     const wrapperBytes = bytes(wrapper).byteLength - bytes({}).byteLength;
     expect(wrapperBytes + MAX_MESSAGE_BYTES).toBeLessThanOrEqual(MAX_ENTRY_BYTES);
   });

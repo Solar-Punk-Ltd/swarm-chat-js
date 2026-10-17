@@ -3,7 +3,14 @@ import { Bee, PrivateKey } from '@ethersphere/bee-js';
 import { ChatEmitter, EVENTS, pendingMessageData, publishedMessageData, type MessageData } from './events.js';
 import { FeedFollower, FeedStatus, type FollowerSettings } from './follower.js';
 import { ChatHistory } from './history.js';
-import { MessageType, type ChatBinding, type FeedEntry, type HistoryRow, type MessageVia } from './message/index.js';
+import {
+  MessageType,
+  type ChatBinding,
+  type FeedEntry,
+  type HistoryRow,
+  type MessageVia,
+  type WalletLink,
+} from './message/index.js';
 import { NoteReader, readsNotes, type NoteSettings } from './notes.js';
 import { DEFAULT_SENDER_SETTINGS, Sender, type GsocWrite, type SenderProfile, type SenderSettings } from './sender.js';
 import { beeChatSource, beeGsocWrite, GATEWAY_STAMPS_ITSELF, type ChatSource, type SwarmTimeouts } from './swarm.js';
@@ -19,6 +26,13 @@ export interface ChatSettings {
      * carries it, and a reader that verifies it shows the account. Left out for a guest.
      */
     binding?: ChatBinding;
+    /**
+     * The Swarm ID wallet link of a signed-in viewer who shows an ENS name, whose account must be `binding`'s. Swarm
+     * ID's `connectionInfo.identity.walletLink` gives it as `{ message, walletSignature, accountSignature }`, passed
+     * here as `{ msg, wsig, asig }`. Every message then carries it, and a reader that verifies it learns the wallet.
+     * Left out otherwise, and refused without a binding.
+     */
+    walletLink?: WalletLink;
   };
   infra: {
     /** The Bee node or gateway the chat is read through, and written through too when `writeUrl` is not set. */
@@ -32,11 +46,6 @@ export interface ChatSettings {
     stamp?: string;
     /** Who pays for the inbox writes, the gateway's stamp or the sender's own, as every message says in `via`. */
     via: MessageVia;
-    /**
-     * Whether the sender keeps a copy of every message in its own feed, as every message says in `own`. False when left
-     * out. The chat writes no copy: a `write` passed in `ChatParts` stores it from the payload it is handed.
-     */
-    own?: boolean;
     /** The inbox's identifier string, one for every chat, as the server listens on it. */
     gsocTopic: string;
     /** The mined key every sender signs inbox writes with, which puts them in the server node's neighbourhood. */
@@ -115,7 +124,7 @@ export class SwarmChat {
       name: user.nickname,
       via: infra.via,
       ...(user.binding ? { idb: user.binding } : {}),
-      ...(infra.own === undefined ? {} : { own: infra.own }),
+      ...(user.walletLink ? { wl: user.walletLink } : {}),
     };
     this.openRetryMs = parts.openRetryMs ?? OPEN_RETRY_MS;
     this.senderSettings = {

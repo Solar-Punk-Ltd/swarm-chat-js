@@ -7,6 +7,7 @@ import {
   MessageType,
   MessageVia,
   countCharacters,
+  displayNameProblem,
   createChatMessage,
   encodeChatMessage,
   hasValidSignature,
@@ -37,7 +38,7 @@ const VECTORS: Vector[] = [
   {
     label: 'a text sent through the gateway',
     message: {
-      v: 8,
+      v: 9,
       topic: 'chat-devcon-main',
       id: 'a1'.repeat(16),
       type: 'text',
@@ -47,16 +48,15 @@ const VECTORS: Vector[] = [
       addr: TEST_ADDR,
       ts: 1759140000000,
       via: 'gateway',
-      own: false,
-      sig: '1daf01a06e3ce691ba8dd6f6e949ae0ee96005288529ec112f4851dd18ed9c3d4832b4e6b0ddcda6eac97154f466eac291d14a6d049f1131edf8588c782858561c',
+      sig: 'f158cb273d7f78787df066e839ce173fed6da4e9619fd1c4a5658869b4db28c32fc74c8bd9b140973b7cc0e1db1ea8ba1eb469fe772b5f68073c1d9d5ae8fbcd1b',
     },
     signed:
-      '[8,"chat-devcon-main","a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","text","","hello from the test vector","tester","19e7e376e7c213b7e7e7e46cc70a5dd086daff2a",1759140000000,"gateway",false,"",""]',
+      '[9,"chat-devcon-main","a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","text","","hello from the test vector","tester","19e7e376e7c213b7e7e7e46cc70a5dd086daff2a",1759140000000,"gateway","",""]',
   },
   {
-    label: 'a thread reply on its own stamp, kept in its own feed',
+    label: 'a thread reply on its own stamp',
     message: {
-      v: 8,
+      v: 9,
       topic: 'chat-devcon-main',
       id: 'b2'.repeat(16),
       type: 'thread',
@@ -66,16 +66,15 @@ const VECTORS: Vector[] = [
       addr: TEST_ADDR,
       ts: 1759140001000,
       via: 'own-stamp',
-      own: true,
-      sig: '2251fedc8ee7361939bc5b1dcec97940f10faf82ef3efd64170049740e709c7c5c70be9bd16a818ff628546e0681f6ed0ed8de77c6d0e76d16ead165dc66f3681b',
+      sig: '93a6355ca9bc167f6786c6bfa1ba79ca1ba885c30e19120a6d591f84d49561235e9f1a0aeef5e3c6c8b6b15ab25592b8915a8a134a3cdc55529ac1d907cee5291b',
     },
     signed:
-      '[8,"chat-devcon-main","b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2","thread","a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","a reply, with ünïcödé","tester","19e7e376e7c213b7e7e7e46cc70a5dd086daff2a",1759140001000,"own-stamp",true,"",""]',
+      '[9,"chat-devcon-main","b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2","thread","a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","a reply, with ünïcödé","tester","19e7e376e7c213b7e7e7e46cc70a5dd086daff2a",1759140001000,"own-stamp","",""]',
   },
   {
     label: 'a reaction',
     message: {
-      v: 8,
+      v: 9,
       topic: 'chat-devcon-main',
       id: 'c3'.repeat(16),
       type: 'reaction',
@@ -85,16 +84,15 @@ const VECTORS: Vector[] = [
       addr: TEST_ADDR,
       ts: 1759140002000,
       via: 'gateway',
-      own: false,
-      sig: '3fb5837f0bde6860b090f3afac5b5600437e75ef61c3deff1211fa3aaa4d9ea959dcac831ea9ff8ad76d69b310a71338cf17886ad5a786508851b81c49c514e71c',
+      sig: '6b827f90a64d8b4bb90d566683cbdec376669a6c69da9703a5500c20709f409c71469d22d5e04c72fc17afb5758da5ae89b94c00de39959847b443fbe34164f31b',
     },
     signed:
-      '[8,"chat-devcon-main","c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3","reaction","a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","👍","tester","19e7e376e7c213b7e7e7e46cc70a5dd086daff2a",1759140002000,"gateway",false,"",""]',
+      '[9,"chat-devcon-main","c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3","reaction","a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","👍","tester","19e7e376e7c213b7e7e7e46cc70a5dd086daff2a",1759140002000,"gateway","",""]',
   },
   {
     label: 'a text by a signed-in sender',
     message: {
-      v: 8,
+      v: 9,
       topic: 'chat-devcon-main',
       id: 'd4'.repeat(16),
       type: 'text',
@@ -104,12 +102,11 @@ const VECTORS: Vector[] = [
       addr: BOUND_CHAT_ADDR,
       ts: 1759140003000,
       via: 'own-stamp',
-      own: true,
       idb: CHAT_BINDING,
-      sig: '93e497f15181b14486f1ebf0396baef7fa562c9bbc2d8a5d45cb212838a406c953dceb64206519b8feb4d8c2ec56bd90039e92eba2730553ff4eeb8b4138fa911c',
+      sig: 'a75128a07db639a16fe5ec8defb4176f0d86f893c190c110318a22c1e5ad91be26bb8af2e0b4eb9f5805d921d92c28725d49f6027618c7814cf3a5434568068e1c',
     },
     signed:
-      '[8,"chat-devcon-main","d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4","text","","signed in with Swarm ID","tester","c6b7cb635534a22fbc368643cc40355545f666dc",1759140003000,"own-stamp",true,"Swarm ID chat binding v1\\nSite: https://example.com\\nChat address: 0xc6b7cb635534a22fbc368643cc40355545f666dc\\nDate: 2026-10-14T12:00:00.000Z","0xee2151a66fcdb0852b1bff2a03578aff9556f893e4c6d2aef2d484b4ada153804a7b1c97f40eac18fbd5f75674c918c48a761800e8122b7eae7af45393d9a24d1b"]',
+      '[9,"chat-devcon-main","d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4","text","","signed in with Swarm ID","tester","c6b7cb635534a22fbc368643cc40355545f666dc",1759140003000,"own-stamp","Swarm ID chat binding v1\\nSite: https://example.com\\nChat address: 0xc6b7cb635534a22fbc368643cc40355545f666dc\\nDate: 2026-10-14T12:00:00.000Z","0xee2151a66fcdb0852b1bff2a03578aff9556f893e4c6d2aef2d484b4ada153804a7b1c97f40eac18fbd5f75674c918c48a761800e8122b7eae7af45393d9a24d1b"]',
   },
 ];
 
@@ -155,7 +152,6 @@ describe.each(VECTORS)('the vector of $label', ({ message, signed }) => {
       id: message.id,
       ts: message.ts,
       via: message.via,
-      own: message.own,
       ...(message.idb ? { idb: message.idb } : {}),
     });
     expect(made).toEqual(message);
@@ -164,7 +160,7 @@ describe.each(VECTORS)('the vector of $label', ({ message, signed }) => {
 
   it('emits its fields in the contract order', () => {
     const keys = Object.keys(JSON.parse(decoder.decode(encodeChatMessage(message))) as object);
-    const order = ['v', 'topic', 'id', 'type', 'target', 'text', 'name', 'addr', 'ts', 'via', 'own', 'idb', 'sig'];
+    const order = ['v', 'topic', 'id', 'type', 'target', 'text', 'name', 'addr', 'ts', 'via', 'idb', 'sig'];
     expect(keys).toEqual(order.filter((key) => key !== 'idb' || message.idb));
   });
 
@@ -190,7 +186,6 @@ describe.each(VECTORS)('the vector of $label', ({ message, signed }) => {
     ['addr', { addr: '22'.repeat(20) }],
     ['ts', { ts: message.ts + 1 }],
     ['via', { via: message.via === MessageVia.GATEWAY ? MessageVia.OWN_STAMP : MessageVia.GATEWAY }],
-    ['own', { own: !message.own }],
     ['sig', { sig: flipLastHex(message.sig.slice(0, 128)) + message.sig.slice(128) }],
   ];
   // A text message's type and target cannot change without breaking its shape, which the next block covers.
@@ -240,8 +235,64 @@ describe('a version 7 message', () => {
     expect(verifyChatMessage(v7, AT_SITE)).toMatchObject({ ok: false, reason: 'shape' });
   });
 
-  it('is refused on its shape with v raised to 8, since it lacks via and own', () => {
-    expect(verifyChatMessage({ ...v7, v: 8 }, AT_SITE)).toMatchObject({ ok: false, reason: 'shape' });
+  it('is refused on its shape with v raised to 9, since it lacks via', () => {
+    expect(verifyChatMessage({ ...v7, v: 9 }, AT_SITE)).toMatchObject({ ok: false, reason: 'shape' });
+  });
+});
+
+describe('a version 8 message without own', () => {
+  // The first vector at version 8, as the 9.0 work signed it before the version moved, its signature valid.
+  const v8 = {
+    v: 8,
+    topic: 'chat-devcon-main',
+    id: 'a1'.repeat(16),
+    type: 'text',
+    target: '',
+    text: 'hello from the test vector',
+    name: 'tester',
+    addr: TEST_ADDR,
+    ts: 1759140000000,
+    via: 'gateway',
+    sig: 'f143f81be739f3e17f4c941680423b552fe52dcd264ea834cbd578c3a818c7011e20d08f2cd394348a8cb055a608cbe767c36129bd9e46364a5d82facf0fafc11c',
+  };
+
+  it('is refused on its version, on the wire and as an object', () => {
+    expect(parseChatMessage(encoder.encode(JSON.stringify(v8)), AT_SITE)).toMatchObject({ ok: false, reason: 'shape' });
+    expect(verifyChatMessage(v8, AT_SITE)).toMatchObject({
+      ok: false,
+      reason: 'shape',
+      detail: expect.stringMatching(/^v:/),
+    });
+  });
+
+  it('is refused on its signature with only v raised to 9', () => {
+    expect(verifyChatMessage({ ...v8, v: 9 }, AT_SITE)).toMatchObject({ ok: false, reason: 'signature' });
+  });
+});
+
+describe('a message as 8.1 signed it, with own', () => {
+  // The first vector of the 8.1.0 suite, exactly as 8.1 signed and sent it, its signature valid over its own bytes.
+  const signedBy81 = {
+    v: 8,
+    topic: 'chat-devcon-main',
+    id: 'a1'.repeat(16),
+    type: 'text',
+    target: '',
+    text: 'hello from the test vector',
+    name: 'tester',
+    addr: TEST_ADDR,
+    ts: 1759140000000,
+    via: 'gateway',
+    own: false,
+    sig: '1daf01a06e3ce691ba8dd6f6e949ae0ee96005288529ec112f4851dd18ed9c3d4832b4e6b0ddcda6eac97154f466eac291d14a6d049f1131edf8588c782858561c',
+  };
+
+  it('is refused on its shape, on the wire and as an object', () => {
+    expect(parseChatMessage(encoder.encode(JSON.stringify(signedBy81)), AT_SITE)).toMatchObject({
+      ok: false,
+      reason: 'shape',
+    });
+    expect(verifyChatMessage(signedBy81, AT_SITE)).toMatchObject({ ok: false, reason: 'shape' });
   });
 });
 
@@ -269,6 +320,18 @@ describe('the shape', () => {
     ['a text of 501 characters', { text: 'x'.repeat(501) }],
     ['an empty name', { name: '' }],
     ['a name of 21 characters', { name: 'n'.repeat(21) }],
+    ['a name with a right-to-left override', { name: 'evil\u202egnp.exe' }],
+    ['a name with a left-to-right isolate', { name: '\u2066admin' }],
+    ['a name with a zero width space', { name: 'ad\u200bmin' }],
+    ['a name with a byte order mark', { name: '\ufeffadmin' }],
+    ['a name with a newline', { name: 'line\nbreak' }],
+    ['a name with a NUL', { name: 'nul\u0000' }],
+    ['a name with a DEL', { name: 'del\u007f' }],
+    ['a name with a left-to-right mark', { name: 'ad\u200emin' }],
+    ['a name with a word joiner', { name: 'ad\u2060min' }],
+    ['a name with a soft hyphen', { name: 'ad\u00admin' }],
+    ['a name ending in .eth', { name: 'vitalik.eth' }],
+    ['a fullwidth name ending in .eth', { name: '\uff36\uff29\uff34\uff21\uff2c\uff29\uff2b\uff0e\uff25\uff34\uff28' }],
     ['an address with 0x', { addr: `0x${TEST_ADDR.slice(2)}` }],
     ['an address in capitals', { addr: TEST_ADDR.toUpperCase() }],
     ['a fractional ts', { ts: 1.5 }],
@@ -276,8 +339,7 @@ describe('the shape', () => {
     ['a ts as a string', { ts: '1759140000000' }],
     ['an unknown via', { via: 'free' }],
     ['no via', { via: undefined }],
-    ['own as a string', { own: 'false' }],
-    ['no own', { own: undefined }],
+    ['the own field 8.1 signed', { own: false }],
     ['a binding with a field nobody signed', { idb: { msg, sig, extra: 1 } }],
     ['a binding signature without 0x', { idb: { msg, sig: sig.slice(2) } }],
     ['a binding signature in capitals', { idb: { msg, sig: `0x${sig.slice(2).toUpperCase()}` } }],
@@ -306,6 +368,168 @@ describe('the shape', () => {
   });
 });
 
+describe('the name', () => {
+  it.each(['Zoë', 'Đorđe', 'Ζωή', 'Алиса', '李雷', 'سارا', 'אורי', 'नमस्ते', 'ok 👍🏽'])('accepts %s', (name) => {
+    const { message } = createChatMessage(TEST_KEY, {
+      topic: 'chat-x',
+      type: MessageType.TEXT,
+      text: 'hi',
+      name,
+      via: MessageVia.GATEWAY,
+    });
+    expect(verifyChatMessage(message, AT_SITE)).toMatchObject({ ok: true });
+  });
+
+  it.each([
+    ['a family emoji joined by zero width joiners', '\u{1F468}\u200d\u{1F469}\u200d\u{1F467}'],
+    ['a Persian name with a zero width non-joiner', 'می\u200cخواهم'],
+    ['a Devanagari conjunct with a zero width joiner', 'क्\u200dष'],
+  ])('accepts %s', (_, name) => {
+    const { message } = createChatMessage(TEST_KEY, {
+      topic: 'chat-x',
+      type: MessageType.TEXT,
+      text: 'hi',
+      name,
+      via: MessageVia.GATEWAY,
+    });
+    expect(verifyChatMessage(message, AT_SITE)).toMatchObject({ ok: true });
+  });
+
+  it('refuses a format character before signing', () => {
+    expect(() =>
+      createChatMessage(TEST_KEY, {
+        topic: 'chat-x',
+        type: MessageType.TEXT,
+        text: 'hi',
+        name: 'evil\u202egnp.exe',
+        via: MessageVia.GATEWAY,
+      }),
+    ).toThrow(ChatMessageError);
+  });
+});
+
+describe('displayNameProblem', () => {
+  it.each([
+    'Zoë',
+    'ok 👍🏽',
+    'می\u200cخواهم',
+    '\u{1F468}\u200d\u{1F469}',
+    'a'.repeat(20),
+    '👍'.repeat(20),
+    'love \u2764\ufe0f',
+    'Kenneth',
+    'Seth',
+    'Ethan',
+    'J.Ethan',
+  ])('finds no problem with %s', (name) => {
+    expect(displayNameProblem(name)).toBeNull();
+  });
+
+  it.each([
+    ['an empty name', '', 'length'],
+    ['21 characters', 'a'.repeat(21), 'length'],
+    ['21 emoji', '👍'.repeat(21), 'length'],
+    ['a right-to-left override', 'evil\u202egnp.exe', 'invisible'],
+    ['a zero width space', 'a\u200bb', 'invisible'],
+    ['a control character', 'a\u0007b', 'invisible'],
+    ['an ENS name', 'vitalik.eth', 'ens-like'],
+    ['an uppercase ENS name', 'Vitalik.ETH', 'ens-like'],
+    ['an ENS name with a trailing space', 'vitalik.eth ', 'ens-like'],
+    ['a fullwidth ENS name', '\uff36\uff29\uff34\uff21\uff2c\uff29\uff2b\uff0e\uff25\uff34\uff28', 'ens-like'],
+    ['an ENS name with the one dot leader', 'vitalik\u2024eth', 'ens-like'],
+    ['an ENS name with the small full stop', 'vitalik\ufe52eth', 'ens-like'],
+    ['an ENS name with the ideographic full stop', 'vitalik\u3002eth', 'ens-like'],
+    ['an ENS name with the halfwidth ideographic full stop', 'vitalik\uff61eth', 'ens-like'],
+    ['an ENS name ending in a joiner', 'vitalik.eth\u200d', 'ens-like'],
+    ['an ENS name with a non-joiner inside', 'vitalik.e\u200cth', 'ens-like'],
+    ['the bare suffix', '.eth', 'ens-like'],
+    ['an ENS name with a trailing dot', 'vitalik.eth.', 'ens-like'],
+    ['an ENS name with several trailing dots', 'vitalik.eth...', 'ens-like'],
+    ['an ENS name with a trailing ideographic full stop', 'vitalik.eth\u3002', 'ens-like'],
+    ['an ENS name with a Cyrillic e', 'vitalik.\u0435th', 'ens-like'],
+    ['an ENS name with a Cyrillic capital E', 'vitalik.\u0415TH', 'ens-like'],
+    ['an ENS name with a Cyrillic capital T', 'vitalik.e\u0422h', 'ens-like'],
+    ['an ENS name with a Cyrillic shha', 'vitalik.et\u04bb', 'ens-like'],
+    ['an ENS name with an Armenian ho', 'vitalik.et\u0570', 'ens-like'],
+    ['an ENS name with Greek capitals', 'vitalik.\u0395\u03a4\u0397', 'ens-like'],
+    ['an ENS name with several confusable letters', 'vitalik.\u0435\u0422\u04bb.', 'ens-like'],
+    ['a braille blank', 'a\u2800b', 'invisible'],
+    ['a Hangul choseong filler', 'a\u115fb', 'invisible'],
+    ['a Hangul jungseong filler', 'a\u1160b', 'invisible'],
+    ['a Hangul filler', 'a\u3164b', 'invisible'],
+    ['a halfwidth Hangul filler', 'a\uffa0b', 'invisible'],
+    ['a combining grapheme joiner', 'a\u034fb', 'invisible'],
+    ['a Khmer inherent aq', 'a\u17b4b', 'invisible'],
+    ['a Khmer inherent aa', 'a\u17b5b', 'invisible'],
+    ['an ENS name ending in a braille blank', 'vitalik.eth\u2800', 'invisible'],
+    ['an ENS name ending in a Hangul filler', 'vitalik.eth\u3164', 'invisible'],
+    ['an ENS name ending in a Hangul jungseong filler', 'vitalik.eth\u1160', 'invisible'],
+    ['an ENS name ending in a Hangul choseong filler', 'vitalik.eth\u115f', 'invisible'],
+    ['an ENS name ending in a combining grapheme joiner', 'vitalik.eth\u034f', 'invisible'],
+    ['an ENS name ending in a Khmer inherent aq', 'vitalik.eth\u17b4', 'invisible'],
+    ['an ENS name ending in variation selector 16', 'vitalik.eth\ufe0f', 'ens-like'],
+    ['an ENS name with variation selector 16 inside', 'vitalik.e\ufe0fth', 'ens-like'],
+    ['an ENS name ending in a Mongolian variation selector', 'vitalik.eth\u180b', 'ens-like'],
+    ['an ENS name ending in variation selector 17', 'vitalik.eth\u{e0100}', 'ens-like'],
+    ['an ENS name ending in a combining dot below', 'vitalik.et\u0068\u0323', 'ens-like'],
+    ['an ENS name ending in a precomposed h with dot below', 'vitalik.et\u1e25', 'ens-like'],
+    ['an ENS name ending in a no-break space', 'vitalik.eth\u00a0', 'ens-like'],
+    ['an ENS name ending in an ogham space', 'vitalik.eth\u1680', 'ens-like'],
+    ['an ENS name ending in an ideographic space', 'vitalik.eth\u3000', 'ens-like'],
+    ['an Arabic-Indic zero for the dot', 'vitalik\u0660eth', 'ens-like'],
+    ['an extended Arabic-Indic zero for the dot', 'vitalik\u06f0eth', 'ens-like'],
+    ['a Syriac supralinear full stop for the dot', 'vitalik\u0701eth', 'ens-like'],
+    ['a Syriac sublinear full stop for the dot', 'vitalik\u0702eth', 'ens-like'],
+    ['a Lisu tone mark for the dot', 'vitalik\ua4f8eth', 'ens-like'],
+    ['a Vai full stop for the dot', 'vitalik\ua60eeth', 'ens-like'],
+    ['a Kharoshthi dot for the dot', 'vitalik\u{10a50}eth', 'ens-like'],
+    ['a musical augmentation dot for the dot', 'vitalik\u{1d16d}eth', 'ens-like'],
+    ['a dot that is not the last label', 'J.Eth', 'ens-like'],
+    ['a Meetei Mayek lum iyek for the dot', 'vitalik\uabeceth', 'ens-like'],
+    ['an Indic Siyaq one half for the dot', 'vitalik\u{1ecae}eth', 'ens-like'],
+    ['an ENS name ending in a Syriac full stop', 'vitalik.eth\u0701', 'ens-like'],
+    ['an ENS name with a Cyrillic en for the h', 'vitalik.et\u043d', 'ens-like'],
+    ['an ENS name with a Cyrillic te for the t', 'vitalik.e\u0442h', 'ens-like'],
+  ])('says %s is a %s problem', (_, name, problem) => {
+    expect(displayNameProblem(name)).toBe(problem);
+  });
+
+  it.each([
+    'eth',
+    'ethan',
+    'vitalik.ethereum',
+    'vitalik.eth!',
+    'vitalik.eth.x',
+    'vitalik.\u0435tx',
+    'a.b.',
+    'Beth',
+    'Dr. Seth',
+    'E.T.H.',
+    'misha.\u0435\u0442\u0445',
+    'vitalik.xyz',
+    'vitalik eth',
+    'vitalik-eth',
+    'vitalik_eth',
+    'vitalik\u00b7eth',
+    'vitalik.eth\u00b7',
+    'vitalik\ua78feth',
+  ])('lets %s through', (name) => {
+    expect(displayNameProblem(name)).toBeNull();
+  });
+
+  it('refuses an ENS-like name before signing', () => {
+    expect(() =>
+      createChatMessage(TEST_KEY, {
+        topic: 'chat-x',
+        type: MessageType.TEXT,
+        text: 'hi',
+        name: 'Vitalik.ETH',
+        via: MessageVia.GATEWAY,
+      }),
+    ).toThrow(ChatMessageError);
+  });
+});
+
 describe('countCharacters', () => {
   it('counts an emoji outside the basic plane once', () => {
     expect(countCharacters('👍')).toBe(1);
@@ -327,7 +551,6 @@ describe('the byte cap', () => {
       name: 'n'.repeat(20),
       ts: Number.MAX_SAFE_INTEGER,
       via: MessageVia.OWN_STAMP,
-      own: true,
       idb: CHAT_BINDING,
     });
     expect(bytes.byteLength).toBeLessThanOrEqual(MAX_MESSAGE_BYTES);
@@ -357,7 +580,7 @@ describe('the wire check', () => {
   });
 
   it('refuses text that is not JSON', () => {
-    expect(parseChatMessage(encoder.encode('{"v":8'), AT_SITE)).toMatchObject({ ok: false, reason: 'not-json' });
+    expect(parseChatMessage(encoder.encode('{"v":9'), AT_SITE)).toMatchObject({ ok: false, reason: 'not-json' });
   });
 
   it('refuses the empty payload', () => {
@@ -401,10 +624,12 @@ describe('the signature', () => {
   });
 
   it('is refused with a recovery byte other than 27 or 28, which bee-js reads as 28 and so recovers the signer', () => {
-    expect(message.sig.slice(128)).toBe('1c');
-    const sig = `${message.sig.slice(0, 128)}1d`;
-    expect(new Signature(sig).recoverPublicKey(signedBytes(message)).address().toHex()).toBe(message.addr);
-    expect(hasValidSignature({ ...message, sig })).toBe(false);
+    // The bound vector is the one whose recovery byte is 28.
+    const signedAt28 = BOUND_VECTOR.message;
+    expect(signedAt28.sig.slice(128)).toBe('1c');
+    const sig = `${signedAt28.sig.slice(0, 128)}1d`;
+    expect(new Signature(sig).recoverPublicKey(signedBytes(signedAt28)).address().toHex()).toBe(signedAt28.addr);
+    expect(hasValidSignature({ ...signedAt28, sig })).toBe(false);
   });
 
   it('is refused, not thrown, when its r is out of range', () => {
@@ -413,7 +638,7 @@ describe('the signature', () => {
 });
 
 describe('createChatMessage', () => {
-  it('fills the address from the key, a fresh id, the time, and own as false', () => {
+  it('fills the address from the key, a fresh id and the time', () => {
     const before = Date.now();
     const { message } = createChatMessage(TEST_KEY, {
       topic: 'chat-x',
@@ -426,7 +651,7 @@ describe('createChatMessage', () => {
     expect(message.id).toMatch(/^[0-9a-f]{32}$/);
     expect(message.ts).toBeGreaterThanOrEqual(before);
     expect(message.target).toBe('');
-    expect(message.own).toBe(false);
+    expect('own' in message).toBe(false);
     expect('idb' in message).toBe(false);
     expect(hasValidSignature(message)).toBe(true);
   });

@@ -14,7 +14,7 @@ function file(fromSeq: number, toSeq: number, prev: HistoryLink | null) {
   for (let seq = fromSeq; seq <= toSeq; seq++) {
     messages.push({ seq, at: 1759140000000 + seq, msg: testMessage(`message ${seq}`) });
   }
-  return { v: 8, topic: TOPIC, fromSeq, toSeq, messages, prev };
+  return { v: 9, topic: TOPIC, fromSeq, toSeq, messages, prev };
 }
 
 function open(gateway: FakeGateway) {
