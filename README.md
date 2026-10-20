@@ -50,8 +50,9 @@ viewer for live streams with a chat beside each video.
 
 - A running [swarm-chat-aggregator-js](https://github.com/Solar-Punk-Ltd/swarm-chat-aggregator-js). Its operator gives
   you the inbox identifier and key, the feed owner address and the slot note timing.
-- A Bee node or gateway to read through, and one to write through. The node the inbox writes go through must be a
-  different Bee node from the one the server listens on.
+- A Bee node or gateway to read through, and one to write through. Write through a different Bee node from the one the
+  server listens on. Bee hands an inbox write to the server only when the chunk arrives from another node, so a write
+  made on the listening node itself reaches the server only if it later syncs back.
 - A way to pay for the inbox writes: a gateway that stamps them, or a postage batch of the sender's own.
 
 ## Installation
