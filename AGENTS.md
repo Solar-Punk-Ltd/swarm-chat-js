@@ -44,12 +44,12 @@ The package has two entries: the root, and `./message`, which the server uses an
 - **The message module is a contract with the server.** Its signed bytes, field caps and byte cap are shared, and the
   fixed vectors in `test/message.test.ts` must keep passing unchanged. A change to them is a change to the server too.
 - **Sign and verify the raw bytes.** bee-js's `PrivateKey.sign` and `Signature.recoverPublicKey` hash and prefix
-  inside, although the second names its parameter `digest`. Hashing first is how 6.2.8 came to prefix twice.
+  inside, although the second names its parameter `digest`. Hashing first would prefix twice.
 - **One signature per message, and per binding.** A signature counts only with v 27 or 28 and a low s
   (`src/message/canonicalSignature.ts`). bee-js recovers the same signer from the high s twin and from any other v.
 - **The binding is the Swarm ID fork's, read as the fork reads it.** Its text, its site check and its signature
   spelling follow `verifyChatBinding` in solarpunk-id's `lib/src/utils/chat-binding.ts`, and `test/bindingVectors.ts`
-  holds bindings the fork made on its `feat/site-chat-key` branch. Their chat address is the fork's per-site chat key,
+  holds bindings the fork made. Their chat address is the fork's per-site chat key,
   and `chatKeyFor` there derives it the way the fork's `deriveChatKey` does, so when the fork changes that derivation
   the vectors are made again from its built code. That signature is EIP-191 `personal_sign` over the text itself, which bee-js's
   `Signature` cannot recover, so `personalSign.ts` recovers through `@ethersphere/core-sdk/crypto` and passes v as a bigint.
@@ -66,22 +66,22 @@ The package has two entries: the root, and `./message`, which the server uses an
 - **Every check of a message names the site.** `verifyChatMessage` and `parseChatMessage` require `{ origin }`, and a
   bound message checked without one is refused, so a binding for one site never passes in another site's chat. Keep
   the origin required, and never give it a default.
-- **Never ask Bee for an address before it exists.** A failed read makes Bee skip its peers for that address for a
-  minute, which delayed every new message by about forty seconds. A note is asked for only once its slot is over, and
+- **Never ask Bee for an address before it exists.** A failed read makes Bee skip its peers for that address for about a
+  minute, which delays the message once it is written. A note is asked for only once its slot is over, and
   a feed slot only once a note named it. The head lookup and the polling of the next slot are kept only for a reader
   that finds no note, and an address that came back missing is asked for again no sooner than
   `DEFAULT_MISSING_READ_SPACING_MS` later (`src/pacer.ts`), so no address is read four times in a minute.
 - **The note is a contract with the server**, as the message is: its identifier text, its payload and the slot length.
 - **A 404 or a 500 is never the end of the chat.** On a slot it means the chunk is not there or was not found in time,
-  which at the live edge is ordinary. Bee 2.8 answers 404 and a Bee 2.6 cluster answers 500 for a slot never written.
+  which at the live edge is ordinary. Depending on its version, Bee answers 404 or 500 for a slot never written.
   On the head lookup it means an empty feed or a failed lookup, so the reader starts at slot 0. A timeout, an abort
   and a 502, 503 or 504 are the gateway failing.
 - **One bad slot never stops the reader.** A slot that fails its checks is skipped and counted. A served chunk that
   fails its own check is an `UnreadableSlotError`, kept for later, and never treated as the gateway failing.
 - **Never send an inbox write deferred or tagged**, so each write is pushed at once and messages never collide.
 - **bee-js 13.1.0 ignores its `timeout` request option.** Every request carries a fresh `AbortSignal.timeout`.
-- **No signature check per message on the read path.** The server checked, and the check cost 6.x about 36 ms of main
-  thread per message on every open.
+- **No signature check per message on the read path.** The server already checked, and a check costs main-thread time on
+  every message.
 - **Every timer stops on `stop()`.** The tests assert no timer is left.
 
 ## Style
