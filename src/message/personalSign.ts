@@ -30,7 +30,7 @@ function toHex(bytes: Uint8Array): string {
 }
 
 /**
- * The address that made `sig` over `text`, `0x` and 40 lowercase hex characters, or null for a signature the fork
+ * The address that made `sig` over `text`, `0x` and 40 lowercase hex characters, or null for a signature Swarm ID
  * would refuse or nothing recovers from. `sig` is `0x` and 130 hex characters of r, s and v, already shape-checked.
  */
 export function recoverPersonalSigner(text: string, sig: string): string | null {

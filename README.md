@@ -229,9 +229,9 @@ chosen name could pass for one. The check builds a skeleton of the name, the nam
   `Ε`, `Τ`, `Η`
 - lower-cased, trimmed, and stripped of trailing spaces and dots
 
-The name is refused when the skeleton ends in `.eth`. So `vitalik.eth`, `Vitalik.ETH`, `vitalik.eth.`, `vitalik.еth`
-(Cyrillic `е`), `vitalik٠eth` (Arabic-Indic zero) and `ＶＩＴＡＬＩＫ．ＥＴＨ` are refused, while `vitalik eth`,
-`vitalik-eth`, `Kenneth`, `Seth`, `Ethan` and `J.Ethan` pass. `displayNameProblem(name)` runs the same check for a
+The name is refused when the skeleton ends in `.eth`. So `alice.eth`, `Alice.ETH`, `alice.eth.`, `alice.еth`
+(Cyrillic `е`), `alice٠eth` (Arabic-Indic zero) and `ＡＬＩＣＥ．ＥＴＨ` are refused, while `alice eth`,
+`alice-eth`, `Kenneth`, `Seth`, `Ethan` and `J.Ethan` pass. `displayNameProblem(name)` runs the same check for a
 sign-up form.
 
 ### The Swarm ID chat binding

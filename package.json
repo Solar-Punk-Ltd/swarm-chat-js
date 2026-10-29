@@ -11,7 +11,7 @@
     "url": "https://github.com/Solar-Punk-Ltd/swarm-chat-js/issues"
   },
   "license": "Apache-2.0",
-  "author": "levente.kiss@solarpunk.buzz",
+  "author": "Solar Punk Ltd",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Solar-Punk-Ltd/swarm-chat-js"
@@ -56,7 +56,7 @@
     "oxlint": "1.83.0",
     "oxlint-tsgolint": "7.0.2001",
     "typescript": "7.0.2",
-    "vite": "8.3.0",
+    "vite": "8.3.3",
     "vitest": "5.0.1"
   },
   "peerDependencies": {

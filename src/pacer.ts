@@ -5,7 +5,7 @@
  * chunk for a minute (`ethersphere/bee`, `pkg/retrieval/retrieval.go`, `errSkip` and `skiplistDur = time.Minute`).
  * Once no peer is left it answers 500 at once, because "no peer left" is not `storage.ErrNotFound`
  * (`pkg/api/chunk.go`). A chunk written while its address is on that list stays unreadable on that node for up to a
- * minute. Measured on swarm-dev on 2026-10-12: an address read every second for 20 s and then written was readable
+ * minute. Measured on a test node on 2026-10-12: an address read every second for 20 s and then written was readable
  * after 33 to 36 s, one nobody had asked for at once. About four reads of a missing address exhaust the list, so one
  * read every twenty seconds stays under it.
  */

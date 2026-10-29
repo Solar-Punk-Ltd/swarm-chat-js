@@ -71,8 +71,8 @@ function withLines(lines: string[]): ChatBinding {
 
 const BOUND_LINES = CHAT_BINDING.msg.split('\n');
 
-describe('the fork-compatible binding vector', () => {
-  /** EIP-191 personal_sign, as the fork's `personalMessageHash` builds it: the prefix, the byte length, the text. */
+describe('Swarm ID-compatible binding vector', () => {
+  /** EIP-191 personal_sign, as Swarm ID's `personalMessageHash` builds it: the prefix, the byte length, the text. */
   function personalMessage(text: string): Uint8Array {
     const body = encoder.encode(text);
     const prefix = encoder.encode(`\x19Ethereum Signed Message:\n${body.length}`);
@@ -91,7 +91,7 @@ describe('the fork-compatible binding vector', () => {
   it.each([
     ['27', CHAT_BINDING],
     ['28', CHAT_BINDING_V28],
-  ])('recovers the account the way the fork recovers it, with v %s and a low s', (v, binding) => {
+  ])('recovers the account the way Swarm ID recovers it, with v %s and a low s', (v, binding) => {
     const sig = binding.sig.slice(2);
     const r = BigInt(`0x${sig.slice(0, 64)}`);
     const s = BigInt(`0x${sig.slice(64, 128)}`);
@@ -102,7 +102,7 @@ describe('the fork-compatible binding vector', () => {
     expect(`0x${account}`).toBe(FORK_ACCOUNT);
   });
 
-  it('names the chat address of the key the fork derives for the site', () => {
+  it('names the chat address of the key Swarm ID derives for the site', () => {
     expect(new PrivateKey(boundKey).publicKey().address().toHex()).toBe(BOUND_CHAT_ADDR);
     expect(BOUND_LINES).toEqual([
       CHAT_BINDING_TITLE,
@@ -115,7 +115,7 @@ describe('the fork-compatible binding vector', () => {
   it.each([
     ['27', CHAT_BINDING, '2026-10-14T12:00:00.000Z'],
     ['28', CHAT_BINDING_V28, '2026-10-14T12:01:00.000Z'],
-  ])('verifies here as the fork verified it, with v %s', (_v, binding, date) => {
+  ])('verifies here as Swarm ID verified it, with v %s', (_v, binding, date) => {
     const message = signedWith(boundKey, binding);
     expect(verifyChatMessage(message, { origin: BOUND_SITE })).toEqual({
       ok: true,
@@ -155,7 +155,7 @@ describe('a message with a binding', () => {
     expect(() => parseChatMessage(encodeChatMessage(message), { allowLocalHttp: true })).not.toThrow();
   });
 
-  it('is refused for a local http site unless local http is allowed, as the fork refuses it', () => {
+  it('is refused for a local http site unless local http is allowed, as Swarm ID refuses it', () => {
     expect(new PrivateKey(localKey).publicKey().address().toHex()).toBe(LOCAL_CHAT_ADDR);
     const message = signedWith(localKey, LOCAL_SITE_BINDING);
     expect(verifyChatMessage(message, AT_SITE)).toMatchObject({ ok: false, reason: 'binding' });
