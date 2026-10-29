@@ -5,14 +5,14 @@ import { isCanonicalDate, recoverPersonalSigner } from './personalSign.js';
 /**
  * The Swarm ID chat binding: the account's statement, signed with its own key, that a chat address on one site is its
  * own. The Swarm ID fork (solarpunk-id, `lib/src/utils/chat-binding.ts`) makes it, and this module reads it exactly as
- * the fork's `verifyChatBinding` does, without importing the fork: the same four lines, the same clean site origin,
+ * Swarm ID's `verifyChatBinding` does, without importing Swarm ID: the same four lines, the same clean site origin,
  * the same EIP-191 personal_sign recovery with v 27 or 28 and a low s.
  */
 
 /** The first line, which also versions the binding format. */
 export const CHAT_BINDING_TITLE = 'Swarm ID chat binding v1';
 
-/** The fork's own bound on a binding's text. */
+/** Swarm ID's own bound on a binding's text. */
 export const MAX_BINDING_CHARACTERS = 512;
 
 const SITE_PREFIX = 'Site: ';
@@ -27,7 +27,7 @@ const DNS_HOST_PATTERN = /^[a-z0-9-]+(\.[a-z0-9-]+)*$/;
 const LOCAL_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /**
- * A binding as a message carries it. `sig` is spelled as the fork writes it, `0x` and 130 lowercase hex characters
+ * A binding as a message carries it. `sig` is spelled as Swarm ID writes it, `0x` and 130 lowercase hex characters
  * of r, s and v, so one binding has one spelling inside the signed bytes.
  */
 export const chatBindingSchema = z.strictObject({
@@ -48,7 +48,7 @@ export interface ChatIdentity {
   /**
    * The wallet the message's Swarm ID wallet link names, `0x` and 40 lowercase hex characters, present only when the
    * message carries a link both the wallet and this account signed. A reader looks its ENS name up itself, and the
-   * fork's `resolveVerifiedEnsName` does that with both the reverse and the forward record.
+   * Swarm ID's `resolveVerifiedEnsName` does that with both the reverse and the forward record.
    */
   wallet?: string;
 }
@@ -62,7 +62,7 @@ export interface BindingOptions {
 
 export type BindingCheck = { ok: true; identity: ChatIdentity } | { ok: false; detail: string };
 
-/** Whether `value` is a bare origin in the one spelling a browser reports, as the fork's `isCleanSiteOrigin` asks. */
+/** Whether `value` is a bare origin in the one spelling a browser reports, as Swarm ID's `isCleanSiteOrigin` asks. */
 function isCleanSiteOrigin(value: string, allowLocalHttp: boolean): boolean {
   let url: URL;
   try {
@@ -87,7 +87,7 @@ function afterPrefix(line: string, prefix: string): string | null {
 
 /**
  * Reads a binding for the chat address `addr` (40 lowercase hex characters, no `0x`). Refuses every text but the four
- * lines the fork writes, a binding for another chat address, one for another site than `origin` when that is given,
+ * lines Swarm ID writes, a binding for another chat address, one for another site than `origin` when that is given,
  * and a signature nothing recovers an account from. Never throws.
  */
 export function checkChatBinding(binding: ChatBinding, addr: string, options: BindingOptions = {}): BindingCheck {

@@ -33,7 +33,7 @@ interface Vector {
 }
 
 // Made with `new PrivateKey(key).sign(signed bytes)` and nothing else, as the contract prescribes. The bound vector's
-// key is the fork's chat key for BOUND_SITE, derived from the fork's test account as `chatKeyFor` derives it.
+// key is Swarm ID's chat key for BOUND_SITE, derived from Swarm ID's test account as `chatKeyFor` derives it.
 const VECTORS: Vector[] = [
   {
     label: 'a text sent through the gateway',

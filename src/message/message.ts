@@ -384,8 +384,8 @@ export function hasValidSignature(message: ChatMessage): boolean {
 
 /**
  * Verifies a message that arrived as an object: its shape, its signature, and, when it carries a binding, that the
- * binding is the fork's four lines for this `addr` and for `options.origin`, and recovers an account. When it also
- * carries a wallet link, the link must be the fork's five lines for that account, signed by its wallet and by the
+ * binding is Swarm ID's four lines for this `addr` and for `options.origin`, and recovers an account. When it also
+ * carries a wallet link, the link must be Swarm ID's five lines for that account, signed by its wallet and by the
  * account, and the identity then names the wallet. A message whose binding or link fails is refused as `binding`,
  * never passed as a guest, and so is a bound message checked with no origin.
  * Never throws, and touches no DOM and no Node API, so a page runs it in a Web Worker as the server runs it.

@@ -3,9 +3,9 @@ import type { WalletLink } from '../src/message';
 /**
  * Wallet links made by the Swarm ID fork itself (solarpunk-id `lib` on its branch `feat/ens-wallet-link`, at 995f7389e,
  * `buildWalletLinkMessage` and `countersignWalletLink` from its built entries, with the wallet's signature made by
- * viem's `signMessage` as a wallet's personal_sign makes it). The fork's own `verifyWalletLink` accepted each for its
- * account. The account is the fork's test account of `bindingVectors.ts`. Copied here as literals, since this library
- * never imports the fork.
+ * viem's `signMessage` as a wallet's personal_sign makes it). Swarm ID's own `verifyWalletLink` accepted each for its
+ * account. The account is Swarm ID's test account of `bindingVectors.ts`. Copied here as literals, since this library
+ * never imports Swarm ID.
  */
 
 // Test only. The wallet's key, which nobody holds funds with.

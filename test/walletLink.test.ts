@@ -34,7 +34,7 @@ const SECP256K1_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-/** personal_sign over `text` with `key`, spelled as the fork spells a signature. */
+/** personal_sign over `text` with `key`, spelled as Swarm ID spells a signature. */
 function personalSign(text: string, key: string): string {
   const body = encoder.encode(text);
   const prefix = encoder.encode(`\x19Ethereum Signed Message:\n${body.length}`);
@@ -46,7 +46,7 @@ function personalSign(text: string, key: string): string {
   return `0x${hex(r, 32)}${hex(s, 32)}${hex(v, 1)}`;
 }
 
-/** A link of `msg` signed by both keys, as the fork would sign whatever text it was given. */
+/** A link of `msg` signed by both keys, as Swarm ID would sign whatever text it was given. */
 function signedLink(msg: string): WalletLink {
   return { msg, wsig: personalSign(msg, LINK_WALLET_KEY), asig: personalSign(msg, FORK_ACCOUNT_KEY) };
 }
@@ -54,7 +54,7 @@ function signedLink(msg: string): WalletLink {
 const lines = WALLET_LINK.msg.split('\n');
 const withLine = (index: number, text: string) => lines.map((line, at) => (at === index ? text : line)).join('\n');
 
-describe('the fork wallet link', () => {
+describe('Swarm ID wallet link', () => {
   it('names the format in its first line', () => {
     expect(lines[0]).toBe(WALLET_LINK_TITLE);
   });
@@ -165,7 +165,7 @@ describe('checkWalletLink refuses', () => {
     expect(checkWalletLink({ ...WALLET_LINK, wsig: highS }, FORK_ACCOUNT).ok).toBe(false);
   });
 
-  it('a link with a field it does not name, or one longer than the fork stores', () => {
+  it('a link with a field it does not name, or one longer than Swarm ID stores', () => {
     expect(checkWalletLink({ ...WALLET_LINK, note: 'x' } as WalletLink, FORK_ACCOUNT).ok).toBe(false);
     const long = { ...WALLET_LINK, msg: 'x'.repeat(MAX_WALLET_LINK_CHARACTERS + 1) };
     expect(checkWalletLink(long, FORK_ACCOUNT).ok).toBe(false);

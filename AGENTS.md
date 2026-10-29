@@ -47,16 +47,16 @@ The package has two entries: the root, and `./message`, which the server uses an
   inside, although the second names its parameter `digest`. Hashing first would prefix twice.
 - **One signature per message, and per binding.** A signature counts only with v 27 or 28 and a low s
   (`src/message/canonicalSignature.ts`). bee-js recovers the same signer from the high s twin and from any other v.
-- **The binding is the Swarm ID fork's, read as the fork reads it.** Its text, its site check and its signature
+- **The binding is Swarm ID's, read as Swarm ID reads it.** Its text, its site check and its signature
   spelling follow `verifyChatBinding` in solarpunk-id's `lib/src/utils/chat-binding.ts`, and `test/bindingVectors.ts`
-  holds bindings the fork made. Their chat address is the fork's per-site chat key,
-  and `chatKeyFor` there derives it the way the fork's `deriveChatKey` does, so when the fork changes that derivation
+  holds bindings Swarm ID made. Their chat address is Swarm ID's per-site chat key,
+  and `chatKeyFor` there derives it the way Swarm ID's `deriveChatKey` does, so when Swarm ID changes that derivation
   the vectors are made again from its built code. That signature is EIP-191 `personal_sign` over the text itself, which bee-js's
   `Signature` cannot recover, so `personalSign.ts` recovers through `@ethersphere/core-sdk/crypto` and passes v as a bigint.
   A binding that fails is refused as `binding`, never shown as a guest.
-- **The wallet link is the fork's too, and travels only beside a binding.** Its text and both signatures follow
+- **The wallet link is Swarm ID's too, and travels only beside a binding.** Its text and both signatures follow
   `verifyWalletLink` in solarpunk-id's `lib/src/utils/wallet-link.ts`, described in its `docs/Wallet-Link.md`, and
-  `test/walletLinkVectors.ts` holds links the fork made. Its account must be the binding's, and a link that fails is
+  `test/walletLinkVectors.ts` holds links Swarm ID made. Its account must be the binding's, and a link that fails is
   refused as `binding`. Its fields are appended to the signed bytes only when it is there, so the earlier vectors keep
   their bytes. The library never looks an ENS name up: it hands the checked wallet to the reader.
 - **`verifyChatMessage` runs in a Web Worker.** It never throws and uses no DOM and no Node API, since a page verifies
