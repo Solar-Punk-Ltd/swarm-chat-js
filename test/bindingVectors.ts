@@ -13,7 +13,7 @@ export const FORK_ACCOUNT = '0x1563915e194d8cfba1943570603f7606a3115508';
 
 export const BOUND_SITE = 'https://example.com';
 /** The options a check of a message in BOUND_SITE's chat passes. */
-export const AT_SITE = { origin: BOUND_SITE };
+export const AT_SITE = { origins: [BOUND_SITE] };
 
 export const BOUND_CHAT_ADDR = 'c6b7cb635534a22fbc368643cc40355545f666dc';
 

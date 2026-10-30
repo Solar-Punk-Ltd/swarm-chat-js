@@ -54,8 +54,8 @@ export interface ChatIdentity {
 }
 
 export interface BindingOptions {
-  /** The origin the reader runs on. When given, a binding for any other site is refused. */
-  origin?: string;
+  /** The origins the reader runs on, each bare. When given, a binding for a site not among them is refused. */
+  origins?: readonly string[];
   /** Accept a binding for `http://localhost`, `http://127.0.0.1` or `http://[::1]`, as only a development build signs. */
   allowLocalHttp?: boolean;
 }
@@ -87,7 +87,7 @@ function afterPrefix(line: string, prefix: string): string | null {
 
 /**
  * Reads a binding for the chat address `addr` (40 lowercase hex characters, no `0x`). Refuses every text but the four
- * lines Swarm ID writes, a binding for another chat address, one for another site than `origin` when that is given,
+ * lines Swarm ID writes, a binding for another chat address, one for a site not in `origins` when that is given,
  * and a signature nothing recovers an account from. Never throws.
  */
 export function checkChatBinding(binding: ChatBinding, addr: string, options: BindingOptions = {}): BindingCheck {
@@ -113,8 +113,8 @@ export function checkChatBinding(binding: ChatBinding, addr: string, options: Bi
   if (chatAddress !== `0x${addr}`) {
     return { ok: false, detail: 'the binding is for another chat address than addr' };
   }
-  if (options.origin !== undefined && site !== options.origin) {
-    return { ok: false, detail: `the binding is for ${site}, not ${options.origin}` };
+  if (options.origins !== undefined && !options.origins.includes(site)) {
+    return { ok: false, detail: `the binding is for ${site}, not for ${options.origins.join(' or ') || 'any site'}` };
   }
   const account = recoverPersonalSigner(binding.msg, binding.sig);
   if (account === null) {

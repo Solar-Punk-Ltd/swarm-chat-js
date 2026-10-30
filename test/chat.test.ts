@@ -299,7 +299,7 @@ describe('sendMessage', () => {
     });
     await chat.start();
     await chat.sendMessage('hello', MessageType.TEXT);
-    expect(parseChatMessage(server.writes[0]!, { origin: BOUND_SITE })).toMatchObject({
+    expect(parseChatMessage(server.writes[0]!, { origins: [BOUND_SITE] })).toMatchObject({
       ok: true,
       message: { idb: CHAT_BINDING },
       identity: { account: FORK_ACCOUNT, site: BOUND_SITE },
@@ -314,7 +314,7 @@ describe('sendMessage', () => {
     });
     await chat.start();
     await chat.sendMessage('hello', MessageType.TEXT);
-    expect(parseChatMessage(server.writes[0]!, { origin: BOUND_SITE })).toMatchObject({
+    expect(parseChatMessage(server.writes[0]!, { origins: [BOUND_SITE] })).toMatchObject({
       ok: true,
       message: { idb: CHAT_BINDING, wl: WALLET_LINK },
       identity: { account: FORK_ACCOUNT, wallet: LINK_WALLET },
@@ -345,7 +345,7 @@ describe('sendMessage', () => {
     const [initiated] = events[EVENTS.MESSAGE_REQUEST_INITIATED] as MessageData[];
     const [published] = received();
     for (const data of [pending!, initiated!, published!]) {
-      expect(verifyChatMessage(data.signedMessage, { origin: BOUND_SITE })).toMatchObject({
+      expect(verifyChatMessage(data.signedMessage, { origins: [BOUND_SITE] })).toMatchObject({
         ok: true,
         message: { id: pending!.id, text: 'hello', idb: CHAT_BINDING },
         identity: { account: FORK_ACCOUNT },

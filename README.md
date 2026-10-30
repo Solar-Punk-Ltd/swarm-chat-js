@@ -287,9 +287,9 @@ with a binding and a link is 2,376 bytes.
 
 ### Verifying
 
-`verifyChatMessage(value, { origin, allowLocalHttp? })` checks a message's shape and signature. When the message carries
+`verifyChatMessage(value, { origins, allowLocalHttp? })` checks a message's shape and signature. When the message carries
 a binding, it also checks that the binding's text is the four lines above, that its chat address is the message's
-`addr`, that its signature recovers an account, and that its site is `origin`. It returns
+`addr`, that its signature recovers an account, and that its site is one of `origins`. It returns
 `{ ok: true, message, identity }`. `identity` is `{ account, site, date }` for a signed-in sender and `null` for a
 guest. A message whose binding fails is refused with the reason `binding`, and is never shown as a guest.
 
@@ -300,9 +300,12 @@ binding's account, its wallet signature must recover its wallet, and its account
 `identity.wallet` to its own ENS lookup, such as Swarm ID's `resolveVerifiedEnsName`, which requires the wallet's reverse
 record and the name's forward record to agree.
 
-`origin` is required. It is the bare origin of the site whose chat this is, such as `https://example.com`, so a binding
-signed for one site never passes in another site's chat. A JavaScript caller that passes no origin gets every bound
-message refused as `binding`. The server passes its configured site origin, and a page passes its own.
+`origins` is required. It lists the bare origins of the sites whose chat this is, such as `https://example.com`, so a
+binding signed for one site never passes in a chat that site is not part of. A chat served from several pages, such as
+a domain and a copy of the same page on Swarm under an ENS name, lists every one, and each page then shows the
+messages sent from the others as signed in. An empty list, or none from a JavaScript caller, refuses every bound
+message as `binding`. The server passes its configured sites, and a page passes its own origin and the others it was
+told of.
 
 **What `identity.account` proves.** It proves only that whoever controls that Swarm ID account bound this chat key for
 this site, on the date the binding names. It is not a verified person and not an approved account. One person can hold
@@ -332,12 +335,12 @@ writes the copy beside the inbox write.
 
 | Export                                                                       | Use                                                                                                                                                                         |
 | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `parseChatMessage(bytes, { origin })`                                        | The server's check of a raw payload: byte limit, UTF-8, JSON, then `verifyChatMessage`. Never throws.                                                                       |
-| `verifyChatMessage(value, { origin })`                                       | Shape, signature and binding of a parsed object, with the sender's identity. Never throws.                                                                                  |
+| `parseChatMessage(bytes, { origins })`                                       | The server's check of a raw payload: byte limit, UTF-8, JSON, then `verifyChatMessage`. Never throws.                                                                       |
+| `verifyChatMessage(value, { origins })`                                      | Shape, signature and binding of a parsed object, with the sender's identity. Never throws.                                                                                  |
 | `displayNameProblem(name)`                                                   | `null` for a name a message may carry, else `'length'` (not 1 to 20 characters), `'invisible'` (a format or control character) or `'ens-like'` (reads as ending in `.eth`). |
 | `createChatMessage(key, draft)`                                              | Builds and signs, throwing a `ChatMessageError` for anything the check would refuse. `via` is required.                                                                     |
 | `MessageType`, `MessageVia`                                                  | The values of `type` and `via`.                                                                                                                                             |
-| `checkChatBinding(binding, addr, options?)`, `chatBindingSchema`             | The binding check on its own, and its shape. Its `origin` is optional, for a sender checking its own binding.                                                               |
+| `checkChatBinding(binding, addr, options?)`, `chatBindingSchema`             | The binding check on its own, and its shape. Its `origins` is optional, for a sender checking its own binding.                                                              |
 | `checkWalletLink(link, account)`, `walletLinkSchema`                         | The wallet link check on its own, for the binding's account, and its shape.                                                                                                 |
 | `ownFeedTopic(chatTopic)`, `OWN_FEED_TOPIC_PREFIX`                           | The topic of a sender's own feed of copies.                                                                                                                                 |
 | `chatMessageSchema`, `hasValidSignature`, `signedBytes`, `encodeChatMessage` | The parts of the message check.                                                                                                                                             |

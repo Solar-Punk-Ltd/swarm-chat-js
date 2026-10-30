@@ -209,11 +209,12 @@ export type ChatMessageCheck =
   | { ok: false; reason: ChatMessageRefusal; detail: string };
 
 /**
- * `origin` is the site the chat runs on, a bare origin such as `https://example.com`, and is required: a binding for
- * any other site is refused, so a binding signed for one site never passes in another site's chat.
+ * `origins` are the sites the chat runs on, each a bare origin such as `https://example.com`, and are required: a
+ * binding for any other site is refused, so a binding signed for one site never passes in a chat that site is not
+ * part of. A chat served from several pages, such as one domain and a copy on Swarm under an ENS name, lists each.
  */
 export interface VerifyOptions {
-  origin: string;
+  origins: readonly string[];
   /** Accept a binding for `http://localhost`, `http://127.0.0.1` or `http://[::1]`, as only a development build signs. */
   allowLocalHttp?: boolean;
 }
@@ -384,10 +385,10 @@ export function hasValidSignature(message: ChatMessage): boolean {
 
 /**
  * Verifies a message that arrived as an object: its shape, its signature, and, when it carries a binding, that the
- * binding is Swarm ID's four lines for this `addr` and for `options.origin`, and recovers an account. When it also
+ * binding is Swarm ID's four lines for this `addr` and for one of `options.origins`, and recovers an account. When it also
  * carries a wallet link, the link must be Swarm ID's five lines for that account, signed by its wallet and by the
  * account, and the identity then names the wallet. A message whose binding or link fails is refused as `binding`,
- * never passed as a guest, and so is a bound message checked with no origin.
+ * never passed as a guest, and so is a bound message checked with no origins.
  * Never throws, and touches no DOM and no Node API, so a page runs it in a Web Worker as the server runs it.
  */
 export function verifyChatMessage(value: unknown, options: VerifyOptions): ChatMessageCheck {
@@ -402,9 +403,9 @@ export function verifyChatMessage(value: unknown, options: VerifyOptions): ChatM
   if (!message.idb) {
     return { ok: true, message, identity: null };
   }
-  // A caller outside TypeScript can still leave the origin out, which would accept a binding for any site.
-  if (typeof options?.origin !== 'string') {
-    return { ok: false, reason: 'binding', detail: 'no origin was given to check the binding against' };
+  // A caller outside TypeScript can still leave the origins out, which would accept a binding for any site.
+  if (!Array.isArray(options?.origins)) {
+    return { ok: false, reason: 'binding', detail: 'no origins were given to check the binding against' };
   }
   const binding = checkChatBinding(message.idb, message.addr, options);
   if (!binding.ok) {
