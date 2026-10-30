@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import {
   CHAT_BINDING_TITLE,
   MessageType,
+  checkChatBinding,
   MessageVia,
   encodeChatMessage,
   parseChatMessage,
@@ -161,14 +162,21 @@ describe('a message with a binding', () => {
     expect(verifyChatMessage(message, { origins: [`${BOUND_SITE}/`] })).toMatchObject({ ok: false, reason: 'binding' });
   });
 
-  it('is refused, never accepted for any site, when a caller leaves the origin out', () => {
+  it('is refused, never accepted for any site, when a caller leaves the origins out', () => {
     const message = signedWith(boundKey, CHAT_BINDING);
     const noOrigin = {} as VerifyOptions;
     expect(verifyChatMessage(message, noOrigin)).toMatchObject({ ok: false, reason: 'binding' });
     expect(parseChatMessage(encodeChatMessage(message), noOrigin)).toMatchObject({ ok: false, reason: 'binding' });
   });
 
-  it('cannot be called without an origin', () => {
+  it('is refused when a JavaScript caller passes one string as the origins, never matched as a substring', () => {
+    const message = signedWith(boundKey, CHAT_BINDING);
+    const oneString = { origins: `${BOUND_SITE}.other.example` } as unknown as VerifyOptions;
+    expect(verifyChatMessage(message, oneString)).toMatchObject({ ok: false, reason: 'binding' });
+    expect(checkChatBinding(message.idb!, message.addr, oneString)).toMatchObject({ ok: false });
+  });
+
+  it('cannot be called without origins', () => {
     const message = signedWith(boundKey, undefined);
     // @ts-expect-error The origin is required, so no caller leaves it out by accident.
     expect(() => verifyChatMessage(message)).not.toThrow();

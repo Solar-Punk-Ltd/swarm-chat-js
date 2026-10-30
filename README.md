@@ -173,7 +173,7 @@ rather than keeping its own copy. This entry point loads none of the reader.
 ```ts
 import { parseChatMessage, MAX_MESSAGE_BYTES } from '@solarpunkltd/swarm-chat-js/message';
 
-const check = parseChatMessage(payload, { origin: 'https://example.com' });
+const check = parseChatMessage(payload, { origins: ['https://example.com'] });
 if (check.ok) publish(check.message);
 else count(check.reason);
 ```
@@ -340,7 +340,7 @@ writes the copy beside the inbox write.
 | `displayNameProblem(name)`                                                   | `null` for a name a message may carry, else `'length'` (not 1 to 20 characters), `'invisible'` (a format or control character) or `'ens-like'` (reads as ending in `.eth`). |
 | `createChatMessage(key, draft)`                                              | Builds and signs, throwing a `ChatMessageError` for anything the check would refuse. `via` is required.                                                                     |
 | `MessageType`, `MessageVia`                                                  | The values of `type` and `via`.                                                                                                                                             |
-| `checkChatBinding(binding, addr, options?)`, `chatBindingSchema`             | The binding check on its own, and its shape. Its `origins` is optional, for a sender checking its own binding.                                                              |
+| `checkChatBinding(binding, addr, options?)`, `chatBindingSchema`             | The binding check on its own, and its shape. Its `origins` is optional, for a sender checking its own binding, and left out accepts any site.                               |
 | `checkWalletLink(link, account)`, `walletLinkSchema`                         | The wallet link check on its own, for the binding's account, and its shape.                                                                                                 |
 | `ownFeedTopic(chatTopic)`, `OWN_FEED_TOPIC_PREFIX`                           | The topic of a sender's own feed of copies.                                                                                                                                 |
 | `chatMessageSchema`, `hasValidSignature`, `signedBytes`, `encodeChatMessage` | The parts of the message check.                                                                                                                                             |

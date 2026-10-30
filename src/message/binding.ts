@@ -113,6 +113,10 @@ export function checkChatBinding(binding: ChatBinding, addr: string, options: Bi
   if (chatAddress !== `0x${addr}`) {
     return { ok: false, detail: 'the binding is for another chat address than addr' };
   }
+  // A JavaScript caller can pass one string, whose includes() would match any site that is a substring of it.
+  if (options.origins !== undefined && !Array.isArray(options.origins)) {
+    return { ok: false, detail: 'origins is not a list of sites' };
+  }
   if (options.origins !== undefined && !options.origins.includes(site)) {
     return { ok: false, detail: `the binding is for ${site}, not for ${options.origins.join(' or ') || 'any site'}` };
   }
