@@ -589,7 +589,7 @@ describe('the wire check', () => {
 
   it('hands the origin to the binding check', () => {
     const payload = encodeChatMessage(BOUND_VECTOR.message);
-    expect(parseChatMessage(payload, { origin: 'https://other.example' })).toMatchObject({
+    expect(parseChatMessage(payload, { origins: ['https://other.example'] })).toMatchObject({
       ok: false,
       reason: 'binding',
     });

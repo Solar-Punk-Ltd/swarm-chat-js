@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import {
   CHAT_BINDING_TITLE,
   MessageType,
+  checkChatBinding,
   MessageVia,
   encodeChatMessage,
   parseChatMessage,
@@ -117,7 +118,7 @@ describe('Swarm ID-compatible binding vector', () => {
     ['28', CHAT_BINDING_V28, '2026-10-14T12:01:00.000Z'],
   ])('verifies here as Swarm ID verified it, with v %s', (_v, binding, date) => {
     const message = signedWith(boundKey, binding);
-    expect(verifyChatMessage(message, { origin: BOUND_SITE })).toEqual({
+    expect(verifyChatMessage(message, { origins: [BOUND_SITE] })).toEqual({
       ok: true,
       message,
       identity: { account: FORK_ACCOUNT, site: BOUND_SITE, date },
@@ -134,20 +135,48 @@ describe('a message with a binding', () => {
     });
   });
 
-  it('is refused when the binding is for another site than the origin', () => {
+  it('is accepted when its site is any one of the sites the chat runs on', () => {
     const message = signedWith(boundKey, CHAT_BINDING);
-    expect(verifyChatMessage(message, { origin: OTHER_SITE })).toMatchObject({ ok: false, reason: 'binding' });
-    expect(verifyChatMessage(message, { origin: `${BOUND_SITE}/` })).toMatchObject({ ok: false, reason: 'binding' });
+    expect(verifyChatMessage(message, { origins: [OTHER_SITE, BOUND_SITE] })).toMatchObject({
+      ok: true,
+      identity: { account: FORK_ACCOUNT, site: BOUND_SITE },
+    });
   });
 
-  it('is refused, never accepted for any site, when a caller leaves the origin out', () => {
+  it('is refused when its site is none of the sites the chat runs on', () => {
+    const message = signedWith(boundKey, CHAT_BINDING);
+    expect(verifyChatMessage(message, { origins: [OTHER_SITE, `${BOUND_SITE}/`] })).toMatchObject({
+      ok: false,
+      reason: 'binding',
+    });
+  });
+
+  it('is refused, never accepted for any site, when the list of sites is empty', () => {
+    const message = signedWith(boundKey, CHAT_BINDING);
+    expect(verifyChatMessage(message, { origins: [] })).toMatchObject({ ok: false, reason: 'binding' });
+  });
+
+  it('is refused when the binding is for another site than the origin', () => {
+    const message = signedWith(boundKey, CHAT_BINDING);
+    expect(verifyChatMessage(message, { origins: [OTHER_SITE] })).toMatchObject({ ok: false, reason: 'binding' });
+    expect(verifyChatMessage(message, { origins: [`${BOUND_SITE}/`] })).toMatchObject({ ok: false, reason: 'binding' });
+  });
+
+  it('is refused, never accepted for any site, when a caller leaves the origins out', () => {
     const message = signedWith(boundKey, CHAT_BINDING);
     const noOrigin = {} as VerifyOptions;
     expect(verifyChatMessage(message, noOrigin)).toMatchObject({ ok: false, reason: 'binding' });
     expect(parseChatMessage(encodeChatMessage(message), noOrigin)).toMatchObject({ ok: false, reason: 'binding' });
   });
 
-  it('cannot be called without an origin', () => {
+  it('is refused when a JavaScript caller passes one string as the origins, never matched as a substring', () => {
+    const message = signedWith(boundKey, CHAT_BINDING);
+    const oneString = { origins: `${BOUND_SITE}.other.example` } as unknown as VerifyOptions;
+    expect(verifyChatMessage(message, oneString)).toMatchObject({ ok: false, reason: 'binding' });
+    expect(checkChatBinding(message.idb!, message.addr, oneString)).toMatchObject({ ok: false });
+  });
+
+  it('cannot be called without origins', () => {
     const message = signedWith(boundKey, undefined);
     // @ts-expect-error The origin is required, so no caller leaves it out by accident.
     expect(() => verifyChatMessage(message)).not.toThrow();
@@ -159,7 +188,7 @@ describe('a message with a binding', () => {
     expect(new PrivateKey(localKey).publicKey().address().toHex()).toBe(LOCAL_CHAT_ADDR);
     const message = signedWith(localKey, LOCAL_SITE_BINDING);
     expect(verifyChatMessage(message, AT_SITE)).toMatchObject({ ok: false, reason: 'binding' });
-    expect(verifyChatMessage(message, { allowLocalHttp: true, origin: LOCAL_SITE })).toMatchObject({
+    expect(verifyChatMessage(message, { allowLocalHttp: true, origins: [LOCAL_SITE] })).toMatchObject({
       ok: true,
       identity: { account: FORK_ACCOUNT, site: LOCAL_SITE },
     });
@@ -212,6 +241,6 @@ describe('a message with a binding', () => {
 describe('a message without a binding', () => {
   it('is accepted as a guest, with no identity, whatever origin is given', () => {
     const message = signedWith(boundKey, undefined);
-    expect(verifyChatMessage(message, { origin: OTHER_SITE })).toEqual({ ok: true, message, identity: null });
+    expect(verifyChatMessage(message, { origins: [OTHER_SITE] })).toEqual({ ok: true, message, identity: null });
   });
 });

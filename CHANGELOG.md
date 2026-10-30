@@ -2,6 +2,13 @@
 
 What each release of `@solarpunkltd/swarm-chat-js` changes for a page or a server that uses it.
 
+## 10.0.0
+
+- `verifyChatMessage` and `parseChatMessage` take `{ origins }`, a list of the sites whose chat this is, in place of
+  `{ origin }`, and accept a binding for any one of them. A chat served from several pages lists each, so a message
+  signed in on one shows as signed in on all. A single site is `{ origins: [site] }`. `checkChatBinding`'s optional
+  `origin` is `origins` too. An empty list refuses every bound message as `binding`.
+
 ## 9.0.0
 
 - The message, the feed entry and the history file are version 9. A version 8 message, entry or history file fails its
